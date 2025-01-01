@@ -14,6 +14,7 @@ fn = r'C:\Users\шадрин\YandexDisk\_ИИС\Position\CenterStrikeVola_RTS.cs
 # df = pd.read_csv(fn, sep=';', skiprows=1, parse_dates={'DateTime': ['%d.%m.%Y %H:%M:%S']})
 # df = pd.read_csv(fn, sep=';', skiprows=1, infer_datetime_format=True)
 # df = pd.read_csv(fn, sep=';', infer_datetime_format=True)
+
 df = pd.read_csv(fn, sep=';')
 
 # # Преобразуем колонку 'DateTime' в объект datetime
