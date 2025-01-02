@@ -196,13 +196,6 @@ if __name__ == "__main__":
     option_expirations = get_option_expirations(fut_1) + get_option_expirations(fut_2)
     print(option_expirations)
 
-
-    # options_series_name = [item['expiration_date'] for item in option_expirations] # даты экспирации
-    # options_series_type = [item['series_type'] for item in option_expirations]  # тип серии
-    # print("options_series_type:", options_series_type)
-    # print("options_series_name:", options_series_name)
-    # print(list(zip(options_series_type, options_series_name)))
-
     options_series_names = []
     for i in option_expirations:
         # options_series_name = ' '.join(option_expirations.values())
