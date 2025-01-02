@@ -197,6 +197,24 @@ if __name__ == "__main__":
     print(option_expirations)
 
 
+    # options_series_name = [item['expiration_date'] for item in option_expirations] # даты экспирации
+    # options_series_type = [item['series_type'] for item in option_expirations]  # тип серии
+    # print("options_series_type:", options_series_type)
+    # print("options_series_name:", options_series_name)
+    # print(list(zip(options_series_type, options_series_name)))
+
+    options_series_names = []
+    for i in option_expirations:
+        # options_series_name = ' '.join(option_expirations.values())
+        options_series_name = i['expiration_date']
+        options_series_type = i['series_type']
+        options_series_name = " ".join(options_series_type) + ' ' + options_series_name
+        options_series_names.append(options_series_name)
+        # print("options_series_type:", options_series_type)
+    print("options_series_names:", options_series_names)
+
+
+
 
 
     # Читаем CSV/TXT файл (разделённый точкой с запятой) в DataFrame
