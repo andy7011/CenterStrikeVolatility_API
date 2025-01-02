@@ -1,0 +1,3 @@
+QUARTER = 'Q'
+MONTH = 'M'
+WEEK = 'W'
