@@ -68,6 +68,13 @@ def get_option_list_by_series(option_series_ticker: str):
     response = get_object_from_json_endpoint(url)
     return _convert_moex_data_structure_to_list_of_dicts(response['securities'])
 
+# Котировки для выбранных инструментов
+def get_quotes(tickers: list):
+    url = _make_absolute_url(_QUOTES_TICKERS_URL.substitute(tickers=tickers))
+    response = get_object_from_json_endpoint(url, params={'tickers': ','.join(list)})
+    # response = get_object_from_json_endpoint(url, params={'tickers': tickers})
+    print(response)
+    # return _convert_moex_data_structure_to_list_of_dicts(response['list'])
 
 def _convert_moex_data_structure_to_list_of_dicts(moex_data_structure):
     list_of_dicts = []
@@ -100,9 +107,8 @@ if __name__ == '__main__':
     print(data)
 
     # Опционные серии по базовому активу (напр. RTS)
-    asset_code = 'RTS'
     data = get_option_series(asset_code)
-    print("\n Опционные серии по базовому активу (напр. RTS):", asset_code)
+    print("\n Опционные серии по базовому активу", asset_code)
     print(data)
 
     # Получить даты окончания действия опционов
@@ -110,13 +116,14 @@ if __name__ == '__main__':
     print("\n Получить даты окончания действия опционов базового актива:", ticker)
     print(data)
 
-    # Получить доску опционов
+    # Получить доску опционов базового актива
     data = get_option_board(ticker, '2025-03-20')
     print("\n Получить доску опционов базового актива", ticker, "дата окончания действия: 2025-03-20")
     print(data)
 
-    # Получить список опционов
+    # Получить список опционов серии
     option_series_ticker = 'RTS-3.25M261224XA'
     data = get_option_list_by_series(option_series_ticker)
     print("\n Получить список опционов серии", option_series_ticker)
     print(data)
+

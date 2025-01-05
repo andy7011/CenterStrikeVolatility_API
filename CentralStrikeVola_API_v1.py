@@ -3,16 +3,34 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-from matplotlib.artist import kwdoc
 from matplotlib.widgets import RangeSlider, CheckButtons
 import matplotlib
 import json
 from moex_api import get_futures_series
 from moex_api import get_option_expirations
-from datetime import datetime
+from moex_api import get_option_board
+from moex_api import get_option_list_by_series
+from moex_api import get_option_series
+from moex_api import _convert_moex_data_structure_to_list_of_dicts
+from infrastructure.alor_api import _get_authorization_token
+from requests import post, get, put, delete, Response  # Запросы/ответы от сервера запросов
+import requests
+
+_REFRESH_TOKEN_URL = 'https://oauth.alor.ru/refresh'
+_WEBSOCKET_URL = 'wss://api.alor.ru/ws'
+ap_provider = 'wss://api.alor.ru/ws'
+exchange = 'MOEX'
+URL_API = f'https://api.alor.ru'
+
+_API_METHOD_QUOTES_SUBSCRIBE = "QuotesSubscribe"
+_API_METHOD_INSTRUMENTS_GET_AND_SUBSCRIBE = "InstrumentsGetAndSubscribeV2"
+
+_auth_token = _get_authorization_token('52ede572-e81b-473e-9d89-e9af46be296d')
+print("\n _auth_token:", '\n', _auth_token)
 
 asset_code = 'RTS'
-Figure_name = "RTS. Center strike options volatility. Ver.5.1.API"
+strike_step = 2500
+Figure_name = "RTS. Center strike options volatility. Ver.1.API"
 SMALL_SIZE = 8
 matplotlib.rc('font', size=SMALL_SIZE)
 
@@ -57,6 +75,71 @@ def updateGraph():
     global ln
     global graph_state  # Добавляем словарь для хранения статуса видимости графиков
     global df
+
+    # Формируем список тикеров для получения котировок
+    symbols = f'{exchange}:{fut_1},{exchange}:{fut_2}'
+    # print('список тикеров для получения котировок:',symbols)
+
+    # Котировки для выбранных инструментов symbols
+    url = f'{URL_API}/md/v2/securities/{symbols}/quotes'
+    payload = {}
+    headers = {
+        'Accept': 'application/json',
+        'Authorization': f"Bearer {_auth_token}"
+    }
+    response = requests.request("GET", url, headers=headers, data=payload)
+    # print(response.text)
+    res = response.json()
+    dict_quotes_futures = []
+    for i in res:
+        symbol = i['symbol']
+        description = i['description']
+        last_price = i['last_price']
+        last_price_timestamp = i['last_price_timestamp']
+        ask = i['ask']
+        bid = i['bid']
+        central_strike = round(last_price / strike_step) * strike_step # Центральный страйк
+        dict_quotes_futures = dict_quotes_futures + [{'symbol': symbol, 'description': description, 'last_price': last_price, 'last_price_timestamp': last_price_timestamp, 'central_strike': central_strike, 'ask': ask, 'bid': bid}]
+    print('\n Котировки фьючерсов dict_quotes_futures:','\n', dict_quotes_futures)
+    central_strike_1 = dict_quotes_futures[0]['central_strike']
+    print('Центральный страйк фьючерса', fut_1, ':', central_strike_1)
+    central_strike_2 = dict_quotes_futures[1]['central_strike']
+    print('Центральный страйк фьючерса', fut_2, ':', central_strike_2)
+
+    # Формируем список тикеров опционов центрального страйка текущей серии для получения котировок
+    option_ticker_list_1 = []
+    for i in option_series_by_name_series_1:
+        data = get_option_list_by_series(i)
+        for k in range(len(data)):
+            if data[k]['strike'] == central_strike_1:
+                option_ticker_list_1.append(data[k]['secid'])
+    print("\n Список опционов центрального страйка текущей серии", fut_1,'\n', option_ticker_list_1)
+
+    # Формируем список тикеров опционов центрального страйка текущей серии для получения котировок
+    option_ticker_list_2 = []
+    for i in option_series_by_name_series_2:
+        data = get_option_list_by_series(i)
+        for k in range(len(data)):
+            if data[k]['strike'] == central_strike_2:
+                option_ticker_list_2.append(data[k]['secid'])
+    print("\n Список опционов центрального страйка следующей серии", fut_2, '\n', option_ticker_list_2)
+
+    # symbols = f'{exchange}:{fut_1},{exchange}:{fut_2}'
+    # # print('список тикеров для получения котировок:',symbols)
+    # # Котировки для выбранных инструментов symbols
+    # url = f'{URL_API}/md/v2/securities/{symbols}/quotes'
+    # payload = {}
+    # headers = {
+    #     'Accept': 'application/json',
+    #     'Authorization': f"Bearer {_auth_token}"
+    # }
+    # response = requests.request("GET", url, headers=headers, data=payload)
+    # # print(response.text)
+    # res = response.json()
+    # dict_quotes_futures = []
+    # for i in res:
+
+
 
     # Читаем CSV/TXT файл (разделённый точкой с запятой) в DataFrame
     df = pd.read_csv(fn, sep=';')
@@ -192,21 +275,47 @@ if __name__ == "__main__":
     fut_1 = info_fut_1['secid'] # Текущий фьючерс
     fut_2 = info_fut_2['secid'] # Следующий фьючерс
 
-    # Получить список дат окончания действия опционов базовых активов fut_1 + fut_2
+    # Получить список дат окончания действия опционов базовых активов fut_1 fut_2
+    option_expirations_fut_1 = get_option_expirations(fut_1)
+    dict_option_expirations_fut_1 = []
+    for i in option_expirations_fut_1:
+        expiration_date = i['expiration_date']
+        dict_option_expirations_fut_1.append(expiration_date)
+    print('\n Даты окончания действия опционов базового актива', fut_1, '\n', dict_option_expirations_fut_1)
+    option_expirations_fut_2 = get_option_expirations(fut_2)
+    dict_option_expirations_fut_2 = []
+    for i in option_expirations_fut_2:
+        expiration_date = i['expiration_date']
+        dict_option_expirations_fut_2.append(expiration_date)
+    print('\n Даты окончания действия опционов базового актива', fut_2, '\n', dict_option_expirations_fut_2)
     option_expirations = get_option_expirations(fut_1) + get_option_expirations(fut_2)
-    print(option_expirations)
+    # print('\n Даты экспирации выбранных серий option_expirations:','\n',option_expirations)
 
     options_series_names = []
     for i in option_expirations:
-        # options_series_name = ' '.join(option_expirations.values())
         options_series_name = i['expiration_date']
         options_series_type = i['series_type']
         options_series_name = " ".join(options_series_type) + ' ' + options_series_name
         options_series_names.append(options_series_name)
-        # print("options_series_type:", options_series_type)
-    print("options_series_names:", options_series_names)
+    print("\n Имена колонок для записи в csv файл options_series_names:",'\n',options_series_names)
 
+    # Опционные серии по базовому активу fut_1 (текущая серия)
+    fut_series = [fut_1]
+    data = get_option_series(asset_code)
+    option_series_by_name_series_1 = []
+    for item in data:
+        if item['underlying_asset'] in fut_series:
+            option_series_by_name_series_1.append(item['name'])
+    print("\n Опционные серии по базовому активу", fut_series, '\n', option_series_by_name_series_1)
 
+    # Опционные серии по базовому активу fut_2 (следующая серия)
+    fut_series = [fut_2]
+    data = get_option_series(asset_code)
+    option_series_by_name_series_2 = []
+    for item in data:
+        if item['underlying_asset'] in fut_series:
+            option_series_by_name_series_2.append(item['name'])
+    print("\n Опционные серии по базовому активу", fut_series, '\n', option_series_by_name_series_2)
 
 
 
