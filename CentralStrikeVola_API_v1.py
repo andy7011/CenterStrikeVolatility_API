@@ -124,20 +124,43 @@ def updateGraph():
                 option_ticker_list_2.append(data[k]['secid'])
     print("\n Список опционов центрального страйка следующей серии", fut_2, '\n', option_ticker_list_2)
 
-    # symbols = f'{exchange}:{fut_1},{exchange}:{fut_2}'
-    # # print('список тикеров для получения котировок:',symbols)
-    # # Котировки для выбранных инструментов symbols
-    # url = f'{URL_API}/md/v2/securities/{symbols}/quotes'
-    # payload = {}
-    # headers = {
-    #     'Accept': 'application/json',
-    #     'Authorization': f"Bearer {_auth_token}"
-    # }
-    # response = requests.request("GET", url, headers=headers, data=payload)
-    # # print(response.text)
-    # res = response.json()
-    # dict_quotes_futures = []
-    # for i in res:
+    # Сформируем строку тикеров формата "MOEX:RI87500BC5,MOEX:RI90000BF5,..." текущей серии для получения котировок
+    symbols_1 = ''
+    for i in range(len(option_ticker_list_1)):
+        ticker = f'{exchange}:{option_ticker_list_1[i]}'
+        symbols_1 = symbols_1 + ticker + ','
+    print('\n Список тикеров для получения котировок опционов центрального страйка текущей серии:','\n', symbols_1)
+
+    # Сформируем строку тикеров формата "MOEX:RI87500BC5,MOEX:RI90000BF5,..." следующей серии для получения котировок
+    symbols_2 = ''
+    for i in range(len(option_ticker_list_2)):
+        ticker = f'{exchange}:{option_ticker_list_2[i]}'
+        symbols_2 = symbols_2 + ticker + ','
+    print('\n Список тикеров для получения котировок опционов центрального страйка следующей серии:', '\n', symbols_2)
+
+    # Котировки для выбранных инструментов symbols_1
+    url = f'{URL_API}/md/v2/securities/{symbols_1}/quotes'
+    payload = {}
+    headers = {
+        'Accept': 'application/json',
+        'Authorization': f"Bearer {_auth_token}"
+    }
+    response = requests.request("GET", url, headers=headers, data=payload)
+    # print(response.text)
+    res_1 = response.json()
+    print('\n Котировки опционов центрального страйка текущей серии:','\n', res_1)
+
+    # Котировки для выбранных инструментов symbols_2
+    url = f'{URL_API}/md/v2/securities/{symbols_2}/quotes'
+    payload = {}
+    headers = {
+        'Accept': 'application/json',
+        'Authorization': f"Bearer {_auth_token}"
+    }
+    response = requests.request("GET", url, headers=headers, data=payload)
+    # print(response.text)
+    res_2 = response.json()
+    print('\n Котировки опционов центрального страйка следующей серии:','\n', res_2)
 
 
 
@@ -440,5 +463,5 @@ def animate(i):
         valmax = x_max
     updateGraph()
 
-ani = animation.FuncAnimation(fig, animate, interval=10000, cache_frame_data=False)
+ani = animation.FuncAnimation(fig, animate, interval=30000, cache_frame_data=False)
 plt.show()

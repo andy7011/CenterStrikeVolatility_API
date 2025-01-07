@@ -10,7 +10,7 @@ from infrastructure.api_utils import get_object_from_json_endpoint
 #  id может стать проблемой: разные инстансы будут создавать в API подписки на события с одинаковым GUID.
 #  Если это создаст проблемы, то в таком случае APP ID нужно будет брать из окружения
 #  и делать уникальным для каждого инстанса.
-_APP_ID = 'option_volatility_dashboard'
+_APP_ID = 'CentralStrikeVola_API_v1'
 
 _REFRESH_TOKEN_URL = 'https://oauth.alor.ru/refresh'
 _WEBSOCKET_URL = 'wss://api.alor.ru/ws'
@@ -28,7 +28,6 @@ def _get_guid(api_method: str, ticker: str):
     sha256_hash = hashlib.sha256()
     sha256_hash.update(input_string.encode())
     return sha256_hash.hexdigest()
-
 
 def _get_authorization_token(client_token):
     params = {'token': client_token}
