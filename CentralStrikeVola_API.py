@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-from matplotlib.artist import kwdoc
 from matplotlib.widgets import RangeSlider, CheckButtons
 import matplotlib
 import json
@@ -11,7 +10,6 @@ import json
 from infrastructure.alor_api import AlorApi
 from moex_api import get_futures_series
 from moex_api import get_option_expirations
-from datetime import datetime
 
 asset_code = 'RTS'
 Figure_name = "RTS. Center strike options volatility. Ver.5.1.API"
@@ -19,12 +17,13 @@ SMALL_SIZE = 8
 matplotlib.rc('font', size=SMALL_SIZE)
 
 # Указываем путь к файлу CSV
-fn = r'C:\Users\Андрей\YandexDisk\_ИИС\Position\_TEST_CenterStrikeVola_RTS.csv'
+fn = r'C:\Users\шадрин\YandexDisk\_ИИС\Position\_TEST_CenterStrikeVola_RTS.csv'
 # Начальные параметры графиков: 840 - кол.торговых минуток за сутки
 limit_day = 840
 # Кол.торговых минуток за месяц 17640 = 840 мин x 21 раб. день
 limit_month = 17640
 
+# Функция форматирования даты и времени для представления на графике в текстовом виде (ось Х)
 def format_date_time(x):
     # Разделяем строку сначала по точкам, а затем берём первые два элемента списка (дату и месяц)
     date_parts = x.split('.')
@@ -34,15 +33,18 @@ def format_date_time(x):
     formatted_datetime = date_part + " " + time_part[:5]
     return formatted_datetime
 
+# Функция для замены нулей на NaN
 def zero_to_nan(values):
     """Replace every 0 with 'nan' and return a copy."""
     return [float('nan') if x==0 else x for x in values]
 
+# Функция для сохранения состояния графика в файл
 def dump_graph_state_to_file():
     graph_state_file = open('graph_state_v4_2.json', 'w', encoding="utf-8")
     json.dump(graph_state, graph_state_file)
     graph_state_file.close()
 
+# Функция для обновления графика
 def updateGraph():
     # print("RUN updateGraph!")
     """!!! Функция для обновления графика"""
@@ -147,6 +149,7 @@ def updateGraph():
     dump_graph_state_to_file()
     plt.draw()
 
+# Обработчик событий при нажатии на флажок
 def onCheckClicked1(label):
     """" Обработчик события при нажатии на флажок"""
     global series_visible
