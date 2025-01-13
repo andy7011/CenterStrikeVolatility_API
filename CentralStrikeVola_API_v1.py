@@ -82,7 +82,7 @@ def updateGraph():
     # print('список тикеров для получения котировок:',symbols)
 
     # Котировки для выбранных инструментов symbols
-    res = _alorApi.get_serurities_quotes(symbols)
+    res = _alorApi.get_securities_quotes(symbols)
     dict_quotes_futures = []
     for i in res:
         symbol = i['symbol']
@@ -132,11 +132,11 @@ def updateGraph():
     print('\n Список тикеров для получения котировок опционов центрального страйка следующей серии:', '\n', symbols_2)
 
     # Котировки для выбранных инструментов symbols_1
-    res_1 = _alorApi.get_serurities_quotes(symbols_1)
+    res_1 = _alorApi.get_securities_quotes(symbols_1)
     print('\n Котировки опционов центрального страйка текущей серии:','\n', res_1)
 
     # Котировки для выбранных инструментов symbols_2
-    res_2 = _alorApi.get_serurities_quotes(symbols_2)
+    res_2 = _alorApi.get_securities_quotes(symbols_2)
     print('\n Котировки опционов центрального страйка следующей серии:','\n', res_2)
 
 
@@ -262,6 +262,9 @@ def onChangeXRange(value: Tuple[np.float64, np.float64]):
     x_min, x_max = slider_x_range.val
     updateGraph()
 
+def _handle_option_quotes_event(self, ticker, data):
+    print(ticker, data)
+
 if __name__ == "__main__":
     # print("RUN main!")
     global x_min
@@ -274,6 +277,9 @@ if __name__ == "__main__":
     info_fut_2 = data[len(data) - 2]
     fut_1 = info_fut_1['secid'] # Текущий фьючерс
     fut_2 = info_fut_2['secid'] # Следующий фьючерс
+
+    _alorApi.run_async_connection(True)
+    _alorApi.subscribe_to_quotes(fut_1, _handle_option_quotes_event)
 
     # Получить список дат окончания действия опционов базовых активов fut_1 fut_2
     option_expirations_fut_1 = get_option_expirations(fut_1)

@@ -47,7 +47,9 @@ class AlorApi:
         self._api_events = {}
         self._auth_token = _get_authorization_token(client_token)
 
+    # async def run_async_connection(self, is_debug: bool):
     def run_async_connection(self, is_debug: bool):
+        """Запуск и управление задачей подписок"""
         asyncio.run(self._connect_to_websocket(), debug=is_debug)
 
     def subscribe_to_instrument(self, ticker, callback):
@@ -56,7 +58,7 @@ class AlorApi:
     def subscribe_to_quotes(self, ticker: str, callback: callable):
         self._subscribe_to_event(_API_METHOD_QUOTES_SUBSCRIBE, ticker, callback)
 
-    def get_serurities_quotes(self, symbols):
+    def get_securities_quotes(self, symbols):
         # Котировки для выбранных инструментов symbols
         url = f'{_REST_API_URL}/md/v2/securities/{symbols}/quotes'
         return self._send_rest_request(url)

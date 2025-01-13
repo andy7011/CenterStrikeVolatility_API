@@ -15,8 +15,9 @@ from jwt import decode
 from urllib3.exceptions import MaxRetryError  # Соединение с сервером не установлено за максимальное кол-во попыток подключения
 from websockets import connect, ConnectionClosed  # Работа с сервером WebSockets
 
-from AlorPy import Config  # Файл конфигурации
+# from AlorPy import Config  # Файл конфигурации
 
+refresh_token = '52ede572-e81b-473e-9d89-e9af46be296d'  # Токен
 
 # noinspection PyShadowingBuiltins
 class AlorPy:
@@ -28,7 +29,7 @@ class AlorPy:
     exchanges = ('MOEX', 'SPBX',)  # Биржи
     logger = logging.getLogger('AlorPy')  # Будем вести лог
 
-    def __init__(self, refresh_token=Config.refresh_token, demo=False):
+    def __init__(self, refresh_token=refresh_token, demo=False):
         """Инициализация
 
         :param str refresh_token: Токен
@@ -1724,10 +1725,8 @@ class AlorPy:
             self.ws_task.cancel()  # то отменяем задачу. Генерируем на ней исключение asyncio.CancelledError
 
     # Функции конвертации
-
     def dataname_to_board_symbol(self, dataname) -> tuple[str, str]:
         """Код режима торгов и тикер из названия тикера
-
         :param str dataname: Название тикера
         :return: Код режима торгов и тикер
         """

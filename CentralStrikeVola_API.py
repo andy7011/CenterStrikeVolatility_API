@@ -7,6 +7,8 @@ from matplotlib.artist import kwdoc
 from matplotlib.widgets import RangeSlider, CheckButtons
 import matplotlib
 import json
+
+from infrastructure.alor_api import AlorApi
 from moex_api import get_futures_series
 from moex_api import get_option_expirations
 from datetime import datetime
@@ -179,19 +181,23 @@ def onChangeXRange(value: Tuple[np.float64, np.float64]):
     x_min, x_max = slider_x_range.val
     updateGraph()
 
+def _handle_base_asset_quotes_event():
+    pass
+
 if __name__ == "__main__":
     # print("RUN main!")
     global x_min
     global x_max
     global columns_count
+    global _alorApi
 
     # Две ближайшие (текущая и следующая) фьючерсные серии по базовому активу asset_code
     data = get_futures_series(asset_code)
     info_fut_1 = data[len(data) - 1]
     info_fut_2 = data[len(data) - 2]
     fut_1 = info_fut_1['secid'] # Текущий фьючерс
-    fut_2 = info_fut_2['secid'] # Следующий фьючерс
-
+    fut_2 = info_fut_2['secid'] # Следующий фь
+    # ючерс
     # Получить список дат окончания действия опционов базовых активов fut_1 + fut_2
     option_expirations = get_option_expirations(fut_1) + get_option_expirations(fut_2)
     print(option_expirations)
