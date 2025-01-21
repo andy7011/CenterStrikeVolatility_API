@@ -2,6 +2,7 @@ import asyncio
 import json
 import hashlib
 import websockets
+import requests
 
 from infrastructure.alor_api_event import AlorApiEvent
 from infrastructure.api_utils import get_object_from_json_endpoint
@@ -14,6 +15,7 @@ _APP_ID = 'CentralStrikeVola_API_v1'
 
 _REFRESH_TOKEN_URL = 'https://oauth.alor.ru/refresh'
 _WEBSOCKET_URL = 'wss://api.alor.ru/ws'
+_REST_API_URL = f'https://api.alor.ru'
 _EXCHANGE_MOEX = "MOEX"
 
 _API_METHOD_QUOTES_SUBSCRIBE = "QuotesSubscribe"
@@ -59,6 +61,20 @@ class AlorApi:
         ticker = api_event.ticker
         callback = api_event.callback
         callback(ticker, data)
+
+    def get_securities_quotes(self, symbols):
+        # Котировки для выбранных инструментов symbols
+        url = f'{_REST_API_URL}/md/v2/securities/{symbols}/quotes'
+        return self._send_rest_request(url)
+
+    def _send_rest_request(self, url):
+        payload = {}
+        headers = {
+            'Accept': 'application/json',
+            'Authorization': f"Bearer {self._auth_token}"
+        }
+        response = requests.request("GET", url, headers=headers, data=payload)
+        return response.json()
 
     def _get_api_event(self, guid: str) -> AlorApiEvent:
         return self._api_events[guid]

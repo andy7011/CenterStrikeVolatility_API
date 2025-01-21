@@ -6,13 +6,15 @@ import matplotlib.animation as animation
 from matplotlib.widgets import RangeSlider, CheckButtons
 import matplotlib
 import json
+
+from infrastructure.alor_api import AlorApi
 from moex_api import get_futures_series
 from moex_api import get_option_expirations
 from moex_api import get_option_board
 from moex_api import get_option_list_by_series
 from moex_api import get_option_series
 from moex_api import _convert_moex_data_structure_to_list_of_dicts
-from infrastructure.alor_api import _get_authorization_token
+
 from requests import post, get, put, delete, Response  # Запросы/ответы от сервера запросов
 import requests
 
@@ -25,8 +27,7 @@ URL_API = f'https://api.alor.ru'
 _API_METHOD_QUOTES_SUBSCRIBE = "QuotesSubscribe"
 _API_METHOD_INSTRUMENTS_GET_AND_SUBSCRIBE = "InstrumentsGetAndSubscribeV2"
 
-_auth_token = _get_authorization_token('52ede572-e81b-473e-9d89-e9af46be296d')
-print("\n _auth_token:", '\n', _auth_token)
+_alorApi = AlorApi('52ede572-e81b-473e-9d89-e9af46be296d')
 
 asset_code = 'RTS'
 strike_step = 2500
@@ -35,7 +36,7 @@ SMALL_SIZE = 8
 matplotlib.rc('font', size=SMALL_SIZE)
 
 # Указываем путь к файлу CSV
-fn = r'C:\Users\Андрей\YandexDisk\_ИИС\Position\_TEST_CenterStrikeVola_RTS.csv'
+fn = r'C:\Users\шадрин\YandexDisk\_ИИС\Position\_TEST_CenterStrikeVola_RTS.csv'
 # Начальные параметры графиков: 840 - кол.торговых минуток за сутки
 limit_day = 840
 # Кол.торговых минуток за месяц 17640 = 840 мин x 21 раб. день
@@ -81,15 +82,7 @@ def updateGraph():
     # print('список тикеров для получения котировок:',symbols)
 
     # Котировки для выбранных инструментов symbols
-    url = f'{URL_API}/md/v2/securities/{symbols}/quotes'
-    payload = {}
-    headers = {
-        'Accept': 'application/json',
-        'Authorization': f"Bearer {_auth_token}"
-    }
-    response = requests.request("GET", url, headers=headers, data=payload)
-    # print(response.text)
-    res = response.json()
+    res = _alorApi.get_securities_quotes(symbols)
     dict_quotes_futures = []
     for i in res:
         symbol = i['symbol']
@@ -115,7 +108,7 @@ def updateGraph():
                 option_ticker_list_1.append(data[k]['secid'])
     print("\n Список опционов центрального страйка текущей серии", fut_1,'\n', option_ticker_list_1)
 
-    # Формируем список тикеров опционов центрального страйка текущей серии для получения котировок
+    # Формируем список тикеров опционов центрального страйка следующей серии для получения котировок
     option_ticker_list_2 = []
     for i in option_series_by_name_series_2:
         data = get_option_list_by_series(i)
@@ -139,27 +132,11 @@ def updateGraph():
     print('\n Список тикеров для получения котировок опционов центрального страйка следующей серии:', '\n', symbols_2)
 
     # Котировки для выбранных инструментов symbols_1
-    url = f'{URL_API}/md/v2/securities/{symbols_1}/quotes'
-    payload = {}
-    headers = {
-        'Accept': 'application/json',
-        'Authorization': f"Bearer {_auth_token}"
-    }
-    response = requests.request("GET", url, headers=headers, data=payload)
-    # print(response.text)
-    res_1 = response.json()
+    res_1 = _alorApi.get_securities_quotes(symbols_1)
     print('\n Котировки опционов центрального страйка текущей серии:','\n', res_1)
 
     # Котировки для выбранных инструментов symbols_2
-    url = f'{URL_API}/md/v2/securities/{symbols_2}/quotes'
-    payload = {}
-    headers = {
-        'Accept': 'application/json',
-        'Authorization': f"Bearer {_auth_token}"
-    }
-    response = requests.request("GET", url, headers=headers, data=payload)
-    # print(response.text)
-    res_2 = response.json()
+    res_2 = _alorApi.get_securities_quotes(symbols_2)
     print('\n Котировки опционов центрального страйка следующей серии:','\n', res_2)
 
 
@@ -463,5 +440,5 @@ def animate(i):
         valmax = x_max
     updateGraph()
 
-ani = animation.FuncAnimation(fig, animate, interval=30000, cache_frame_data=False)
+ani = animation.FuncAnimation(fig, animate, interval=10000, cache_frame_data=False)
 plt.show()

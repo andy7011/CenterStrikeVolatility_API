@@ -15,7 +15,7 @@ from jwt import decode
 from urllib3.exceptions import MaxRetryError  # Соединение с сервером не установлено за максимальное кол-во попыток подключения
 from websockets import connect, ConnectionClosed  # Работа с сервером WebSockets
 
-# from AlorPy import Config  # Файл конфигурации
+from AlorPy import Config  # Файл конфигурации
 
 refresh_token = '52ede572-e81b-473e-9d89-e9af46be296d'  # Токен
 
