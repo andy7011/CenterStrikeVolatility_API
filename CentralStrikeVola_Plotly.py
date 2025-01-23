@@ -1,3 +1,4 @@
+import plotly.express as px
 from typing import Tuple
 import pandas as pd
 import numpy as np
@@ -12,7 +13,7 @@ from moex_api import get_futures_series
 from moex_api import get_option_expirations
 
 asset_code = 'RTS'
-Figure_name = "RTS. Center strike options volatility. Ver.5.1.API"
+Figure_name = "RTS. Center strike options volatility. Ver.5.2.Plotly"
 SMALL_SIZE = 8
 matplotlib.rc('font', size=SMALL_SIZE)
 
@@ -304,9 +305,6 @@ if __name__ == "__main__":
         frame_props={'edgecolor': 'black'},
         check_props={'facecolor': 'black'},
     )
-
-    # # Инициализируем словарь для хранения статуса видимости графиков
-    # graph_state = {label: True for label in lines_by_label}
 
     # Создадим оси для флажка выключателя сетки
     axes_checkbuttons2 = plt.axes([0.01, 0.01, 0.06, 0.044])

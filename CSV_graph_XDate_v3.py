@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import datetime
 
-fn = r'C:\Users\шадрин\YandexDisk\_ИИС\Position\CenterStrikeVola_RTS.csv'
+fn = r'C:\Users\ashadrin\YandexDisk\_ИИС\Position\CenterStrikeVola_RTS.csv'
 df = pd.read_csv(fn, sep=';')
 limit = 2700
 fig, ax = plt.subplots()
