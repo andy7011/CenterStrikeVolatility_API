@@ -7,9 +7,6 @@ def zero_to_nan(values):
     """Replace every 0 with 'nan' and return a copy."""
     return [float('nan') if x==0 else x for x in values]
 
-# df = pd.read_csv('https://raw.githubusercontent.com/plotly/datasets/master/gapminder_unfiltered.csv')
-# print(df)
-
 # Указываем путь к файлу CSV
 fn = r'C:\Users\ashadrin\YandexDisk\_ИИС\Position\_TEST_CenterStrikeVola_RTS.csv'
 # Начальные параметры графиков: 840 - кол.торговых минуток за сутки
@@ -41,21 +38,15 @@ app.layout = html.Div([
         inline=True),
 ])
 
-# app.layout = html.Div([
-#     html.H4(children='Заголовок', style={'textAlign':'center'}),
-#     dcc.Graph(id='graph-content'),
-# ])
-
 @callback(
     Output('graph-content', 'figure'),
     Input('checklist', 'value'))
 
 def update_graph(value):
-    # dff = df[df['W 30.01.2025']==value]
-
     fig = px.line(df, x='DateTime', y=[df.columns[1], df.columns[2], df.columns[3],
                                        df.columns[4], df.columns[5], df.columns[6],
-                                       df.columns[7], df.columns[8], df.columns[9], df.columns[10]])
+                                       df.columns[7], df.columns[8], df.columns[9],
+                                       df.columns[10]])
 
     fig.update_xaxes(
         rangebreaks=[
