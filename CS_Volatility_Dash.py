@@ -41,6 +41,11 @@ app.layout = html.Div([
         inline=True),
 ])
 
+# app.layout = html.Div([
+#     html.H4(children='Заголовок', style={'textAlign':'center'}),
+#     dcc.Graph(id='graph-content'),
+# ])
+
 @callback(
     Output('graph-content', 'figure'),
     Input('checklist', 'value'))
@@ -51,25 +56,26 @@ def update_graph(value):
     fig = px.line(df, x='DateTime', y=[df.columns[1], df.columns[2], df.columns[3],
                                        df.columns[4], df.columns[5], df.columns[6],
                                        df.columns[7], df.columns[8], df.columns[9], df.columns[10]])
+
     fig.update_xaxes(
         rangebreaks=[
             dict(bounds=[0, 10], pattern="hour"),  # hide hours outside of 10am-0pm
         ]
     )
 
-    fig.update_xaxes(
-        rangeslider_visible=True,
-        tickformatstops=[
-            dict(dtickrange=[None, 1000], value="%H:%M:%S.%L ms"),
-            dict(dtickrange=[1000, 60000], value="%H:%M:%S s"),
-            dict(dtickrange=[60000, 3600000], value="%H:%M m"),
-            dict(dtickrange=[3600000, 86400000], value="%H:%M h"),
-            dict(dtickrange=[86400000, 604800000], value="%e. %b d"),
-            dict(dtickrange=[604800000, "M1"], value="%e. %b w"),
-            dict(dtickrange=["M1", "M12"], value="%b '%y M"),
-            dict(dtickrange=["M12", None], value="%Y Y")
-        ]
-    )
+    # fig.update_xaxes(
+    #     rangeslider_visible=True,
+    #     tickformatstops=[
+    #         dict(dtickrange=[None, 1000], value="%H:%M:%S.%L ms"),
+    #         dict(dtickrange=[1000, 60000], value="%H:%M:%S s"),
+    #         dict(dtickrange=[60000, 3600000], value="%H:%M m"),
+    #         dict(dtickrange=[3600000, 86400000], value="%H:%M h"),
+    #         dict(dtickrange=[86400000, 604800000], value="%e. %b d"),
+    #         dict(dtickrange=[604800000, "M1"], value="%e. %b w"),
+    #         dict(dtickrange=["M1", "M12"], value="%b '%y M"),
+    #         dict(dtickrange=["M12", None], value="%Y Y")
+    #     ]
+    # )
 
     return fig
 
