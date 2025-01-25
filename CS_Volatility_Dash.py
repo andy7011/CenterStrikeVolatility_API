@@ -8,9 +8,9 @@ def zero_to_nan(values):
     return [float('nan') if x==0 else x for x in values]
 
 # Указываем путь к файлу CSV
-fn = r'C:\Users\ashadrin\YandexDisk\_ИИС\Position\_TEST_CenterStrikeVola_RTS.csv'
+fn = r'C:\Users\Андрей\YandexDisk\_ИИС\Position\_TEST_CenterStrikeVola_RTS.csv'
 # Начальные параметры графиков: 840 - кол.торговых минуток за сутки
-limit_day = 100
+limit_day = 17000
 # Кол.торговых минуток за месяц 17640 = 840 мин x 21 раб. день
 limit_month = 17640
 
@@ -28,19 +28,22 @@ df['DateTime'] = pd.to_datetime(df['DateTime'], dayfirst=True)
 
 app = Dash()
 
-app.layout = html.Div([
-    html.H4(children='Заголовок', style={'textAlign':'center'}),
-    dcc.Graph(id='graph-content'),
-    dcc.Checklist(
-        id='checklist',
-        options=df.columns[1:11],
-        value=df.columns[1:6].values,
-        inline=True),
-])
+fig = px.line(df, x='DateTime', y=[df.columns[1], df.columns[2], df.columns[3],
+                                   df.columns[4], df.columns[5], df.columns[6],
+                                   df.columns[7], df.columns[8], df.columns[9],
+                                   df.columns[10]], render_mode='svg')
+fig.update_xaxes(
+        rangebreaks=[
+            dict(bounds=[0, 10], pattern="hour"),  # hide hours outside of 10am-0pm
+        ]
+    )
+title = html.H1("Central Strike Volatility")
+graph_to_display = dcc.Graph(id="graph-content", figure=fig)
 
-@callback(
-    Output('graph-content', 'figure'),
-    Input('checklist', 'value'))
+app.layout = html.Div([
+    title,
+    graph_to_display,
+])
 
 def update_graph(value):
     fig = px.line(df, x='DateTime', y=[df.columns[1], df.columns[2], df.columns[3],
@@ -53,20 +56,6 @@ def update_graph(value):
             dict(bounds=[0, 10], pattern="hour"),  # hide hours outside of 10am-0pm
         ]
     )
-
-    # fig.update_xaxes(
-    #     rangeslider_visible=True,
-    #     tickformatstops=[
-    #         dict(dtickrange=[None, 1000], value="%H:%M:%S.%L ms"),
-    #         dict(dtickrange=[1000, 60000], value="%H:%M:%S s"),
-    #         dict(dtickrange=[60000, 3600000], value="%H:%M m"),
-    #         dict(dtickrange=[3600000, 86400000], value="%H:%M h"),
-    #         dict(dtickrange=[86400000, 604800000], value="%e. %b d"),
-    #         dict(dtickrange=[604800000, "M1"], value="%e. %b w"),
-    #         dict(dtickrange=["M1", "M12"], value="%b '%y M"),
-    #         dict(dtickrange=["M12", None], value="%Y Y")
-    #     ]
-    # )
 
     return fig
 
