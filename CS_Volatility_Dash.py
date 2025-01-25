@@ -10,7 +10,7 @@ def zero_to_nan(values):
 # Указываем путь к файлу CSV
 fn = r'C:\Users\Андрей\YandexDisk\_ИИС\Position\_TEST_CenterStrikeVola_RTS.csv'
 # Начальные параметры графиков: 840 - кол.торговых минуток за сутки
-limit_day = 2000
+limit_day = 7000
 # Кол.торговых минуток за месяц 17640 = 840 мин x 21 раб. день
 limit_month = 17640
 
