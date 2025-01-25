@@ -10,7 +10,7 @@ def zero_to_nan(values):
 # Указываем путь к файлу CSV
 fn = r'C:\Users\Андрей\YandexDisk\_ИИС\Position\_TEST_CenterStrikeVola_RTS.csv'
 # Начальные параметры графиков: 840 - кол.торговых минуток за сутки
-limit_day = 17000
+limit_day = 2000
 # Кол.торговых минуток за месяц 17640 = 840 мин x 21 раб. день
 limit_month = 17640
 
@@ -40,6 +40,21 @@ fig.update_xaxes(
 title = html.H1("Central Strike Volatility")
 graph_to_display = dcc.Graph(id="graph-content", figure=fig)
 
+fig.update_layout(
+    xaxis=dict(
+        rangeselector=dict(
+            buttons=list([
+                dict(count=1,
+                    step="day",
+                    stepmode="backward"),
+            ])
+        ),
+        rangeslider=dict(
+            visible=True
+        ),
+    )
+)
+
 app.layout = html.Div([
     title,
     graph_to_display,
@@ -53,7 +68,12 @@ def update_graph(value):
 
     fig.update_xaxes(
         rangebreaks=[
-            dict(bounds=[0, 10], pattern="hour"),  # hide hours outside of 10am-0pm
+            dict(bounds=["sat", "mon"])] # Исключить выходные
+    )
+
+    fig.update_xaxes(
+        rangebreaks=[
+            dict(bounds=[0, 10], pattern="hour"),  # Исключить неторговые часы
         ]
     )
 
