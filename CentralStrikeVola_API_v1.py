@@ -13,7 +13,7 @@ from moex_api import get_option_expirations
 from moex_api import get_option_board
 from moex_api import get_option_list_by_series
 from moex_api import get_option_series
-from moex_api import _convert_moex_data_structure_to_list_of_dicts
+# from alor_api import AlorApi
 
 from requests import post, get, put, delete, Response  # Запросы/ответы от сервера запросов
 import requests
@@ -79,7 +79,7 @@ def updateGraph():
 
     # Формируем список тикеров для получения котировок
     symbols = f'{exchange}:{fut_1},{exchange}:{fut_2}'
-    # print('список тикеров для получения котировок:',symbols)
+    print('список тикеров для получения котировок:',symbols)
 
     # Котировки для выбранных инструментов symbols
     res = _alorApi.get_securities_quotes(symbols)
@@ -138,6 +138,11 @@ def updateGraph():
     # Котировки для выбранных инструментов symbols_2
     res_2 = _alorApi.get_securities_quotes(symbols_2)
     print('\n Котировки опционов центрального страйка следующей серии:','\n', res_2)
+
+    # Подписка на котировки
+    print('Подписка на котировки: ', _alorApi.subscribe_quotes(fut_1))
+
+
 
 
 
@@ -281,13 +286,13 @@ if __name__ == "__main__":
     for i in option_expirations_fut_1:
         expiration_date = i['expiration_date']
         dict_option_expirations_fut_1.append(expiration_date)
-    print('\n Даты окончания действия опционов базового актива', fut_1, '\n', dict_option_expirations_fut_1)
+    # print('\n Даты окончания действия опционов базового актива', fut_1, '\n', dict_option_expirations_fut_1)
     option_expirations_fut_2 = get_option_expirations(fut_2)
     dict_option_expirations_fut_2 = []
     for i in option_expirations_fut_2:
         expiration_date = i['expiration_date']
         dict_option_expirations_fut_2.append(expiration_date)
-    print('\n Даты окончания действия опционов базового актива', fut_2, '\n', dict_option_expirations_fut_2)
+    # print('\n Даты окончания действия опционов базового актива', fut_2, '\n', dict_option_expirations_fut_2)
     option_expirations = get_option_expirations(fut_1) + get_option_expirations(fut_2)
     # print('\n Даты экспирации выбранных серий option_expirations:','\n',option_expirations)
 
@@ -297,7 +302,7 @@ if __name__ == "__main__":
         options_series_type = i['series_type']
         options_series_name = " ".join(options_series_type) + ' ' + options_series_name
         options_series_names.append(options_series_name)
-    print("\n Имена колонок для записи в csv файл options_series_names:",'\n',options_series_names)
+    # print("\n Имена колонок для записи в csv файл options_series_names:",'\n',options_series_names)
 
     # Опционные серии по базовому активу fut_1 (текущая серия)
     fut_series = [fut_1]
@@ -306,7 +311,7 @@ if __name__ == "__main__":
     for item in data:
         if item['underlying_asset'] in fut_series:
             option_series_by_name_series_1.append(item['name'])
-    print("\n Опционные серии по базовому активу", fut_series, '\n', option_series_by_name_series_1)
+    # print("\n Опционные серии по базовому активу", fut_series, '\n', option_series_by_name_series_1)
 
     # Опционные серии по базовому активу fut_2 (следующая серия)
     fut_series = [fut_2]
@@ -315,7 +320,7 @@ if __name__ == "__main__":
     for item in data:
         if item['underlying_asset'] in fut_series:
             option_series_by_name_series_2.append(item['name'])
-    print("\n Опционные серии по базовому активу", fut_series, '\n', option_series_by_name_series_2)
+    # print("\n Опционные серии по базовому активу", fut_series, '\n', option_series_by_name_series_2)
 
 
 

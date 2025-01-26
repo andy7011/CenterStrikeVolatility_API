@@ -37,13 +37,13 @@ dict_option_expirations_fut_1 = []
 for i in option_expirations_fut_1:
     expiration_date = i['expiration_date']
     dict_option_expirations_fut_1.append(expiration_date)
-print('\n Даты окончания действия опционов базового актива', fut_1, '\n', dict_option_expirations_fut_1)
+# print('\n Даты окончания действия опционов базового актива', fut_1, '\n', dict_option_expirations_fut_1)
 option_expirations_fut_2 = get_option_expirations(fut_2)
 dict_option_expirations_fut_2 = []
 for i in option_expirations_fut_2:
     expiration_date = i['expiration_date']
     dict_option_expirations_fut_2.append(expiration_date)
-print('\n Даты окончания действия опционов базового актива', fut_2, '\n', dict_option_expirations_fut_2)
+# print('\n Даты окончания действия опционов базового актива', fut_2, '\n', dict_option_expirations_fut_2)
 option_expirations = get_option_expirations(fut_1) + get_option_expirations(fut_2)
 # print('\n Даты экспирации выбранных серий option_expirations:','\n',option_expirations)
 
@@ -62,7 +62,7 @@ option_series_by_name_series_1 = []
 for item in data:
     if item['underlying_asset'] in fut_series:
         option_series_by_name_series_1.append(item['name'])
-print("\n Опционные серии по базовому активу", fut_series, '\n', option_series_by_name_series_1)
+# print("\n Опционные серии по базовому активу", fut_series, '\n', option_series_by_name_series_1)
 
 # Опционные серии по базовому активу fut_2 (следующая серия)
 fut_series = [fut_2]
@@ -71,7 +71,7 @@ option_series_by_name_series_2 = []
 for item in data:
     if item['underlying_asset'] in fut_series:
         option_series_by_name_series_2.append(item['name'])
-print("\n Опционные серии по базовому активу", fut_series, '\n', option_series_by_name_series_2)
+# print("\n Опционные серии по базовому активу", fut_series, '\n', option_series_by_name_series_2)
 
 # Функция для замены нулей на NaN
 def zero_to_nan(values):
@@ -102,9 +102,9 @@ app = Dash()
 fig = px.line(df, x='DateTime', y=[df.columns[1], df.columns[2], df.columns[3],
                                    df.columns[4], df.columns[5], df.columns[6],
                                    df.columns[7], df.columns[8], df.columns[9],
-                                   df.columns[10]], width=1000, height=500, render_mode='svg')
+                                   df.columns[10]], width=1000, height=600, render_mode='svg')
 
-title = html.H1("Central Strike Volatility")
+title = html.H1("RTS. Central Strike Options Volatility.")
 graph_to_display = dcc.Graph(id="graph-content", figure=fig)
 
 fig.update_layout(
@@ -140,25 +140,6 @@ def update_graph(value):
                                        df.columns[4], df.columns[5], df.columns[6],
                                        df.columns[7], df.columns[8], df.columns[9],
                                        df.columns[10]])
-
-    fig.update_xaxes(
-        rangebreaks=[
-            {'pattern': 'day of week', 'bounds': [6, 1]},
-            {'pattern': 'hour', 'bounds': [24, 10]}
-        ]
-    )
-
-    # fig.update_xaxes(
-    #     rangebreaks=[
-    #         dict(bounds=["sat", "mon"])] # Исключить выходные
-    # )
-    #
-    # fig.update_xaxes(
-    #     rangebreaks=[
-    #         dict(bounds=[0, 10], pattern="hour"),  # Исключить неторговые часы
-    #     ]
-    # )
-
     return fig
 
 if __name__ == '__main__':
