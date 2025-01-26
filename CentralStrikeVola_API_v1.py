@@ -36,7 +36,7 @@ SMALL_SIZE = 8
 matplotlib.rc('font', size=SMALL_SIZE)
 
 # Указываем путь к файлу CSV
-fn = r'C:\Users\ashadrin\YandexDisk\_ИИС\Position\_TEST_CenterStrikeVola_RTS.csv'
+fn = r'C:\Users\Андрей\YandexDisk\_ИИС\Position\_TEST_CenterStrikeVola_RTS.csv'
 # Начальные параметры графиков: 840 - кол.торговых минуток за сутки
 limit_day = 840
 # Кол.торговых минуток за месяц 17640 = 840 мин x 21 раб. день
