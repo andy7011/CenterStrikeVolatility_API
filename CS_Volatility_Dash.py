@@ -104,6 +104,21 @@ fig = px.line(df, x='DateTime', y=[df.columns[1], df.columns[2], df.columns[3],
                                    df.columns[7], df.columns[8], df.columns[9],
                                    df.columns[10]], width=1000, height=600, render_mode='svg')
 
+print(df['DateTime'].iloc[-1])
+print(df[df.columns[1]].iloc[-1])
+fig1 = px.scatter(df, x=[df['DateTime'].iloc[-1]], y=[df[df.columns[1]].iloc[-1]])
+fig1.update_traces(textposition="bottom right")
+
+# fig.add_trace(
+#     go.Scatter(
+#         x=days_of_week,
+#         y=total_bills,
+#         yaxis="y2",
+#         name="Total bill amount",
+#         marker=dict(color="crimson"),
+#     )
+# )
+
 title = html.H1("RTS. Central Strike Options Volatility.")
 graph_to_display = dcc.Graph(id="graph-content", figure=fig)
 
