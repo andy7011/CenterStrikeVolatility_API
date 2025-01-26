@@ -1,6 +1,7 @@
 from dash import Dash, html, dcc, callback, Output, Input
 import plotly.express as px
 import pandas as pd
+import plotly.graph_objects as go
 import json
 
 from infrastructure.alor_api import AlorApi
@@ -106,8 +107,20 @@ fig = px.line(df, x='DateTime', y=[df.columns[1], df.columns[2], df.columns[3],
 
 print(df['DateTime'].iloc[-1])
 print(df[df.columns[1]].iloc[-1])
-fig1 = px.scatter(df, x=[df['DateTime'].iloc[-1]], y=[df[df.columns[1]].iloc[-1]], text=[df[df.columns[1]].iloc[-1]])
-fig1.update_traces(textposition="bottom right")
+# Add scatter traces
+# fig.add_trace(go.Scatter(x=[df['DateTime'].iloc[-1]], y=[df[df.columns[1]].iloc[-1]], mode="markers"))
+# fig1 = px.scatter(df, x=[df['DateTime'].iloc[-1]], y=[df[df.columns[1]].iloc[-1]], text=[df[df.columns[1]].iloc[-1]])
+# fig1.update_traces(textposition="bottom right")
+
+# Добавляем текстовые метки
+fig.add_trace(go.Scatter(
+    x=[df['DateTime'].iloc[-1]], y=[df[df.columns[1]].iloc[-1]],
+    mode="text",
+    text=[df[df.columns[1]].iloc[-1]],
+    textposition="middle right",
+    textfont=dict(size=10),
+    showlegend=False,
+))
 
 # fig.add_trace(
 #     go.Scatter(
@@ -137,7 +150,7 @@ fig.update_layout(
     )
 )
 
-fig.update_layout(margin=dict(l=1, r=1, t=1, b=1))
+fig.update_layout(margin=dict(l=0, r=0, t=0, b=0))
 
 fig.update_xaxes(
         rangebreaks=[
@@ -145,6 +158,8 @@ fig.update_xaxes(
             {'pattern': 'hour', 'bounds': [24, 10]}
         ]
     )
+
+fig.update_yaxes(automargin=True)
 
 app.layout = html.Div([
     title,
