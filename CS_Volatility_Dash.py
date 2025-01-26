@@ -106,7 +106,7 @@ fig = px.line(df, x='DateTime', y=[df.columns[1], df.columns[2], df.columns[3],
 
 print(df['DateTime'].iloc[-1])
 print(df[df.columns[1]].iloc[-1])
-fig1 = px.scatter(df, x=[df['DateTime'].iloc[-1]], y=[df[df.columns[1]].iloc[-1]])
+fig1 = px.scatter(df, x=[df['DateTime'].iloc[-1]], y=[df[df.columns[1]].iloc[-1]], text=[df[df.columns[1]].iloc[-1]])
 fig1.update_traces(textposition="bottom right")
 
 # fig.add_trace(
@@ -136,6 +136,8 @@ fig.update_layout(
         ),
     )
 )
+
+fig.update_layout(margin=dict(l=1, r=1, t=1, b=1))
 
 fig.update_xaxes(
         rangebreaks=[
