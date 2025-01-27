@@ -20,7 +20,7 @@ exchange = 'MOEX'
 URL_API = f'https://api.alor.ru'
 asset_code = 'RTS'
 strike_step = 2500
-line_colors = {"red", "orange", "green", "aqua", "blue", "lightcoral", "moccasin", "lime", "paleturquoise", "cornflowerblue"}
+line_colors = ["red", "orange", "green", "aqua", "blue", "lightcoral", "moccasin", "lime", "paleturquoise", "cornflowerblue"]
 
 _API_METHOD_QUOTES_SUBSCRIBE = "QuotesSubscribe"
 _API_METHOD_INSTRUMENTS_GET_AND_SUBSCRIBE = "InstrumentsGetAndSubscribeV2"
@@ -129,8 +129,6 @@ app.layout = html.Div([
 
 def update_graph(value):
     # print('RUN update_graph')
-    fig = {}
-    fig = go.Figure()
     # Читаем CSV/TXT файл (разделённый точкой с запятой) в DataFrame
     df = pd.read_csv(fn, sep=';')
     df = df.tail(limit_day)
@@ -142,7 +140,9 @@ def update_graph(value):
     # Преобразуем первую колонку в объект datetime
     df['DateTime'] = pd.to_datetime(df['DateTime'], dayfirst=True)
 
-    # Создаем фигуру
+    # Создаем фигуру и текстовые метки
+    fig = {}
+    fig = go.Figure()
     for i in range(1, len(df.columns)):
         if df.columns[i] in options_series_names:
             fig.add_trace(
@@ -152,9 +152,7 @@ def update_graph(value):
                     name=df.columns[i],
                 )
             )
-
-    # Добавляем текстовые метки
-    for i in range(1, len(df.columns)):
+        # endpoints
         if df.columns[i] in options_series_names:
             fig.add_trace(go.Scatter(
                 x=[df['DateTime'].iloc[-1]], y=[df[df.columns[i]].iloc[-1]],
@@ -165,6 +163,7 @@ def update_graph(value):
                 showlegend=False,
             ))
 
+    # Добавляем слайдер
     fig.update_layout(
         xaxis=dict(
             rangeselector=dict(
@@ -189,7 +188,7 @@ def update_graph(value):
         ]
     )
 
-    # fig.update_yaxes(automargin=True)
+    fig.update_yaxes(automargin=True)
 
     return fig
 
