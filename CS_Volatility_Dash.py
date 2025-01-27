@@ -80,9 +80,9 @@ def zero_to_nan(values):
     return [float('nan') if x==0 else x for x in values]
 
 # Указываем путь к файлу CSV
-fn = r'C:\Users\Андрей\YandexDisk\_ИИС\Position\_TEST_CenterStrikeVola_RTS.csv'
+fn = r'C:\Users\ashadrin\YandexDisk\_ИИС\Position\_TEST_CenterStrikeVola_RTS.csv'
 # Начальные параметры графиков: 840 - кол.торговых минуток за сутки
-limit_day = 4800
+limit_day = 800
 # Кол.торговых минуток за месяц 17640 = 840 мин x 21 раб. день
 limit_month = 17640
 
@@ -93,7 +93,6 @@ df = df.tail(limit_day)
 # Заменяем нули на NaN
 for i in range(1, len(df.columns)):
     df[df.columns[i]] = zero_to_nan(df[df.columns[i]])
-# print(df)
 
 # Преобразуем первую колонку в объект datetime
 df['DateTime'] = pd.to_datetime(df['DateTime'], dayfirst=True)
@@ -112,16 +111,6 @@ print(df[df.columns[1]].iloc[-1])
 # fig1 = px.scatter(df, x=[df['DateTime'].iloc[-1]], y=[df[df.columns[1]].iloc[-1]], text=[df[df.columns[1]].iloc[-1]])
 # fig1.update_traces(textposition="bottom right")
 
-# Добавляем текстовые метки
-fig.add_trace(go.Scatter(
-    x=[df['DateTime'].iloc[-1]], y=[df[df.columns[1]].iloc[-1]],
-    mode="text",
-    text=[df[df.columns[1]].iloc[-1]],
-    textposition="middle right",
-    textfont=dict(size=10),
-    showlegend=False,
-))
-
 # fig.add_trace(
 #     go.Scatter(
 #         x=days_of_week,
@@ -135,43 +124,77 @@ fig.add_trace(go.Scatter(
 title = html.H1("RTS. Central Strike Options Volatility.")
 graph_to_display = dcc.Graph(id="graph-content", figure=fig)
 
-fig.update_layout(
-    xaxis=dict(
-        rangeselector=dict(
-            buttons=list([
-                dict(count=1,
-                    step="day",
-                    stepmode="backward"),
-            ])
-        ),
-        rangeslider=dict(
-            visible=True
-        ),
-    )
-)
-
-fig.update_layout(margin=dict(l=0, r=0, t=0, b=0))
-
-fig.update_xaxes(
-        rangebreaks=[
-            {'pattern': 'day of week', 'bounds': [6, 1]},
-            {'pattern': 'hour', 'bounds': [24, 10]}
-        ]
-    )
-
-fig.update_yaxes(automargin=True)
-
 app.layout = html.Div([
     title,
     graph_to_display,
+    dcc.Interval(
+        id='interval-component',
+        interval=10*1000,  # Update data every 10 second
+        n_intervals=0
+    )
 ])
+
+# Define the callback to update the graph with new data
+@app.callback(
+    Output('graph-content', 'figure'),
+    [Input('interval-component', 'n_intervals')]
+)
 
 def update_graph(value):
     print('RUN update_graph')
+
+    # Читаем CSV/TXT файл (разделённый точкой с запятой) в DataFrame
+    df = pd.read_csv(fn, sep=';')
+    df = df.tail(limit_day)
+
+    # Заменяем нули на NaN
+    for i in range(1, len(df.columns)):
+        df[df.columns[i]] = zero_to_nan(df[df.columns[i]])
+
+    # Преобразуем первую колонку в объект datetime
+    df['DateTime'] = pd.to_datetime(df['DateTime'], dayfirst=True)
+
     fig = px.line(df, x='DateTime', y=[df.columns[1], df.columns[2], df.columns[3],
                                        df.columns[4], df.columns[5], df.columns[6],
                                        df.columns[7], df.columns[8], df.columns[9],
-                                       df.columns[10]])
+                                       df.columns[10]], width=1000, height=600, render_mode='svg')
+
+    # Добавляем текстовые метки
+    fig.add_trace(go.Scatter(
+        x=[df['DateTime'].iloc[-1]], y=[df[df.columns[1]].iloc[-1]],
+        mode="text",
+        text=[df[df.columns[1]].iloc[-1]],
+        textposition="middle right",
+        textfont=dict(size=10),
+        showlegend=False,
+    ))
+
+    fig.update_layout(
+        xaxis=dict(
+            rangeselector=dict(
+                buttons=list([
+                    dict(count=1,
+                         step="day",
+                         stepmode="backward"),
+                ])
+            ),
+            rangeslider=dict(
+                visible=True
+            ),
+        )
+    )
+
+    fig.update_layout(margin=dict(l=0, r=0, t=0, b=0))
+
+    fig.update_xaxes(
+        rangebreaks=[
+            {'pattern': 'day of week', 'bounds': [6, 1]},
+            {'pattern': 'hour', 'bounds': [24, 9]}
+        ]
+    )
+
+    fig.update_yaxes(automargin=True)
+
     return fig
 
 if __name__ == '__main__':
