@@ -2,6 +2,7 @@ from dash import Dash, html, dcc, callback, Output, Input
 import plotly.express as px
 import pandas as pd
 import plotly.graph_objects as go
+from datetime import datetime
 import json
 
 from infrastructure.alor_api import AlorApi
@@ -19,6 +20,7 @@ exchange = 'MOEX'
 URL_API = f'https://api.alor.ru'
 asset_code = 'RTS'
 strike_step = 2500
+line_colors = {"red", "orange", "green", "aqua", "blue", "lightcoral", "moccasin", "lime", "paleturquoise", "cornflowerblue"}
 
 _API_METHOD_QUOTES_SUBSCRIBE = "QuotesSubscribe"
 _API_METHOD_INSTRUMENTS_GET_AND_SUBSCRIBE = "InstrumentsGetAndSubscribeV2"
@@ -51,28 +53,33 @@ option_expirations = get_option_expirations(fut_1) + get_option_expirations(fut_
 options_series_names = []
 for i in option_expirations:
     options_series_name = i['expiration_date']
+    options_series_date = datetime.strptime(options_series_name, '%Y-%m-%d')
+    # # date format: dd-mm-yyyy
+    # format = "%d-%m-%Y"
+    # # format datetime using strftime()
+    # options_series_name = options_series_name.strftime(format)
     options_series_type = i['series_type']
-    options_series_name = " ".join(options_series_type) + ' ' + options_series_name
+    options_series_name = " ".join(options_series_type) + ' ' + options_series_date.strftime('%d.%m.%Y')
     options_series_names.append(options_series_name)
-print("\n Имена колонок для записи в csv файл options_series_names:",'\n',options_series_names)
+# print("\n Имена колонок для записи в csv файл options_series_names:",'\n',options_series_names)
 
-# Опционные серии по базовому активу fut_1 (текущая серия)
-fut_series = [fut_1]
-data = get_option_series(asset_code)
-option_series_by_name_series_1 = []
-for item in data:
-    if item['underlying_asset'] in fut_series:
-        option_series_by_name_series_1.append(item['name'])
-# print("\n Опционные серии по базовому активу", fut_series, '\n', option_series_by_name_series_1)
-
-# Опционные серии по базовому активу fut_2 (следующая серия)
-fut_series = [fut_2]
-data = get_option_series(asset_code)
-option_series_by_name_series_2 = []
-for item in data:
-    if item['underlying_asset'] in fut_series:
-        option_series_by_name_series_2.append(item['name'])
-# print("\n Опционные серии по базовому активу", fut_series, '\n', option_series_by_name_series_2)
+# # Опционные серии по базовому активу fut_1 (текущая серия)
+# fut_series = [fut_1]
+# data = get_option_series(asset_code)
+# option_series_by_name_series_1 = []
+# for item in data:
+#     if item['underlying_asset'] in fut_series:
+#         option_series_by_name_series_1.append(item['name'])
+# # print("\n Опционные серии по базовому активу", fut_series, '\n', option_series_by_name_series_1)
+#
+# # Опционные серии по базовому активу fut_2 (следующая серия)
+# fut_series = [fut_2]
+# data = get_option_series(asset_code)
+# option_series_by_name_series_2 = []
+# for item in data:
+#     if item['underlying_asset'] in fut_series:
+#         option_series_by_name_series_2.append(item['name'])
+# # print("\n Опционные серии по базовому активу", fut_series, '\n', option_series_by_name_series_2)
 
 # Функция для замены нулей на NaN
 def zero_to_nan(values):
@@ -99,27 +106,7 @@ df['DateTime'] = pd.to_datetime(df['DateTime'], dayfirst=True)
 
 app = Dash()
 
-fig = px.line(df, x='DateTime', y=[df.columns[1], df.columns[2], df.columns[3],
-                                   df.columns[4], df.columns[5], df.columns[6],
-                                   df.columns[7], df.columns[8], df.columns[9],
-                                   df.columns[10]], width=1000, height=600, render_mode='svg')
-
-print(df['DateTime'].iloc[-1])
-print(df[df.columns[1]].iloc[-1])
-# Add scatter traces
-# fig.add_trace(go.Scatter(x=[df['DateTime'].iloc[-1]], y=[df[df.columns[1]].iloc[-1]], mode="markers"))
-# fig1 = px.scatter(df, x=[df['DateTime'].iloc[-1]], y=[df[df.columns[1]].iloc[-1]], text=[df[df.columns[1]].iloc[-1]])
-# fig1.update_traces(textposition="bottom right")
-
-# fig.add_trace(
-#     go.Scatter(
-#         x=days_of_week,
-#         y=total_bills,
-#         yaxis="y2",
-#         name="Total bill amount",
-#         marker=dict(color="crimson"),
-#     )
-# )
+fig = go.Figure()
 
 title = html.H1("RTS. Central Strike Options Volatility.")
 graph_to_display = dcc.Graph(id="graph-content", figure=fig)
@@ -141,8 +128,9 @@ app.layout = html.Div([
 )
 
 def update_graph(value):
-    print('RUN update_graph')
-
+    # print('RUN update_graph')
+    fig = {}
+    fig = go.Figure()
     # Читаем CSV/TXT файл (разделённый точкой с запятой) в DataFrame
     df = pd.read_csv(fn, sep=';')
     df = df.tail(limit_day)
@@ -154,20 +142,28 @@ def update_graph(value):
     # Преобразуем первую колонку в объект datetime
     df['DateTime'] = pd.to_datetime(df['DateTime'], dayfirst=True)
 
-    fig = px.line(df, x='DateTime', y=[df.columns[1], df.columns[2], df.columns[3],
-                                       df.columns[4], df.columns[5], df.columns[6],
-                                       df.columns[7], df.columns[8], df.columns[9],
-                                       df.columns[10]], width=1000, height=600, render_mode='svg')
+    # Создаем фигуру
+    for i in range(1, len(df.columns)):
+        if df.columns[i] in options_series_names:
+            fig.add_trace(
+                go.Scatter(
+                    x=df['DateTime'],
+                    y=df[df.columns[i]],
+                    name=df.columns[i],
+                )
+            )
 
     # Добавляем текстовые метки
-    fig.add_trace(go.Scatter(
-        x=[df['DateTime'].iloc[-1]], y=[df[df.columns[1]].iloc[-1]],
-        mode="text",
-        text=[df[df.columns[1]].iloc[-1]],
-        textposition="middle right",
-        textfont=dict(size=10),
-        showlegend=False,
-    ))
+    for i in range(1, len(df.columns)):
+        if df.columns[i] in options_series_names:
+            fig.add_trace(go.Scatter(
+                x=[df['DateTime'].iloc[-1]], y=[df[df.columns[i]].iloc[-1]],
+                mode="text",
+                text=[df[df.columns[i]].iloc[-1]],
+                textposition="middle right",
+                textfont=dict(size=10),
+                showlegend=False,
+            ))
 
     fig.update_layout(
         xaxis=dict(
@@ -193,7 +189,7 @@ def update_graph(value):
         ]
     )
 
-    fig.update_yaxes(automargin=True)
+    # fig.update_yaxes(automargin=True)
 
     return fig
 
