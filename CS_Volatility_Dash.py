@@ -21,7 +21,6 @@ URL_API = f'https://api.alor.ru'
 asset_code = 'RTS'
 strike_step = 2500
 line_colors = ['black', "red", "orange", "green", "aqua", "blue", "light coral", "moccasin", "lime", "pale turquoise", "cornflower blue"]
-# line_colors = ["red", "orange", "green", "aqua", "blue", "light coral"]
 
 _API_METHOD_QUOTES_SUBSCRIBE = "QuotesSubscribe"
 _API_METHOD_INSTRUMENTS_GET_AND_SUBSCRIBE = "InstrumentsGetAndSubscribeV2"
@@ -155,6 +154,7 @@ def update_graph(value):
                 mode="text",
                 text=[df[df.columns[i]].iloc[-1]],
                 textposition="middle right",
+                text=dict(color=line_colors[i]),
                 textfont=dict(size=10),
                 showlegend=False,
             ))
