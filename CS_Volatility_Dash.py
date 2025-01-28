@@ -20,7 +20,8 @@ exchange = 'MOEX'
 URL_API = f'https://api.alor.ru'
 asset_code = 'RTS'
 strike_step = 2500
-line_colors = ["red", "orange", "green", "aqua", "blue", "lightcoral", "moccasin", "lime", "paleturquoise", "cornflowerblue"]
+line_colors = ['black', "red", "orange", "green", "aqua", "blue", "light coral", "moccasin", "lime", "pale turquoise", "cornflower blue"]
+# line_colors = ["red", "orange", "green", "aqua", "blue", "light coral"]
 
 _API_METHOD_QUOTES_SUBSCRIBE = "QuotesSubscribe"
 _API_METHOD_INSTRUMENTS_GET_AND_SUBSCRIBE = "InstrumentsGetAndSubscribeV2"
@@ -137,7 +138,6 @@ def update_graph(value):
     df['DateTime'] = pd.to_datetime(df['DateTime'], dayfirst=True)
 
     # Создаем фигуру и текстовые метки
-    fig = {}
     fig = go.Figure()
     for i in range(1, len(df.columns)):
         if df.columns[i] in options_series_names:
@@ -146,12 +146,12 @@ def update_graph(value):
                     x=df['DateTime'],
                     y=df[df.columns[i]],
                     name=df.columns[i],
-                )
-            )
+                    line=dict(color=line_colors[i]),
+                ))
         # endpoints
-        if df.columns[i] in options_series_names:
             fig.add_trace(go.Scatter(
-                x=[df['DateTime'].iloc[-1]], y=[df[df.columns[i]].iloc[-1]],
+                x=[df['DateTime'].iloc[-1]],
+                y=[df[df.columns[i]].iloc[-1]],
                 mode="text",
                 text=[df[df.columns[i]].iloc[-1]],
                 textposition="middle right",
