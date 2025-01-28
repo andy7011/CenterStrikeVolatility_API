@@ -54,10 +54,6 @@ options_series_names = []
 for i in option_expirations:
     options_series_name = i['expiration_date']
     options_series_date = datetime.strptime(options_series_name, '%Y-%m-%d')
-    # # date format: dd-mm-yyyy
-    # format = "%d-%m-%Y"
-    # # format datetime using strftime()
-    # options_series_name = options_series_name.strftime(format)
     options_series_type = i['series_type']
     options_series_name = " ".join(options_series_type) + ' ' + options_series_date.strftime('%d.%m.%Y')
     options_series_names.append(options_series_name)
@@ -89,7 +85,7 @@ def zero_to_nan(values):
 # Указываем путь к файлу CSV
 fn = r'C:\Users\ashadrin\YandexDisk\_ИИС\Position\_TEST_CenterStrikeVola_RTS.csv'
 # Начальные параметры графиков: 840 - кол.торговых минуток за сутки
-limit_day = 900
+limit_day = 800
 # Кол.торговых минуток за месяц 17640 = 840 мин x 21 раб. день
 limit_month = 17640
 

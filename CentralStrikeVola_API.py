@@ -6,7 +6,7 @@ import matplotlib.animation as animation
 from matplotlib.widgets import RangeSlider, CheckButtons
 import matplotlib
 import json
-
+from datetime import datetime
 from infrastructure.alor_api import AlorApi
 from moex_api import get_futures_series
 from moex_api import get_option_expirations
@@ -207,12 +207,11 @@ if __name__ == "__main__":
 
     options_series_names = []
     for i in option_expirations:
-        # options_series_name = ' '.join(option_expirations.values())
         options_series_name = i['expiration_date']
+        options_series_date = datetime.strptime(options_series_name, '%Y-%m-%d')
         options_series_type = i['series_type']
-        options_series_name = " ".join(options_series_type) + ' ' + options_series_name
+        options_series_name = " ".join(options_series_type) + ' ' + options_series_date.strftime('%d.%m.%Y')
         options_series_names.append(options_series_name)
-        # print("options_series_type:", options_series_type)
     print("options_series_names:", options_series_names)
 
 

@@ -88,7 +88,7 @@ annotations.append(dict(xref='paper', yref='paper', x=0.0, y=1.05,
                               xanchor='left', yanchor='bottom',
                               text='Main Source for News',
                               font=dict(family='Arial',
-                                        size=30,
+                                        size=22,
                                         color='rgb(37,37,37)'),
                               showarrow=False))
 # Source
