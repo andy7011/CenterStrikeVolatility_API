@@ -85,7 +85,7 @@ def zero_to_nan(values):
 # Указываем путь к файлу CSV
 fn = r'C:\Users\ashadrin\YandexDisk\_ИИС\Position\_TEST_CenterStrikeVola_RTS.csv'
 # Начальные параметры графиков: 840 - кол.торговых минуток за сутки
-limit_day = 800
+limit_day = 900
 # Кол.торговых минуток за месяц 17640 = 840 мин x 21 раб. день
 limit_month = 17640
 
@@ -105,7 +105,7 @@ app = Dash()
 fig = go.Figure()
 
 title = html.H1("RTS. Central Strike Options Volatility.")
-graph_to_display = dcc.Graph(id="graph-content", figure=fig)
+graph_to_display = dcc.Graph(id="graph-content", figure=fig, style={'width': '100%', 'height': '85vh'})
 
 app.layout = html.Div([
     title,
@@ -120,7 +120,8 @@ app.layout = html.Div([
 # Define the callback to update the graph with new data
 @app.callback(
     Output('graph-content', 'figure'),
-    [Input('interval-component', 'n_intervals')]
+    Input('interval-component', 'n_intervals')
+
 )
 
 def update_graph(value):
@@ -147,17 +148,30 @@ def update_graph(value):
                     name=df.columns[i],
                     line=dict(color=line_colors[i]),
                 ))
-        # endpoints
-            fig.add_trace(go.Scatter(
-                x=[df['DateTime'].iloc[-1]],
-                y=[df[df.columns[i]].iloc[-1]],
-                mode="text",
-                text=[df[df.columns[i]].iloc[-1]],
-                textposition="middle right",
-                text=dict(color=line_colors[i]),
-                textfont=dict(size=10),
-                showlegend=False,
-            ))
+            # endpoints markers
+            fig.add_trace(
+                go.Scatter(
+                    x=[df['DateTime'].iloc[-1]],
+                    y=[df[df.columns[i]].iloc[-1]],
+                    mode="markers",
+                    text=[df[df.columns[i]].iloc[-1]],
+                    textposition="middle right",
+                    marker=dict(color=line_colors[i], size=3),
+                    textfont=dict(size=10),
+                    showlegend=False,
+                ))
+            # labeling the right_side of the plot
+            fig.add_trace(
+                go.Scatter(
+                    x=[df['DateTime'].iloc[-1]],
+                    y=[df[df.columns[i]].iloc[-1]],
+                    mode="text",
+                    text=[df[df.columns[i]].iloc[-1]],
+                    textposition="middle right",
+                    # fillcolor=dict(line_colors[i]),
+                    textfont=dict(size=10),
+                    showlegend=False,
+                ))
 
     # Добавляем слайдер
     fig.update_layout(
