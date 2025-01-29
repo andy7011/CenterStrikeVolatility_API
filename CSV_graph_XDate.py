@@ -6,7 +6,7 @@ import matplotlib
 import datetime
 
 # Указываем путь к файлу CSV
-fn = r'C:\Users\шадрин\YandexDisk\_ИИС\Position\CenterStrikeVola_RTS.csv'
+fn = r'C:\Users\ashadrin\YandexDisk\_ИИС\Position\CenterStrikeVola_RTS.csv'
 
 # # Читаем CSV/TXT файл (разделённый точкой с запятой) в DataFrame
 # df = pd.read_csv(fn, sep=';', parse_dates=['DateTime'])

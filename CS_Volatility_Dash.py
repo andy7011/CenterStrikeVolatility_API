@@ -2,7 +2,7 @@ from dash import Dash, html, dcc, callback, Output, Input
 import plotly.express as px
 import pandas as pd
 import plotly.graph_objects as go
-from datetime import datetime
+from datetime import datetime, timedelta, datetime, date
 import json
 
 from infrastructure.alor_api import AlorApi
@@ -85,7 +85,7 @@ def zero_to_nan(values):
 # Указываем путь к файлу CSV
 fn = r'C:\Users\ashadrin\YandexDisk\_ИИС\Position\_TEST_CenterStrikeVola_RTS.csv'
 # Начальные параметры графиков: 840 - кол.торговых минуток за сутки
-limit_day = 900
+limit_day = 3900
 # Кол.торговых минуток за месяц 17640 = 840 мин x 21 раб. день
 limit_month = 17640
 
@@ -99,6 +99,20 @@ for i in range(1, len(df.columns)):
 
 # Преобразуем первую колонку в объект datetime
 df['DateTime'] = pd.to_datetime(df['DateTime'], dayfirst=True)
+
+# print(df['DateTime'].min())
+# print(df['DateTime'].max())
+
+numdate= [x for x in range(len(df['DateTime'].unique()))]
+
+print(df['DateTime'].dt.date.unique())
+
+
+
+
+
+
+
 
 app = Dash()
 
@@ -114,15 +128,22 @@ app.layout = html.Div([
         id='interval-component',
         interval=10*1000,  # Update data every 10 second
         n_intervals=0
+    ),
+    dcc.Slider(
+        min=numdate[0], #the first date
+        max=numdate[-1], #the last date
+        value=900, #default: the first
+        marks = {numd:date.strftime('%d.%m') for numd, date in zip(numdate, df['DateTime'].dt.date.unique())},
+        id='slider'
     )
 ])
 
 # Define the callback to update the graph with new data
 @app.callback(
     Output('graph-content', 'figure'),
-    Input('interval-component', 'n_intervals')
-
-)
+    # [Input('interval-component', 'n_intervals'),
+    Input('slider', 'value')
+     )
 
 def update_graph(value):
     # print('RUN update_graph')
@@ -136,6 +157,7 @@ def update_graph(value):
 
     # Преобразуем первую колонку в объект datetime
     df['DateTime'] = pd.to_datetime(df['DateTime'], dayfirst=True)
+    numdate = [x for x in range(len(df['DateTime'].unique()))]
 
     # Создаем фигуру и текстовые метки
     fig = go.Figure()
@@ -173,21 +195,21 @@ def update_graph(value):
                     showlegend=False,
                 ))
 
-    # Добавляем слайдер
-    fig.update_layout(
-        xaxis=dict(
-            rangeselector=dict(
-                buttons=list([
-                    dict(count=1,
-                         step="day",
-                         stepmode="backward"),
-                ])
-            ),
-            rangeslider=dict(
-                visible=True
-            ),
-        )
-    )
+    # # Добавляем слайдер
+    # fig.update_layout(
+    #     xaxis=dict(
+    #         rangeselector=dict(
+    #             buttons=list([
+    #                 dict(count=1,
+    #                      step="day",
+    #                      stepmode="backward"),
+    #             ])
+    #         ),
+    #         rangeslider=dict(
+    #             visible=True
+    #         ),
+    #     )
+    # )
 
     fig.update_layout(margin=dict(l=0, r=0, t=0, b=0))
 
@@ -199,6 +221,12 @@ def update_graph(value):
     )
 
     fig.update_yaxes(automargin=True)
+
+    # @app.callback(
+    #     Output('graph-content', 'figure'),
+    #     Input('slider', 'value')
+    # )
+
 
     return fig
 
