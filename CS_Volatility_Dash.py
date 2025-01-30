@@ -20,7 +20,7 @@ exchange = 'MOEX'
 URL_API = f'https://api.alor.ru'
 asset_code = 'RTS'
 strike_step = 2500
-line_colors = ['black', "red", "orange", "green", "aqua", "blue", "light coral", "moccasin", "lime", "pale turquoise", "cornflower blue"]
+line_colors = ["red", "orange", "green", "aqua", "blue", "light coral", "moccasin", "lime", "pale turquoise", "cornflower blue"]
 
 _API_METHOD_QUOTES_SUBSCRIBE = "QuotesSubscribe"
 _API_METHOD_INSTRUMENTS_GET_AND_SUBSCRIBE = "InstrumentsGetAndSubscribeV2"
@@ -57,7 +57,7 @@ for i in option_expirations:
     options_series_type = i['series_type']
     options_series_name = " ".join(options_series_type) + ' ' + options_series_date.strftime('%d.%m.%Y')
     options_series_names.append(options_series_name)
-# print("\n Имена колонок для записи в csv файл options_series_names:",'\n',options_series_names)
+print("\n Имена колонок для записи в csv файл options_series_names:",'\n',options_series_names)
 
 # # Опционные серии по базовому активу fut_1 (текущая серия)
 # fut_series = [fut_1]
@@ -85,13 +85,20 @@ def zero_to_nan(values):
 # Указываем путь к файлу CSV
 fn = r'C:\Users\ashadrin\YandexDisk\_ИИС\Position\_TEST_CenterStrikeVola_RTS.csv'
 # Начальные параметры графиков: 840 - кол.торговых минуток за сутки
-limit_day = 3900
+limit_day = 900
 # Кол.торговых минуток за месяц 17640 = 840 мин x 21 раб. день
-limit_month = 17640
+limit_month = 21600
 
 # Читаем CSV/TXT файл (разделённый точкой с запятой) в DataFrame
 df = pd.read_csv(fn, sep=';')
-df = df.tail(limit_day)
+df = df.tail(limit_month)
+
+# Формируем цвета действующих опционных серий из списка line_colors
+line_colors_series = []
+for i in range(1, len(df.columns)):
+    if df.columns[i] in options_series_names:
+        line_colors_series.append(line_colors[i-1])
+print(line_colors_series)
 
 # Заменяем нули на NaN
 for i in range(1, len(df.columns)):
@@ -100,12 +107,15 @@ for i in range(1, len(df.columns)):
 # Преобразуем первую колонку в объект datetime
 df['DateTime'] = pd.to_datetime(df['DateTime'], dayfirst=True)
 
-# print(df['DateTime'].min())
-# print(df['DateTime'].max())
+df.index = pd.DatetimeIndex(df['DateTime'])
 
-numdate= [x for x in range(len(df['DateTime'].unique()))]
 
-print(df['DateTime'].dt.date.unique())
+def get_marks(f):
+    dates = {}
+    for z in f.index:
+        dates[f.index.get_loc(z)] = {}
+        dates[f.index.get_loc(z)] = str(z.day) + "." + str(z.month)
+        return dates
 
 
 
@@ -129,27 +139,29 @@ app.layout = html.Div([
         interval=10*1000,  # Update data every 10 second
         n_intervals=0
     ),
-    dcc.Slider(
-        min=numdate[0], #the first date
-        max=numdate[-1], #the last date
-        value=900, #default: the first
-        marks = {numd:date.strftime('%d.%m') for numd, date in zip(numdate, df['DateTime'].dt.date.unique())},
-        id='slider'
+    dcc.RangeSlider(
+        updatemode='mouseup',
+        min=0, #the first date
+        max=len(df.index) - 1, #the last date
+        step=1,
+        value=[(len(df.index) - 1) - 900,len(df.index) - 1], #default: the first
+        marks = get_marks(df),
+        id='rangeslider'
     )
 ])
 
 # Define the callback to update the graph with new data
 @app.callback(
     Output('graph-content', 'figure'),
-    # [Input('interval-component', 'n_intervals'),
-    Input('slider', 'value')
+    # Input('interval-component', 'n_intervals')
+    Input('rangeslider', 'value')
      )
 
 def update_graph(value):
     # print('RUN update_graph')
     # Читаем CSV/TXT файл (разделённый точкой с запятой) в DataFrame
     df = pd.read_csv(fn, sep=';')
-    df = df.tail(limit_day)
+    df = df.tail(limit_month)
 
     # Заменяем нули на NaN
     for i in range(1, len(df.columns)):
@@ -157,7 +169,9 @@ def update_graph(value):
 
     # Преобразуем первую колонку в объект datetime
     df['DateTime'] = pd.to_datetime(df['DateTime'], dayfirst=True)
-    numdate = [x for x in range(len(df['DateTime'].unique()))]
+    df.index = pd.DatetimeIndex(df['DateTime'])
+    print(value)
+    print(df.index[-1])
 
     # Создаем фигуру и текстовые метки
     fig = go.Figure()
@@ -165,24 +179,24 @@ def update_graph(value):
         if df.columns[i] in options_series_names:
             fig.add_trace(
                 go.Scatter(
-                    x=df['DateTime'],
+                    x=df.index,
                     y=df[df.columns[i]],
                     name=df.columns[i],
-                    line=dict(color=line_colors[i]),
+                    line=dict(color=line_colors[i-1]),
                 ))
-            # endpoints markers
+        # endpoints markers
+        if df.columns[i] in options_series_names:
             fig.add_trace(
                 go.Scatter(
                     x=[df['DateTime'].iloc[-1]],
                     y=[df[df.columns[i]].iloc[-1]],
                     mode="markers",
-                    text=[df[df.columns[i]].iloc[-1]],
-                    textposition="middle right",
-                    marker=dict(color=line_colors[i], size=3),
-                    textfont=dict(size=10),
+                    marker=dict(color=line_colors[i-1], size=10),
+                    text = df[df.columns[i]].iloc[-1],
                     showlegend=False,
                 ))
-            # labeling the right_side of the plot
+        # labeling the right_side of the plot
+        if df.columns[i] in options_series_names:
             fig.add_trace(
                 go.Scatter(
                     x=[df['DateTime'].iloc[-1]],
@@ -190,37 +204,23 @@ def update_graph(value):
                     mode="text",
                     text=[df[df.columns[i]].iloc[-1]],
                     textposition="middle right",
-                    # fillcolor=dict(line_colors[i]),
-                    textfont=dict(size=10),
+                    # fillcolor=dict(line_colors[i-1]),
+                    textfont=dict(size=16),
                     showlegend=False,
                 ))
 
-    # # Добавляем слайдер
-    # fig.update_layout(
-    #     xaxis=dict(
-    #         rangeselector=dict(
-    #             buttons=list([
-    #                 dict(count=1,
-    #                      step="day",
-    #                      stepmode="backward"),
-    #             ])
-    #         ),
-    #         rangeslider=dict(
-    #             visible=True
-    #         ),
-    #     )
-    # )
-
     fig.update_layout(margin=dict(l=0, r=0, t=0, b=0))
 
+
     fig.update_xaxes(
+        range=df.index[value],
         rangebreaks=[
             {'pattern': 'day of week', 'bounds': [6, 1]},
             {'pattern': 'hour', 'bounds': [24, 9]}
         ]
     )
 
-    fig.update_yaxes(automargin=True)
+    # fig.update_yaxes(automargin=True)
 
     # @app.callback(
     #     Output('graph-content', 'figure'),
