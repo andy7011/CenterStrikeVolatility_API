@@ -209,8 +209,6 @@ def update_graph(value):
                     showlegend=False,
                 ))
 
-    fig.update_layout(margin=dict(l=0, r=0, t=0, b=0))
-
     fig.update_xaxes(
         range=df.index[value],
         rangebreaks=[
@@ -219,7 +217,8 @@ def update_graph(value):
         ]
     )
 
-    # fig.update_yaxes(automargin=True)
+    # fig.update_layout(margin=dict(l=0, r=0, t=0, b=0))
+    fig.update_yaxes(automargin=True)
 
     # @app.callback(
     #     Output('graph-content', 'figure'),
