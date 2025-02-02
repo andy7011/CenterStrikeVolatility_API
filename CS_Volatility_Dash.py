@@ -72,9 +72,10 @@ guid = ap_provider.bars_get_and_subscribe(exchange, fut_1, tf, seconds_from, fre
 subscription = ap_provider.subscriptions[guid]  # Получаем данные подписки
 print(f'Подписка на сервере: {guid} {subscription}')
 print(f'На бирже {subscription["exchange"]} тикер {subscription["code"]} подписан на новые бары через WebSocket на временнОм интервале {subscription["tf"]}. Код подписки {guid}')
+response = ap_provider.websocket_handler
+print(ap_provider.on_new_bar(subscription['prev']))
 
-
-ap_provider.close_web_socket()  # Перед выходом закрываем соединение с WebSocket
+# ap_provider.close_web_socket()  # Перед выходом закрываем соединение с WebSocket
 
 
 # quotes = ap_provider.get_quotes(f'{exchange}:{fut_1}')[0]  # Последнюю котировку получаем через запрос
