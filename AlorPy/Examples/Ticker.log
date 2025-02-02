@@ -1,0 +1,378 @@
+02.02.2025 11:43:21 - AlorPy.Ticker - DEBUG - Ответ от сервера: {'symbol': 'SBER', 'shortname': 'Сбербанк', 'description': 'Сбербанк России ПАО ао', 'exchange': 'MOEX', 'market': 'FOND', 'type': 'CS', 'lotsize': 10, 'facevalue': 3, 'cfiCode': 'ESXXXX', 'cancellation': '9999-12-31T23:59:59.9999999', 'minstep': 0.01, 'rating': 18645160, 'marginbuy': 258.8, 'marginsell': 306, 'marginrate': 0, 'pricestep': 0, 'priceMax': 306.33, 'priceMin': 257.36, 'theorPrice': 0, 'theorPriceLimit': 0, 'volatility': 0, 'currency': 'RUB', 'ISIN': 'RU0009029540', 'yield': None, 'board': 'TQBR', 'primary_board': 'TQBR', 'tradingStatus': 18, 'tradingStatusInfo': 'нет торгов или торги закрыты', 'complexProductCategory': '', 'priceMultiplier': 1, 'priceShownUnits': 1, 'decimals': 2}
+02.02.2025 11:43:21 - AlorPy.Ticker - INFO - Информация о тикере TQBR.SBER (Сбербанк, CS) на бирже MOEX
+02.02.2025 11:43:21 - AlorPy.Ticker - INFO - - Валюта: RUB
+02.02.2025 11:43:21 - AlorPy.Ticker - INFO - - Лот: 10
+02.02.2025 11:43:21 - AlorPy.Ticker - INFO - - Шаг цены: 0.01
+02.02.2025 11:43:21 - AlorPy.Ticker - INFO - - Кол-во десятичных знаков: 2
+02.02.2025 11:43:21 - AlorPy.Ticker - INFO - - Торговый счет: #0, Договор: 88268, Портфель: D88268 (Фондовый рынок)
+02.02.2025 11:43:22 - AlorPy.Ticker - INFO - - Последняя цена сделки: 280.73
+02.02.2025 11:43:22 - AlorPy.Ticker - INFO - - Стоимость шага цены: 0 руб.
+02.02.2025 11:43:25 - AlorPy.Ticker - DEBUG - Ответ от сервера: {'symbol': 'HYDR', 'shortname': 'РусГидро', 'description': 'ПАО "РусГидро"', 'exchange': 'MOEX', 'market': 'FOND', 'type': 'CS', 'lotsize': 1000, 'facevalue': 1, 'cfiCode': 'ESXXXX', 'cancellation': '9999-12-31T23:59:59.9999999', 'minstep': 0.0001, 'rating': 2864024, 'marginbuy': 0.525, 'marginsell': 0.621, 'marginrate': 0, 'pricestep': 0, 'priceMax': 0.6366, 'priceMin': 0.5189, 'theorPrice': 0, 'theorPriceLimit': 0, 'volatility': 0, 'currency': 'RUB', 'ISIN': 'RU000A0JPKH7', 'yield': None, 'board': 'TQBR', 'primary_board': 'TQBR', 'tradingStatus': 18, 'tradingStatusInfo': 'нет торгов или торги закрыты', 'complexProductCategory': '', 'priceMultiplier': 1, 'priceShownUnits': 1, 'decimals': 4}
+02.02.2025 11:43:25 - AlorPy.Ticker - INFO - Информация о тикере TQBR.HYDR (РусГидро, CS) на бирже MOEX
+02.02.2025 11:43:25 - AlorPy.Ticker - INFO - - Валюта: RUB
+02.02.2025 11:43:25 - AlorPy.Ticker - INFO - - Лот: 1000
+02.02.2025 11:43:25 - AlorPy.Ticker - INFO - - Шаг цены: 0.0001
+02.02.2025 11:43:25 - AlorPy.Ticker - INFO - - Кол-во десятичных знаков: 4
+02.02.2025 11:43:25 - AlorPy.Ticker - INFO - - Торговый счет: #0, Договор: 88268, Портфель: D88268 (Фондовый рынок)
+02.02.2025 11:43:26 - AlorPy.Ticker - INFO - - Последняя цена сделки: 0.5697
+02.02.2025 11:43:26 - AlorPy.Ticker - INFO - - Стоимость шага цены: 0 руб.
+02.02.2025 11:43:29 - AlorPy.Ticker - DEBUG - Ответ от сервера: {'symbol': 'SI-9.24', 'shortname': 'SiU4', 'description': 'SiU4', 'exchange': 'MOEX', 'market': 'FORTS', 'type': 'Фьючерсный контракт Si-9.24', 'lotsize': 1, 'facevalue': 1000, 'cfiCode': 'FFXCSX', 'cancellation': '2024-09-19T00:00:00.0000000', 'minstep': 1, 'rating': 0, 'marginbuy': 13750.68, 'marginsell': 13750.68, 'marginrate': 0.1519, 'pricestep': 1, 'priceMax': 100098, 'priceMin': 84974, 'theorPrice': 0, 'theorPriceLimit': 0, 'volatility': 0, 'currency': 'RUB', 'ISIN': None, 'yield': None, 'board': 'RFUD', 'primary_board': 'RFUD', 'tradingStatus': 18, 'tradingStatusInfo': 'нет торгов или торги закрыты', 'complexProductCategory': '2', 'priceMultiplier': 1, 'priceShownUnits': 1, 'decimals': 0}
+02.02.2025 11:43:29 - AlorPy.Ticker - INFO - Информация о тикере RFUD.SI-9.24 (SiU4, Фьючерсный контракт Si-9.24) на бирже MOEX
+02.02.2025 11:43:29 - AlorPy.Ticker - INFO - - Валюта: RUB
+02.02.2025 11:43:29 - AlorPy.Ticker - INFO - - Лот: 1000
+02.02.2025 11:43:29 - AlorPy.Ticker - INFO - - Шаг цены: 1
+02.02.2025 11:43:29 - AlorPy.Ticker - INFO - - Кол-во десятичных знаков: 0
+02.02.2025 11:43:29 - AlorPy.Ticker - INFO - - Торговый счет: #0, Договор: 88268, Портфель: 7502HJ0 (Срочный рынок)
+02.02.2025 11:43:31 - AlorPy.Ticker - INFO - - Последняя цена сделки: 90500
+02.02.2025 11:43:31 - AlorPy.Ticker - INFO - - Стоимость шага цены: 1 руб.
+02.02.2025 11:43:31 - AlorPy.Ticker - INFO - - Цена за лот: 90500 / 1 * 1 = 90500 руб.
+02.02.2025 11:43:31 - AlorPy.Ticker - INFO - - Цена за штуку: 90500 / 1000 = 90.5 руб.
+02.02.2025 11:43:31 - AlorPy.Ticker - INFO - - Последняя цена сделки: 90500 из цены за штуку в рублях
+02.02.2025 11:43:34 - AlorPy.Ticker - DEBUG - Ответ от сервера: {'symbol': 'RTS-9.24', 'shortname': 'RIU4', 'description': 'RIU4', 'exchange': 'MOEX', 'market': 'FORTS', 'type': 'Фьючерсный контракт RTS-9.24', 'lotsize': 1, 'facevalue': 1, 'cfiCode': 'FFXCSX', 'cancellation': '2024-09-19T00:00:00.0000000', 'minstep': 10, 'rating': 0, 'marginbuy': 26066.62, 'marginsell': 26066.62, 'marginrate': 0.2753, 'pricestep': 18.33424, 'priceMax': 101280, 'priceMin': 88920, 'theorPrice': 0, 'theorPriceLimit': 0, 'volatility': 0, 'currency': 'USD', 'ISIN': None, 'yield': None, 'board': 'RFUD', 'primary_board': 'RFUD', 'tradingStatus': 18, 'tradingStatusInfo': 'нет торгов или торги закрыты', 'complexProductCategory': '2', 'priceMultiplier': 1, 'priceShownUnits': 1, 'decimals': 0}
+02.02.2025 11:43:34 - AlorPy.Ticker - INFO - Информация о тикере RFUD.RTS-9.24 (RIU4, Фьючерсный контракт RTS-9.24) на бирже MOEX
+02.02.2025 11:43:34 - AlorPy.Ticker - INFO - - Валюта: USD
+02.02.2025 11:43:34 - AlorPy.Ticker - INFO - - Лот: 1
+02.02.2025 11:43:34 - AlorPy.Ticker - INFO - - Шаг цены: 10
+02.02.2025 11:43:34 - AlorPy.Ticker - INFO - - Кол-во десятичных знаков: 0
+02.02.2025 11:43:34 - AlorPy.Ticker - INFO - - Торговый счет: #0, Договор: 88268, Портфель: 7502HJ0 (Срочный рынок)
+02.02.2025 11:43:35 - AlorPy.Ticker - INFO - - Последняя цена сделки: 94688
+02.02.2025 11:43:35 - AlorPy.Ticker - INFO - - Стоимость шага цены: 18.33424 руб.
+02.02.2025 11:43:38 - AlorPy.Ticker - DEBUG - Ответ от сервера: {'symbol': 'BR-9.24', 'shortname': 'BRU4', 'description': 'BRU4', 'exchange': 'MOEX', 'market': 'FORTS', 'type': 'Фьючерсный контракт BR-9.24', 'lotsize': 1, 'facevalue': 10, 'cfiCode': 'FCXCSX', 'cancellation': '2024-09-02T00:00:00.0000000', 'minstep': 0.01, 'rating': 0, 'marginbuy': 9910.99, 'marginsell': 9910.99, 'marginrate': 125.8219, 'pricestep': 9.11868, 'priceMax': 84.99, 'priceMin': 72.53, 'theorPrice': 0, 'theorPriceLimit': 0, 'volatility': 0, 'currency': 'USD', 'ISIN': None, 'yield': None, 'board': 'RFUD', 'primary_board': 'RFUD', 'tradingStatus': 18, 'tradingStatusInfo': 'нет торгов или торги закрыты', 'complexProductCategory': '2', 'priceMultiplier': 1, 'priceShownUnits': 1, 'decimals': 2}
+02.02.2025 11:43:38 - AlorPy.Ticker - INFO - Информация о тикере RFUD.BR-9.24 (BRU4, Фьючерсный контракт BR-9.24) на бирже MOEX
+02.02.2025 11:43:38 - AlorPy.Ticker - INFO - - Валюта: USD
+02.02.2025 11:43:38 - AlorPy.Ticker - INFO - - Лот: 10
+02.02.2025 11:43:38 - AlorPy.Ticker - INFO - - Шаг цены: 0.01
+02.02.2025 11:43:38 - AlorPy.Ticker - INFO - - Кол-во десятичных знаков: 2
+02.02.2025 11:43:38 - AlorPy.Ticker - INFO - - Торговый счет: #0, Договор: 88268, Портфель: 7502HJ0 (Срочный рынок)
+02.02.2025 11:43:40 - AlorPy.Ticker - INFO - - Последняя цена сделки: 78.77
+02.02.2025 11:43:40 - AlorPy.Ticker - INFO - - Стоимость шага цены: 9.11868 руб.
+02.02.2025 11:43:40 - AlorPy.Ticker - INFO - - Цена за лот: 78.77 / 0.01 * 9.11868 = 71818.72368 руб.
+02.02.2025 11:43:40 - AlorPy.Ticker - INFO - - Цена за штуку: 71818.72368 / 10 = 7181.872367999999 руб.
+02.02.2025 11:43:40 - AlorPy.Ticker - INFO - - Последняя цена сделки: 78.75 из цены за штуку в рублях
+02.02.2025 11:43:44 - AlorPy.Ticker - DEBUG - Ответ от сервера: {'symbol': 'CNYRUBF', 'shortname': 'CNYRUBF', 'description': 'CNYRUBF', 'exchange': 'MOEX', 'market': 'FORTS', 'type': 'CNYRUBF', 'lotsize': 1, 'facevalue': 1000, 'cfiCode': 'FFCCSX', 'cancellation': '2100-01-01T00:00:00.0000000', 'minstep': 0.001, 'rating': 2443575, 'marginbuy': 1072.14, 'marginsell': 1072.72, 'marginrate': 0, 'pricestep': 1, 'priceMax': 13.949, 'priceMin': 12.771, 'theorPrice': 0, 'theorPriceLimit': 0, 'volatility': 0, 'currency': 'RUB', 'ISIN': None, 'yield': None, 'board': 'RFUD', 'primary_board': 'RFUD', 'tradingStatus': 2, 'tradingStatusInfo': 'перерыв в торгах', 'complexProductCategory': '2', 'priceMultiplier': 1, 'priceShownUnits': 1, 'decimals': 3}
+02.02.2025 11:43:44 - AlorPy.Ticker - INFO - Информация о тикере RFUD.CNYRUBF (CNYRUBF, CNYRUBF) на бирже MOEX
+02.02.2025 11:43:44 - AlorPy.Ticker - INFO - - Валюта: RUB
+02.02.2025 11:43:44 - AlorPy.Ticker - INFO - - Лот: 1000
+02.02.2025 11:43:44 - AlorPy.Ticker - INFO - - Шаг цены: 0.001
+02.02.2025 11:43:44 - AlorPy.Ticker - INFO - - Кол-во десятичных знаков: 3
+02.02.2025 11:43:44 - AlorPy.Ticker - INFO - - Торговый счет: #0, Договор: 88268, Портфель: 7502HJ0 (Срочный рынок)
+02.02.2025 11:43:45 - AlorPy.Ticker - INFO - - Последняя цена сделки: 13.374
+02.02.2025 11:43:45 - AlorPy.Ticker - INFO - - Стоимость шага цены: 1 руб.
+02.02.2025 11:43:45 - AlorPy.Ticker - INFO - - Цена за лот: 13.374 / 0.001 * 1 = 13374.0 руб.
+02.02.2025 11:43:45 - AlorPy.Ticker - INFO - - Цена за штуку: 13374.0 / 1000 = 13.374 руб.
+02.02.2025 11:43:45 - AlorPy.Ticker - INFO - - Последняя цена сделки: 13.374 из цены за штуку в рублях
+02.02.2025 11:44:23 - AlorPy.Ticker - DEBUG - Ответ от сервера: {'symbol': 'SBER', 'shortname': 'Сбербанк', 'description': 'Сбербанк России ПАО ао', 'exchange': 'MOEX', 'market': 'FOND', 'type': 'CS', 'lotsize': 10, 'facevalue': 3, 'cfiCode': 'ESXXXX', 'cancellation': '9999-12-31T23:59:59.9999999', 'minstep': 0.01, 'rating': 18645160, 'marginbuy': 258.8, 'marginsell': 306, 'marginrate': 0, 'pricestep': 0, 'priceMax': 306.33, 'priceMin': 257.36, 'theorPrice': 0, 'theorPriceLimit': 0, 'volatility': 0, 'currency': 'RUB', 'ISIN': 'RU0009029540', 'yield': None, 'board': 'TQBR', 'primary_board': 'TQBR', 'tradingStatus': 18, 'tradingStatusInfo': 'нет торгов или торги закрыты', 'complexProductCategory': '', 'priceMultiplier': 1, 'priceShownUnits': 1, 'decimals': 2}
+02.02.2025 11:44:23 - AlorPy.Ticker - INFO - Информация о тикере TQBR.SBER (Сбербанк, CS) на бирже MOEX
+02.02.2025 11:44:23 - AlorPy.Ticker - INFO - - Валюта: RUB
+02.02.2025 11:44:23 - AlorPy.Ticker - INFO - - Лот: 10
+02.02.2025 11:44:23 - AlorPy.Ticker - INFO - - Шаг цены: 0.01
+02.02.2025 11:44:23 - AlorPy.Ticker - INFO - - Кол-во десятичных знаков: 2
+02.02.2025 11:44:23 - AlorPy.Ticker - INFO - - Торговый счет: #0, Договор: 88268, Портфель: D88268 (Фондовый рынок)
+02.02.2025 11:44:25 - AlorPy.Ticker - INFO - - Последняя цена сделки: 280.73
+02.02.2025 11:44:25 - AlorPy.Ticker - INFO - - Стоимость шага цены: 0 руб.
+02.02.2025 11:44:28 - AlorPy.Ticker - DEBUG - Ответ от сервера: {'symbol': 'HYDR', 'shortname': 'РусГидро', 'description': 'ПАО "РусГидро"', 'exchange': 'MOEX', 'market': 'FOND', 'type': 'CS', 'lotsize': 1000, 'facevalue': 1, 'cfiCode': 'ESXXXX', 'cancellation': '9999-12-31T23:59:59.9999999', 'minstep': 0.0001, 'rating': 2864024, 'marginbuy': 0.525, 'marginsell': 0.621, 'marginrate': 0, 'pricestep': 0, 'priceMax': 0.6366, 'priceMin': 0.5189, 'theorPrice': 0, 'theorPriceLimit': 0, 'volatility': 0, 'currency': 'RUB', 'ISIN': 'RU000A0JPKH7', 'yield': None, 'board': 'TQBR', 'primary_board': 'TQBR', 'tradingStatus': 18, 'tradingStatusInfo': 'нет торгов или торги закрыты', 'complexProductCategory': '', 'priceMultiplier': 1, 'priceShownUnits': 1, 'decimals': 4}
+02.02.2025 11:44:28 - AlorPy.Ticker - INFO - Информация о тикере TQBR.HYDR (РусГидро, CS) на бирже MOEX
+02.02.2025 11:44:28 - AlorPy.Ticker - INFO - - Валюта: RUB
+02.02.2025 11:44:28 - AlorPy.Ticker - INFO - - Лот: 1000
+02.02.2025 11:44:28 - AlorPy.Ticker - INFO - - Шаг цены: 0.0001
+02.02.2025 11:44:28 - AlorPy.Ticker - INFO - - Кол-во десятичных знаков: 4
+02.02.2025 11:44:28 - AlorPy.Ticker - INFO - - Торговый счет: #0, Договор: 88268, Портфель: D88268 (Фондовый рынок)
+02.02.2025 11:44:29 - AlorPy.Ticker - INFO - - Последняя цена сделки: 0.5697
+02.02.2025 11:44:29 - AlorPy.Ticker - INFO - - Стоимость шага цены: 0 руб.
+02.02.2025 11:44:32 - AlorPy.Ticker - DEBUG - Ответ от сервера: {'symbol': 'SI-3.25', 'shortname': 'SiH5', 'description': 'SiH5', 'exchange': 'MOEX', 'market': 'FORTS', 'type': 'Фьючерсный контракт Si-3.25', 'lotsize': 1, 'facevalue': 1000, 'cfiCode': 'FFXCSX', 'cancellation': '2025-03-20T00:00:00.0000000', 'minstep': 1, 'rating': 818422, 'marginbuy': 15228.09, 'marginsell': 15422.25, 'marginrate': 0, 'pricestep': 1, 'priceMax': 109353, 'priceMin': 92497, 'theorPrice': 0, 'theorPriceLimit': 0, 'volatility': 0, 'currency': 'RUB', 'ISIN': None, 'yield': None, 'board': 'RFUD', 'primary_board': 'RFUD', 'tradingStatus': 2, 'tradingStatusInfo': 'перерыв в торгах', 'complexProductCategory': '2', 'priceMultiplier': 1, 'priceShownUnits': 1, 'decimals': 0}
+02.02.2025 11:44:32 - AlorPy.Ticker - INFO - Информация о тикере RFUD.SI-3.25 (SiH5, Фьючерсный контракт Si-3.25) на бирже MOEX
+02.02.2025 11:44:32 - AlorPy.Ticker - INFO - - Валюта: RUB
+02.02.2025 11:44:32 - AlorPy.Ticker - INFO - - Лот: 1000
+02.02.2025 11:44:32 - AlorPy.Ticker - INFO - - Шаг цены: 1
+02.02.2025 11:44:32 - AlorPy.Ticker - INFO - - Кол-во десятичных знаков: 0
+02.02.2025 11:44:32 - AlorPy.Ticker - INFO - - Торговый счет: #0, Договор: 88268, Портфель: 7502HJ0 (Срочный рынок)
+02.02.2025 11:44:33 - AlorPy.Ticker - INFO - - Последняя цена сделки: 101090
+02.02.2025 11:44:33 - AlorPy.Ticker - INFO - - Стоимость шага цены: 1 руб.
+02.02.2025 11:44:33 - AlorPy.Ticker - INFO - - Цена за лот: 101090 / 1 * 1 = 101090 руб.
+02.02.2025 11:44:33 - AlorPy.Ticker - INFO - - Цена за штуку: 101090 / 1000 = 101.09 руб.
+02.02.2025 11:44:33 - AlorPy.Ticker - INFO - - Последняя цена сделки: 101090 из цены за штуку в рублях
+02.02.2025 11:44:36 - AlorPy.Ticker - DEBUG - Ответ от сервера: {'symbol': 'RTS-3.25', 'shortname': 'RIH5', 'description': 'RIH5', 'exchange': 'MOEX', 'market': 'FORTS', 'type': 'Фьючерсный контракт RTS-3.25', 'lotsize': 1, 'facevalue': 1, 'cfiCode': 'FFXCSX', 'cancellation': '2025-03-20T00:00:00.0000000', 'minstep': 10, 'rating': 117701, 'marginbuy': 28940.08, 'marginsell': 29308.17, 'marginrate': 0, 'pricestep': 19.60124, 'priceMax': 101150, 'priceMin': 88210, 'theorPrice': 0, 'theorPriceLimit': 0, 'volatility': 0, 'currency': 'USD', 'ISIN': None, 'yield': None, 'board': 'RFUD', 'primary_board': 'RFUD', 'tradingStatus': 2, 'tradingStatusInfo': 'перерыв в торгах', 'complexProductCategory': '2', 'priceMultiplier': 1, 'priceShownUnits': 1, 'decimals': 0}
+02.02.2025 11:44:36 - AlorPy.Ticker - INFO - Информация о тикере RFUD.RTS-3.25 (RIH5, Фьючерсный контракт RTS-3.25) на бирже MOEX
+02.02.2025 11:44:36 - AlorPy.Ticker - INFO - - Валюта: USD
+02.02.2025 11:44:36 - AlorPy.Ticker - INFO - - Лот: 1
+02.02.2025 11:44:36 - AlorPy.Ticker - INFO - - Шаг цены: 10
+02.02.2025 11:44:36 - AlorPy.Ticker - INFO - - Кол-во десятичных знаков: 0
+02.02.2025 11:44:36 - AlorPy.Ticker - INFO - - Торговый счет: #0, Договор: 88268, Портфель: 7502HJ0 (Срочный рынок)
+02.02.2025 11:44:38 - AlorPy.Ticker - INFO - - Последняя цена сделки: 94770
+02.02.2025 11:44:38 - AlorPy.Ticker - INFO - - Стоимость шага цены: 19.60124 руб.
+02.02.2025 11:44:41 - AlorPy.Ticker - DEBUG - Ответ от сервера: {'symbol': 'BR-3.25', 'shortname': 'BRH5', 'description': 'BRH5', 'exchange': 'MOEX', 'market': 'FORTS', 'type': 'Фьючерсный контракт BR-3.25', 'lotsize': 1, 'facevalue': 10, 'cfiCode': 'FCXCSX', 'cancellation': '2025-03-03T00:00:00.0000000', 'minstep': 0.01, 'rating': 163839, 'marginbuy': 10960.45, 'marginsell': 11124.85, 'marginrate': 0, 'pricestep': 9.80062, 'priceMax': 82.25, 'priceMin': 69.31, 'theorPrice': 0, 'theorPriceLimit': 0, 'volatility': 0, 'currency': 'USD', 'ISIN': None, 'yield': None, 'board': 'RFUD', 'primary_board': 'RFUD', 'tradingStatus': 2, 'tradingStatusInfo': 'перерыв в торгах', 'complexProductCategory': '2', 'priceMultiplier': 1, 'priceShownUnits': 1, 'decimals': 2}
+02.02.2025 11:44:41 - AlorPy.Ticker - INFO - Информация о тикере RFUD.BR-3.25 (BRH5, Фьючерсный контракт BR-3.25) на бирже MOEX
+02.02.2025 11:44:41 - AlorPy.Ticker - INFO - - Валюта: USD
+02.02.2025 11:44:41 - AlorPy.Ticker - INFO - - Лот: 10
+02.02.2025 11:44:41 - AlorPy.Ticker - INFO - - Шаг цены: 0.01
+02.02.2025 11:44:41 - AlorPy.Ticker - INFO - - Кол-во десятичных знаков: 2
+02.02.2025 11:44:41 - AlorPy.Ticker - INFO - - Торговый счет: #0, Договор: 88268, Портфель: 7502HJ0 (Срочный рынок)
+02.02.2025 11:44:42 - AlorPy.Ticker - INFO - - Последняя цена сделки: 75.69
+02.02.2025 11:44:42 - AlorPy.Ticker - INFO - - Стоимость шага цены: 9.80062 руб.
+02.02.2025 11:44:42 - AlorPy.Ticker - INFO - - Цена за лот: 75.69 / 0.01 * 9.80062 = 74171.09216 руб.
+02.02.2025 11:44:42 - AlorPy.Ticker - INFO - - Цена за штуку: 74171.09216 / 10 = 7417.109216 руб.
+02.02.2025 11:44:42 - AlorPy.Ticker - INFO - - Последняя цена сделки: 75.67 из цены за штуку в рублях
+02.02.2025 11:44:45 - AlorPy.Ticker - DEBUG - Ответ от сервера: {'symbol': 'CNYRUBF', 'shortname': 'CNYRUBF', 'description': 'CNYRUBF', 'exchange': 'MOEX', 'market': 'FORTS', 'type': 'CNYRUBF', 'lotsize': 1, 'facevalue': 1000, 'cfiCode': 'FFCCSX', 'cancellation': '2100-01-01T00:00:00.0000000', 'minstep': 0.001, 'rating': 2443575, 'marginbuy': 1072.14, 'marginsell': 1072.72, 'marginrate': 0, 'pricestep': 1, 'priceMax': 13.949, 'priceMin': 12.771, 'theorPrice': 0, 'theorPriceLimit': 0, 'volatility': 0, 'currency': 'RUB', 'ISIN': None, 'yield': None, 'board': 'RFUD', 'primary_board': 'RFUD', 'tradingStatus': 2, 'tradingStatusInfo': 'перерыв в торгах', 'complexProductCategory': '2', 'priceMultiplier': 1, 'priceShownUnits': 1, 'decimals': 3}
+02.02.2025 11:44:45 - AlorPy.Ticker - INFO - Информация о тикере RFUD.CNYRUBF (CNYRUBF, CNYRUBF) на бирже MOEX
+02.02.2025 11:44:45 - AlorPy.Ticker - INFO - - Валюта: RUB
+02.02.2025 11:44:45 - AlorPy.Ticker - INFO - - Лот: 1000
+02.02.2025 11:44:45 - AlorPy.Ticker - INFO - - Шаг цены: 0.001
+02.02.2025 11:44:45 - AlorPy.Ticker - INFO - - Кол-во десятичных знаков: 3
+02.02.2025 11:44:45 - AlorPy.Ticker - INFO - - Торговый счет: #0, Договор: 88268, Портфель: 7502HJ0 (Срочный рынок)
+02.02.2025 11:44:46 - AlorPy.Ticker - INFO - - Последняя цена сделки: 13.374
+02.02.2025 11:44:46 - AlorPy.Ticker - INFO - - Стоимость шага цены: 1 руб.
+02.02.2025 11:44:46 - AlorPy.Ticker - INFO - - Цена за лот: 13.374 / 0.001 * 1 = 13374.0 руб.
+02.02.2025 11:44:46 - AlorPy.Ticker - INFO - - Цена за штуку: 13374.0 / 1000 = 13.374 руб.
+02.02.2025 11:44:46 - AlorPy.Ticker - INFO - - Последняя цена сделки: 13.374 из цены за штуку в рублях
+02.02.2025 13:16:50 - AlorPy.Ticker - DEBUG - Ответ от сервера: {'symbol': 'SBER', 'shortname': 'Сбербанк', 'description': 'Сбербанк России ПАО ао', 'exchange': 'MOEX', 'market': 'FOND', 'type': 'CS', 'lotsize': 10, 'facevalue': 3, 'cfiCode': 'ESXXXX', 'cancellation': '9999-12-31T23:59:59.9999999', 'minstep': 0.01, 'rating': 18645160, 'marginbuy': 258.8, 'marginsell': 306, 'marginrate': 0, 'pricestep': 0, 'priceMax': 306.33, 'priceMin': 257.36, 'theorPrice': 0, 'theorPriceLimit': 0, 'volatility': 0, 'currency': 'RUB', 'ISIN': 'RU0009029540', 'yield': None, 'board': 'TQBR', 'primary_board': 'TQBR', 'tradingStatus': 18, 'tradingStatusInfo': 'нет торгов или торги закрыты', 'complexProductCategory': '', 'priceMultiplier': 1, 'priceShownUnits': 1, 'decimals': 2}
+02.02.2025 13:16:51 - AlorPy.Ticker - INFO - Информация о тикере TQBR.SBER (Сбербанк, CS) на бирже MOEX
+02.02.2025 13:16:51 - AlorPy.Ticker - INFO - - Валюта: RUB
+02.02.2025 13:16:51 - AlorPy.Ticker - INFO - - Лот: 10
+02.02.2025 13:16:51 - AlorPy.Ticker - INFO - - Шаг цены: 0.01
+02.02.2025 13:16:51 - AlorPy.Ticker - INFO - - Кол-во десятичных знаков: 2
+02.02.2025 13:16:51 - AlorPy.Ticker - INFO - - Торговый счет: #0, Договор: 88268, Портфель: D88268 (Фондовый рынок)
+02.02.2025 13:16:52 - AlorPy.Ticker - INFO - - Последняя цена сделки: 280.73
+02.02.2025 13:16:52 - AlorPy.Ticker - INFO - - Стоимость шага цены: 0 руб.
+02.02.2025 13:16:55 - AlorPy.Ticker - DEBUG - Ответ от сервера: {'symbol': 'HYDR', 'shortname': 'РусГидро', 'description': 'ПАО "РусГидро"', 'exchange': 'MOEX', 'market': 'FOND', 'type': 'CS', 'lotsize': 1000, 'facevalue': 1, 'cfiCode': 'ESXXXX', 'cancellation': '9999-12-31T23:59:59.9999999', 'minstep': 0.0001, 'rating': 2864024, 'marginbuy': 0.525, 'marginsell': 0.621, 'marginrate': 0, 'pricestep': 0, 'priceMax': 0.6366, 'priceMin': 0.5189, 'theorPrice': 0, 'theorPriceLimit': 0, 'volatility': 0, 'currency': 'RUB', 'ISIN': 'RU000A0JPKH7', 'yield': None, 'board': 'TQBR', 'primary_board': 'TQBR', 'tradingStatus': 18, 'tradingStatusInfo': 'нет торгов или торги закрыты', 'complexProductCategory': '', 'priceMultiplier': 1, 'priceShownUnits': 1, 'decimals': 4}
+02.02.2025 13:16:55 - AlorPy.Ticker - INFO - Информация о тикере TQBR.HYDR (РусГидро, CS) на бирже MOEX
+02.02.2025 13:16:55 - AlorPy.Ticker - INFO - - Валюта: RUB
+02.02.2025 13:16:55 - AlorPy.Ticker - INFO - - Лот: 1000
+02.02.2025 13:16:55 - AlorPy.Ticker - INFO - - Шаг цены: 0.0001
+02.02.2025 13:16:55 - AlorPy.Ticker - INFO - - Кол-во десятичных знаков: 4
+02.02.2025 13:16:55 - AlorPy.Ticker - INFO - - Торговый счет: #0, Договор: 88268, Портфель: D88268 (Фондовый рынок)
+02.02.2025 13:16:56 - AlorPy.Ticker - INFO - - Последняя цена сделки: 0.5697
+02.02.2025 13:16:56 - AlorPy.Ticker - INFO - - Стоимость шага цены: 0 руб.
+02.02.2025 13:16:59 - AlorPy.Ticker - DEBUG - Ответ от сервера: {'symbol': 'SI-3.25', 'shortname': 'SiH5', 'description': 'SiH5', 'exchange': 'MOEX', 'market': 'FORTS', 'type': 'Фьючерсный контракт Si-3.25', 'lotsize': 1, 'facevalue': 1000, 'cfiCode': 'FFXCSX', 'cancellation': '2025-03-20T00:00:00.0000000', 'minstep': 1, 'rating': 818422, 'marginbuy': 15228.09, 'marginsell': 15422.25, 'marginrate': 0, 'pricestep': 1, 'priceMax': 109353, 'priceMin': 92497, 'theorPrice': 0, 'theorPriceLimit': 0, 'volatility': 0, 'currency': 'RUB', 'ISIN': None, 'yield': None, 'board': 'RFUD', 'primary_board': 'RFUD', 'tradingStatus': 2, 'tradingStatusInfo': 'перерыв в торгах', 'complexProductCategory': '2', 'priceMultiplier': 1, 'priceShownUnits': 1, 'decimals': 0}
+02.02.2025 13:16:59 - AlorPy.Ticker - INFO - Информация о тикере RFUD.SI-3.25 (SiH5, Фьючерсный контракт Si-3.25) на бирже MOEX
+02.02.2025 13:16:59 - AlorPy.Ticker - INFO - - Валюта: RUB
+02.02.2025 13:16:59 - AlorPy.Ticker - INFO - - Лот: 1000
+02.02.2025 13:16:59 - AlorPy.Ticker - INFO - - Шаг цены: 1
+02.02.2025 13:16:59 - AlorPy.Ticker - INFO - - Кол-во десятичных знаков: 0
+02.02.2025 13:16:59 - AlorPy.Ticker - INFO - - Торговый счет: #0, Договор: 88268, Портфель: 7502HJ0 (Срочный рынок)
+02.02.2025 13:17:01 - AlorPy.Ticker - INFO - - Последняя цена сделки: 101090
+02.02.2025 13:17:01 - AlorPy.Ticker - INFO - - Стоимость шага цены: 1 руб.
+02.02.2025 13:17:01 - AlorPy.Ticker - INFO - - Цена за лот: 101090 / 1 * 1 = 101090 руб.
+02.02.2025 13:17:01 - AlorPy.Ticker - INFO - - Цена за штуку: 101090 / 1000 = 101.09 руб.
+02.02.2025 13:17:01 - AlorPy.Ticker - INFO - - Последняя цена сделки: 101090 из цены за штуку в рублях
+02.02.2025 13:17:04 - AlorPy.Ticker - DEBUG - Ответ от сервера: {'symbol': 'RTS-3.25', 'shortname': 'RIH5', 'description': 'RIH5', 'exchange': 'MOEX', 'market': 'FORTS', 'type': 'Фьючерсный контракт RTS-3.25', 'lotsize': 1, 'facevalue': 1, 'cfiCode': 'FFXCSX', 'cancellation': '2025-03-20T00:00:00.0000000', 'minstep': 10, 'rating': 117701, 'marginbuy': 28940.08, 'marginsell': 29308.17, 'marginrate': 0, 'pricestep': 19.60124, 'priceMax': 101150, 'priceMin': 88210, 'theorPrice': 0, 'theorPriceLimit': 0, 'volatility': 0, 'currency': 'USD', 'ISIN': None, 'yield': None, 'board': 'RFUD', 'primary_board': 'RFUD', 'tradingStatus': 2, 'tradingStatusInfo': 'перерыв в торгах', 'complexProductCategory': '2', 'priceMultiplier': 1, 'priceShownUnits': 1, 'decimals': 0}
+02.02.2025 13:17:04 - AlorPy.Ticker - INFO - Информация о тикере RFUD.RTS-3.25 (RIH5, Фьючерсный контракт RTS-3.25) на бирже MOEX
+02.02.2025 13:17:04 - AlorPy.Ticker - INFO - - Валюта: USD
+02.02.2025 13:17:04 - AlorPy.Ticker - INFO - - Лот: 1
+02.02.2025 13:17:04 - AlorPy.Ticker - INFO - - Шаг цены: 10
+02.02.2025 13:17:04 - AlorPy.Ticker - INFO - - Кол-во десятичных знаков: 0
+02.02.2025 13:17:04 - AlorPy.Ticker - INFO - - Торговый счет: #0, Договор: 88268, Портфель: 7502HJ0 (Срочный рынок)
+02.02.2025 13:17:06 - AlorPy.Ticker - INFO - - Последняя цена сделки: 94770
+02.02.2025 13:17:06 - AlorPy.Ticker - INFO - - Стоимость шага цены: 19.60124 руб.
+02.02.2025 13:17:09 - AlorPy.Ticker - DEBUG - Ответ от сервера: {'symbol': 'BR-3.25', 'shortname': 'BRH5', 'description': 'BRH5', 'exchange': 'MOEX', 'market': 'FORTS', 'type': 'Фьючерсный контракт BR-3.25', 'lotsize': 1, 'facevalue': 10, 'cfiCode': 'FCXCSX', 'cancellation': '2025-03-03T00:00:00.0000000', 'minstep': 0.01, 'rating': 163839, 'marginbuy': 10960.45, 'marginsell': 11124.85, 'marginrate': 0, 'pricestep': 9.80062, 'priceMax': 82.25, 'priceMin': 69.31, 'theorPrice': 0, 'theorPriceLimit': 0, 'volatility': 0, 'currency': 'USD', 'ISIN': None, 'yield': None, 'board': 'RFUD', 'primary_board': 'RFUD', 'tradingStatus': 2, 'tradingStatusInfo': 'перерыв в торгах', 'complexProductCategory': '2', 'priceMultiplier': 1, 'priceShownUnits': 1, 'decimals': 2}
+02.02.2025 13:17:09 - AlorPy.Ticker - INFO - Информация о тикере RFUD.BR-3.25 (BRH5, Фьючерсный контракт BR-3.25) на бирже MOEX
+02.02.2025 13:17:09 - AlorPy.Ticker - INFO - - Валюта: USD
+02.02.2025 13:17:09 - AlorPy.Ticker - INFO - - Лот: 10
+02.02.2025 13:17:09 - AlorPy.Ticker - INFO - - Шаг цены: 0.01
+02.02.2025 13:17:09 - AlorPy.Ticker - INFO - - Кол-во десятичных знаков: 2
+02.02.2025 13:17:09 - AlorPy.Ticker - INFO - - Торговый счет: #0, Договор: 88268, Портфель: 7502HJ0 (Срочный рынок)
+02.02.2025 13:17:10 - AlorPy.Ticker - INFO - - Последняя цена сделки: 75.69
+02.02.2025 13:17:10 - AlorPy.Ticker - INFO - - Стоимость шага цены: 9.80062 руб.
+02.02.2025 13:17:10 - AlorPy.Ticker - INFO - - Цена за лот: 75.69 / 0.01 * 9.80062 = 74171.09216 руб.
+02.02.2025 13:17:10 - AlorPy.Ticker - INFO - - Цена за штуку: 74171.09216 / 10 = 7417.109216 руб.
+02.02.2025 13:17:10 - AlorPy.Ticker - INFO - - Последняя цена сделки: 75.67 из цены за штуку в рублях
+02.02.2025 13:17:13 - AlorPy.Ticker - DEBUG - Ответ от сервера: {'symbol': 'CNYRUBF', 'shortname': 'CNYRUBF', 'description': 'CNYRUBF', 'exchange': 'MOEX', 'market': 'FORTS', 'type': 'CNYRUBF', 'lotsize': 1, 'facevalue': 1000, 'cfiCode': 'FFCCSX', 'cancellation': '2100-01-01T00:00:00.0000000', 'minstep': 0.001, 'rating': 2443575, 'marginbuy': 1072.14, 'marginsell': 1072.72, 'marginrate': 0, 'pricestep': 1, 'priceMax': 13.949, 'priceMin': 12.771, 'theorPrice': 0, 'theorPriceLimit': 0, 'volatility': 0, 'currency': 'RUB', 'ISIN': None, 'yield': None, 'board': 'RFUD', 'primary_board': 'RFUD', 'tradingStatus': 2, 'tradingStatusInfo': 'перерыв в торгах', 'complexProductCategory': '2', 'priceMultiplier': 1, 'priceShownUnits': 1, 'decimals': 3}
+02.02.2025 13:17:13 - AlorPy.Ticker - INFO - Информация о тикере RFUD.CNYRUBF (CNYRUBF, CNYRUBF) на бирже MOEX
+02.02.2025 13:17:13 - AlorPy.Ticker - INFO - - Валюта: RUB
+02.02.2025 13:17:13 - AlorPy.Ticker - INFO - - Лот: 1000
+02.02.2025 13:17:13 - AlorPy.Ticker - INFO - - Шаг цены: 0.001
+02.02.2025 13:17:13 - AlorPy.Ticker - INFO - - Кол-во десятичных знаков: 3
+02.02.2025 13:17:13 - AlorPy.Ticker - INFO - - Торговый счет: #0, Договор: 88268, Портфель: 7502HJ0 (Срочный рынок)
+02.02.2025 13:17:15 - AlorPy.Ticker - INFO - - Последняя цена сделки: 13.374
+02.02.2025 13:17:15 - AlorPy.Ticker - INFO - - Стоимость шага цены: 1 руб.
+02.02.2025 13:17:15 - AlorPy.Ticker - INFO - - Цена за лот: 13.374 / 0.001 * 1 = 13374.0 руб.
+02.02.2025 13:17:15 - AlorPy.Ticker - INFO - - Цена за штуку: 13374.0 / 1000 = 13.374 руб.
+02.02.2025 13:17:15 - AlorPy.Ticker - INFO - - Последняя цена сделки: 13.374 из цены за штуку в рублях
+02.02.2025 15:17:49 - AlorPy.Ticker - DEBUG - Ответ от сервера: {'symbol': 'SBER', 'shortname': 'Сбербанк', 'description': 'Сбербанк России ПАО ао', 'exchange': 'MOEX', 'market': 'FOND', 'type': 'CS', 'lotsize': 10, 'facevalue': 3, 'cfiCode': 'ESXXXX', 'cancellation': '9999-12-31T23:59:59.9999999', 'minstep': 0.01, 'rating': 18645160, 'marginbuy': 258.8, 'marginsell': 306, 'marginrate': 0, 'pricestep': 0, 'priceMax': 306.33, 'priceMin': 257.36, 'theorPrice': 0, 'theorPriceLimit': 0, 'volatility': 0, 'currency': 'RUB', 'ISIN': 'RU0009029540', 'yield': None, 'board': 'TQBR', 'primary_board': 'TQBR', 'tradingStatus': 18, 'tradingStatusInfo': 'нет торгов или торги закрыты', 'complexProductCategory': '', 'priceMultiplier': 1, 'priceShownUnits': 1, 'decimals': 2}
+02.02.2025 15:17:49 - AlorPy.Ticker - INFO - Информация о тикере TQBR.SBER (Сбербанк, CS) на бирже MOEX
+02.02.2025 15:17:49 - AlorPy.Ticker - INFO - - Валюта: RUB
+02.02.2025 15:17:49 - AlorPy.Ticker - INFO - - Лот: 10
+02.02.2025 15:17:49 - AlorPy.Ticker - INFO - - Шаг цены: 0.01
+02.02.2025 15:17:49 - AlorPy.Ticker - INFO - - Кол-во десятичных знаков: 2
+02.02.2025 15:17:49 - AlorPy.Ticker - INFO - - Торговый счет: #0, Договор: 88268, Портфель: D88268 (Фондовый рынок)
+02.02.2025 15:17:51 - AlorPy.Ticker - INFO - - Последняя цена сделки: 280.73
+02.02.2025 15:17:51 - AlorPy.Ticker - INFO - - Стоимость шага цены: 0 руб.
+02.02.2025 15:17:54 - AlorPy.Ticker - DEBUG - Ответ от сервера: {'symbol': 'HYDR', 'shortname': 'РусГидро', 'description': 'ПАО "РусГидро"', 'exchange': 'MOEX', 'market': 'FOND', 'type': 'CS', 'lotsize': 1000, 'facevalue': 1, 'cfiCode': 'ESXXXX', 'cancellation': '9999-12-31T23:59:59.9999999', 'minstep': 0.0001, 'rating': 2864024, 'marginbuy': 0.525, 'marginsell': 0.621, 'marginrate': 0, 'pricestep': 0, 'priceMax': 0.6366, 'priceMin': 0.5189, 'theorPrice': 0, 'theorPriceLimit': 0, 'volatility': 0, 'currency': 'RUB', 'ISIN': 'RU000A0JPKH7', 'yield': None, 'board': 'TQBR', 'primary_board': 'TQBR', 'tradingStatus': 18, 'tradingStatusInfo': 'нет торгов или торги закрыты', 'complexProductCategory': '', 'priceMultiplier': 1, 'priceShownUnits': 1, 'decimals': 4}
+02.02.2025 15:17:54 - AlorPy.Ticker - INFO - Информация о тикере TQBR.HYDR (РусГидро, CS) на бирже MOEX
+02.02.2025 15:17:54 - AlorPy.Ticker - INFO - - Валюта: RUB
+02.02.2025 15:17:54 - AlorPy.Ticker - INFO - - Лот: 1000
+02.02.2025 15:17:54 - AlorPy.Ticker - INFO - - Шаг цены: 0.0001
+02.02.2025 15:17:54 - AlorPy.Ticker - INFO - - Кол-во десятичных знаков: 4
+02.02.2025 15:17:54 - AlorPy.Ticker - INFO - - Торговый счет: #0, Договор: 88268, Портфель: D88268 (Фондовый рынок)
+02.02.2025 15:17:55 - AlorPy.Ticker - INFO - - Последняя цена сделки: 0.5697
+02.02.2025 15:17:55 - AlorPy.Ticker - INFO - - Стоимость шага цены: 0 руб.
+02.02.2025 15:17:58 - AlorPy.Ticker - DEBUG - Ответ от сервера: {'symbol': 'SI-3.25', 'shortname': 'SiH5', 'description': 'SiH5', 'exchange': 'MOEX', 'market': 'FORTS', 'type': 'Фьючерсный контракт Si-3.25', 'lotsize': 1, 'facevalue': 1000, 'cfiCode': 'FFXCSX', 'cancellation': '2025-03-20T00:00:00.0000000', 'minstep': 1, 'rating': 818422, 'marginbuy': 15228.09, 'marginsell': 15422.25, 'marginrate': 0, 'pricestep': 1, 'priceMax': 109353, 'priceMin': 92497, 'theorPrice': 0, 'theorPriceLimit': 0, 'volatility': 0, 'currency': 'RUB', 'ISIN': None, 'yield': None, 'board': 'RFUD', 'primary_board': 'RFUD', 'tradingStatus': 2, 'tradingStatusInfo': 'перерыв в торгах', 'complexProductCategory': '2', 'priceMultiplier': 1, 'priceShownUnits': 1, 'decimals': 0}
+02.02.2025 15:17:58 - AlorPy.Ticker - INFO - Информация о тикере RFUD.SI-3.25 (SiH5, Фьючерсный контракт Si-3.25) на бирже MOEX
+02.02.2025 15:17:58 - AlorPy.Ticker - INFO - - Валюта: RUB
+02.02.2025 15:17:58 - AlorPy.Ticker - INFO - - Лот: 1000
+02.02.2025 15:17:58 - AlorPy.Ticker - INFO - - Шаг цены: 1
+02.02.2025 15:17:58 - AlorPy.Ticker - INFO - - Кол-во десятичных знаков: 0
+02.02.2025 15:17:58 - AlorPy.Ticker - INFO - - Торговый счет: #0, Договор: 88268, Портфель: 7502HJ0 (Срочный рынок)
+02.02.2025 15:18:00 - AlorPy.Ticker - INFO - - Последняя цена сделки: 101090
+02.02.2025 15:18:00 - AlorPy.Ticker - INFO - - Стоимость шага цены: 1 руб.
+02.02.2025 15:18:00 - AlorPy.Ticker - INFO - - Цена за лот: 101090 / 1 * 1 = 101090 руб.
+02.02.2025 15:18:00 - AlorPy.Ticker - INFO - - Цена за штуку: 101090 / 1000 = 101.09 руб.
+02.02.2025 15:18:00 - AlorPy.Ticker - INFO - - Последняя цена сделки: 101090 из цены за штуку в рублях
+02.02.2025 15:18:03 - AlorPy.Ticker - DEBUG - Ответ от сервера: {'symbol': 'RTS-3.25', 'shortname': 'RIH5', 'description': 'RIH5', 'exchange': 'MOEX', 'market': 'FORTS', 'type': 'Фьючерсный контракт RTS-3.25', 'lotsize': 1, 'facevalue': 1, 'cfiCode': 'FFXCSX', 'cancellation': '2025-03-20T00:00:00.0000000', 'minstep': 10, 'rating': 117701, 'marginbuy': 28940.08, 'marginsell': 29308.17, 'marginrate': 0, 'pricestep': 19.60124, 'priceMax': 101150, 'priceMin': 88210, 'theorPrice': 0, 'theorPriceLimit': 0, 'volatility': 0, 'currency': 'USD', 'ISIN': None, 'yield': None, 'board': 'RFUD', 'primary_board': 'RFUD', 'tradingStatus': 2, 'tradingStatusInfo': 'перерыв в торгах', 'complexProductCategory': '2', 'priceMultiplier': 1, 'priceShownUnits': 1, 'decimals': 0}
+02.02.2025 15:18:03 - AlorPy.Ticker - INFO - Информация о тикере RFUD.RTS-3.25 (RIH5, Фьючерсный контракт RTS-3.25) на бирже MOEX
+02.02.2025 15:18:03 - AlorPy.Ticker - INFO - - Валюта: USD
+02.02.2025 15:18:03 - AlorPy.Ticker - INFO - - Лот: 1
+02.02.2025 15:18:03 - AlorPy.Ticker - INFO - - Шаг цены: 10
+02.02.2025 15:18:03 - AlorPy.Ticker - INFO - - Кол-во десятичных знаков: 0
+02.02.2025 15:18:03 - AlorPy.Ticker - INFO - - Торговый счет: #0, Договор: 88268, Портфель: 7502HJ0 (Срочный рынок)
+02.02.2025 15:18:04 - AlorPy.Ticker - INFO - - Последняя цена сделки: 94770
+02.02.2025 15:18:04 - AlorPy.Ticker - INFO - - Стоимость шага цены: 19.60124 руб.
+02.02.2025 15:18:07 - AlorPy.Ticker - DEBUG - Ответ от сервера: {'symbol': 'BR-3.25', 'shortname': 'BRH5', 'description': 'BRH5', 'exchange': 'MOEX', 'market': 'FORTS', 'type': 'Фьючерсный контракт BR-3.25', 'lotsize': 1, 'facevalue': 10, 'cfiCode': 'FCXCSX', 'cancellation': '2025-03-03T00:00:00.0000000', 'minstep': 0.01, 'rating': 163839, 'marginbuy': 10960.45, 'marginsell': 11124.85, 'marginrate': 0, 'pricestep': 9.80062, 'priceMax': 82.25, 'priceMin': 69.31, 'theorPrice': 0, 'theorPriceLimit': 0, 'volatility': 0, 'currency': 'USD', 'ISIN': None, 'yield': None, 'board': 'RFUD', 'primary_board': 'RFUD', 'tradingStatus': 2, 'tradingStatusInfo': 'перерыв в торгах', 'complexProductCategory': '2', 'priceMultiplier': 1, 'priceShownUnits': 1, 'decimals': 2}
+02.02.2025 15:18:07 - AlorPy.Ticker - INFO - Информация о тикере RFUD.BR-3.25 (BRH5, Фьючерсный контракт BR-3.25) на бирже MOEX
+02.02.2025 15:18:07 - AlorPy.Ticker - INFO - - Валюта: USD
+02.02.2025 15:18:07 - AlorPy.Ticker - INFO - - Лот: 10
+02.02.2025 15:18:07 - AlorPy.Ticker - INFO - - Шаг цены: 0.01
+02.02.2025 15:18:07 - AlorPy.Ticker - INFO - - Кол-во десятичных знаков: 2
+02.02.2025 15:18:07 - AlorPy.Ticker - INFO - - Торговый счет: #0, Договор: 88268, Портфель: 7502HJ0 (Срочный рынок)
+02.02.2025 15:18:09 - AlorPy.Ticker - INFO - - Последняя цена сделки: 75.69
+02.02.2025 15:18:09 - AlorPy.Ticker - INFO - - Стоимость шага цены: 9.80062 руб.
+02.02.2025 15:18:09 - AlorPy.Ticker - INFO - - Цена за лот: 75.69 / 0.01 * 9.80062 = 74171.09216 руб.
+02.02.2025 15:18:09 - AlorPy.Ticker - INFO - - Цена за штуку: 74171.09216 / 10 = 7417.109216 руб.
+02.02.2025 15:18:09 - AlorPy.Ticker - INFO - - Последняя цена сделки: 75.67 из цены за штуку в рублях
+02.02.2025 15:18:12 - AlorPy.Ticker - DEBUG - Ответ от сервера: {'symbol': 'CNYRUBF', 'shortname': 'CNYRUBF', 'description': 'CNYRUBF', 'exchange': 'MOEX', 'market': 'FORTS', 'type': 'CNYRUBF', 'lotsize': 1, 'facevalue': 1000, 'cfiCode': 'FFCCSX', 'cancellation': '2100-01-01T00:00:00.0000000', 'minstep': 0.001, 'rating': 2443575, 'marginbuy': 1072.14, 'marginsell': 1072.72, 'marginrate': 0, 'pricestep': 1, 'priceMax': 13.949, 'priceMin': 12.771, 'theorPrice': 0, 'theorPriceLimit': 0, 'volatility': 0, 'currency': 'RUB', 'ISIN': None, 'yield': None, 'board': 'RFUD', 'primary_board': 'RFUD', 'tradingStatus': 2, 'tradingStatusInfo': 'перерыв в торгах', 'complexProductCategory': '2', 'priceMultiplier': 1, 'priceShownUnits': 1, 'decimals': 3}
+02.02.2025 15:18:12 - AlorPy.Ticker - INFO - Информация о тикере RFUD.CNYRUBF (CNYRUBF, CNYRUBF) на бирже MOEX
+02.02.2025 15:18:12 - AlorPy.Ticker - INFO - - Валюта: RUB
+02.02.2025 15:18:12 - AlorPy.Ticker - INFO - - Лот: 1000
+02.02.2025 15:18:12 - AlorPy.Ticker - INFO - - Шаг цены: 0.001
+02.02.2025 15:18:12 - AlorPy.Ticker - INFO - - Кол-во десятичных знаков: 3
+02.02.2025 15:18:12 - AlorPy.Ticker - INFO - - Торговый счет: #0, Договор: 88268, Портфель: 7502HJ0 (Срочный рынок)
+02.02.2025 15:18:14 - AlorPy.Ticker - INFO - - Последняя цена сделки: 13.374
+02.02.2025 15:18:14 - AlorPy.Ticker - INFO - - Стоимость шага цены: 1 руб.
+02.02.2025 15:18:14 - AlorPy.Ticker - INFO - - Цена за лот: 13.374 / 0.001 * 1 = 13374.0 руб.
+02.02.2025 15:18:14 - AlorPy.Ticker - INFO - - Цена за штуку: 13374.0 / 1000 = 13.374 руб.
+02.02.2025 15:18:14 - AlorPy.Ticker - INFO - - Последняя цена сделки: 13.374 из цены за штуку в рублях
+02.02.2025 15:25:50 - AlorPy.Ticker - DEBUG - Ответ от сервера: {'symbol': 'SBER', 'shortname': 'Сбербанк', 'description': 'Сбербанк России ПАО ао', 'exchange': 'MOEX', 'market': 'FOND', 'type': 'CS', 'lotsize': 10, 'facevalue': 3, 'cfiCode': 'ESXXXX', 'cancellation': '9999-12-31T23:59:59.9999999', 'minstep': 0.01, 'rating': 18645160, 'marginbuy': 258.8, 'marginsell': 306, 'marginrate': 0, 'pricestep': 0, 'priceMax': 306.33, 'priceMin': 257.36, 'theorPrice': 0, 'theorPriceLimit': 0, 'volatility': 0, 'currency': 'RUB', 'ISIN': 'RU0009029540', 'yield': None, 'board': 'TQBR', 'primary_board': 'TQBR', 'tradingStatus': 18, 'tradingStatusInfo': 'нет торгов или торги закрыты', 'complexProductCategory': '', 'priceMultiplier': 1, 'priceShownUnits': 1, 'decimals': 2}
+02.02.2025 15:25:50 - AlorPy.Ticker - INFO - Информация о тикере TQBR.SBER (Сбербанк, CS) на бирже MOEX
+02.02.2025 15:25:50 - AlorPy.Ticker - INFO - - Валюта: RUB
+02.02.2025 15:25:50 - AlorPy.Ticker - INFO - - Лот: 10
+02.02.2025 15:25:50 - AlorPy.Ticker - INFO - - Шаг цены: 0.01
+02.02.2025 15:25:50 - AlorPy.Ticker - INFO - - Кол-во десятичных знаков: 2
+02.02.2025 15:25:50 - AlorPy.Ticker - INFO - - Торговый счет: #0, Договор: 88268, Портфель: D88268 (Фондовый рынок)
+02.02.2025 15:25:51 - AlorPy.Ticker - INFO - - Последняя цена сделки: 280.73
+02.02.2025 15:25:51 - AlorPy.Ticker - INFO - - Стоимость шага цены: 0 руб.
+02.02.2025 15:25:54 - AlorPy.Ticker - DEBUG - Ответ от сервера: {'symbol': 'HYDR', 'shortname': 'РусГидро', 'description': 'ПАО "РусГидро"', 'exchange': 'MOEX', 'market': 'FOND', 'type': 'CS', 'lotsize': 1000, 'facevalue': 1, 'cfiCode': 'ESXXXX', 'cancellation': '9999-12-31T23:59:59.9999999', 'minstep': 0.0001, 'rating': 2864024, 'marginbuy': 0.525, 'marginsell': 0.621, 'marginrate': 0, 'pricestep': 0, 'priceMax': 0.6366, 'priceMin': 0.5189, 'theorPrice': 0, 'theorPriceLimit': 0, 'volatility': 0, 'currency': 'RUB', 'ISIN': 'RU000A0JPKH7', 'yield': None, 'board': 'TQBR', 'primary_board': 'TQBR', 'tradingStatus': 18, 'tradingStatusInfo': 'нет торгов или торги закрыты', 'complexProductCategory': '', 'priceMultiplier': 1, 'priceShownUnits': 1, 'decimals': 4}
+02.02.2025 15:25:54 - AlorPy.Ticker - INFO - Информация о тикере TQBR.HYDR (РусГидро, CS) на бирже MOEX
+02.02.2025 15:25:54 - AlorPy.Ticker - INFO - - Валюта: RUB
+02.02.2025 15:25:54 - AlorPy.Ticker - INFO - - Лот: 1000
+02.02.2025 15:25:54 - AlorPy.Ticker - INFO - - Шаг цены: 0.0001
+02.02.2025 15:25:54 - AlorPy.Ticker - INFO - - Кол-во десятичных знаков: 4
+02.02.2025 15:25:54 - AlorPy.Ticker - INFO - - Торговый счет: #0, Договор: 88268, Портфель: D88268 (Фондовый рынок)
+02.02.2025 15:25:56 - AlorPy.Ticker - INFO - - Последняя цена сделки: 0.5697
+02.02.2025 15:25:56 - AlorPy.Ticker - INFO - - Стоимость шага цены: 0 руб.
+02.02.2025 15:25:59 - AlorPy.Ticker - DEBUG - Ответ от сервера: {'symbol': 'SI-3.25', 'shortname': 'SiH5', 'description': 'SiH5', 'exchange': 'MOEX', 'market': 'FORTS', 'type': 'Фьючерсный контракт Si-3.25', 'lotsize': 1, 'facevalue': 1000, 'cfiCode': 'FFXCSX', 'cancellation': '2025-03-20T00:00:00.0000000', 'minstep': 1, 'rating': 818422, 'marginbuy': 15228.09, 'marginsell': 15422.25, 'marginrate': 0, 'pricestep': 1, 'priceMax': 109353, 'priceMin': 92497, 'theorPrice': 0, 'theorPriceLimit': 0, 'volatility': 0, 'currency': 'RUB', 'ISIN': None, 'yield': None, 'board': 'RFUD', 'primary_board': 'RFUD', 'tradingStatus': 2, 'tradingStatusInfo': 'перерыв в торгах', 'complexProductCategory': '2', 'priceMultiplier': 1, 'priceShownUnits': 1, 'decimals': 0}
+02.02.2025 15:25:59 - AlorPy.Ticker - INFO - Информация о тикере RFUD.SI-3.25 (SiH5, Фьючерсный контракт Si-3.25) на бирже MOEX
+02.02.2025 15:25:59 - AlorPy.Ticker - INFO - - Валюта: RUB
+02.02.2025 15:25:59 - AlorPy.Ticker - INFO - - Лот: 1000
+02.02.2025 15:25:59 - AlorPy.Ticker - INFO - - Шаг цены: 1
+02.02.2025 15:25:59 - AlorPy.Ticker - INFO - - Кол-во десятичных знаков: 0
+02.02.2025 15:25:59 - AlorPy.Ticker - INFO - - Торговый счет: #0, Договор: 88268, Портфель: 7502HJ0 (Срочный рынок)
+02.02.2025 15:26:00 - AlorPy.Ticker - INFO - - Последняя цена сделки: 101090
+02.02.2025 15:26:00 - AlorPy.Ticker - INFO - - Стоимость шага цены: 1 руб.
+02.02.2025 15:26:00 - AlorPy.Ticker - INFO - - Цена за лот: 101090 / 1 * 1 = 101090 руб.
+02.02.2025 15:26:00 - AlorPy.Ticker - INFO - - Цена за штуку: 101090 / 1000 = 101.09 руб.
+02.02.2025 15:26:00 - AlorPy.Ticker - INFO - - Последняя цена сделки: 101090 из цены за штуку в рублях
+02.02.2025 15:26:03 - AlorPy.Ticker - DEBUG - Ответ от сервера: {'symbol': 'RTS-3.25', 'shortname': 'RIH5', 'description': 'RIH5', 'exchange': 'MOEX', 'market': 'FORTS', 'type': 'Фьючерсный контракт RTS-3.25', 'lotsize': 1, 'facevalue': 1, 'cfiCode': 'FFXCSX', 'cancellation': '2025-03-20T00:00:00.0000000', 'minstep': 10, 'rating': 117701, 'marginbuy': 28940.08, 'marginsell': 29308.17, 'marginrate': 0, 'pricestep': 19.60124, 'priceMax': 101150, 'priceMin': 88210, 'theorPrice': 0, 'theorPriceLimit': 0, 'volatility': 0, 'currency': 'USD', 'ISIN': None, 'yield': None, 'board': 'RFUD', 'primary_board': 'RFUD', 'tradingStatus': 2, 'tradingStatusInfo': 'перерыв в торгах', 'complexProductCategory': '2', 'priceMultiplier': 1, 'priceShownUnits': 1, 'decimals': 0}
+02.02.2025 15:26:03 - AlorPy.Ticker - INFO - Информация о тикере RFUD.RTS-3.25 (RIH5, Фьючерсный контракт RTS-3.25) на бирже MOEX
+02.02.2025 15:26:03 - AlorPy.Ticker - INFO - - Валюта: USD
+02.02.2025 15:26:03 - AlorPy.Ticker - INFO - - Лот: 1
+02.02.2025 15:26:03 - AlorPy.Ticker - INFO - - Шаг цены: 10
+02.02.2025 15:26:03 - AlorPy.Ticker - INFO - - Кол-во десятичных знаков: 0
+02.02.2025 15:26:03 - AlorPy.Ticker - INFO - - Торговый счет: #0, Договор: 88268, Портфель: 7502HJ0 (Срочный рынок)
+02.02.2025 15:26:05 - AlorPy.Ticker - INFO - - Последняя цена сделки: 94770
+02.02.2025 15:26:05 - AlorPy.Ticker - INFO - - Стоимость шага цены: 19.60124 руб.
+02.02.2025 15:26:08 - AlorPy.Ticker - DEBUG - Ответ от сервера: {'symbol': 'BR-3.25', 'shortname': 'BRH5', 'description': 'BRH5', 'exchange': 'MOEX', 'market': 'FORTS', 'type': 'Фьючерсный контракт BR-3.25', 'lotsize': 1, 'facevalue': 10, 'cfiCode': 'FCXCSX', 'cancellation': '2025-03-03T00:00:00.0000000', 'minstep': 0.01, 'rating': 163839, 'marginbuy': 10960.45, 'marginsell': 11124.85, 'marginrate': 0, 'pricestep': 9.80062, 'priceMax': 82.25, 'priceMin': 69.31, 'theorPrice': 0, 'theorPriceLimit': 0, 'volatility': 0, 'currency': 'USD', 'ISIN': None, 'yield': None, 'board': 'RFUD', 'primary_board': 'RFUD', 'tradingStatus': 2, 'tradingStatusInfo': 'перерыв в торгах', 'complexProductCategory': '2', 'priceMultiplier': 1, 'priceShownUnits': 1, 'decimals': 2}
+02.02.2025 15:26:08 - AlorPy.Ticker - INFO - Информация о тикере RFUD.BR-3.25 (BRH5, Фьючерсный контракт BR-3.25) на бирже MOEX
+02.02.2025 15:26:08 - AlorPy.Ticker - INFO - - Валюта: USD
+02.02.2025 15:26:08 - AlorPy.Ticker - INFO - - Лот: 10
+02.02.2025 15:26:08 - AlorPy.Ticker - INFO - - Шаг цены: 0.01
+02.02.2025 15:26:08 - AlorPy.Ticker - INFO - - Кол-во десятичных знаков: 2
+02.02.2025 15:26:08 - AlorPy.Ticker - INFO - - Торговый счет: #0, Договор: 88268, Портфель: 7502HJ0 (Срочный рынок)
+02.02.2025 15:26:09 - AlorPy.Ticker - INFO - - Последняя цена сделки: 75.69
+02.02.2025 15:26:09 - AlorPy.Ticker - INFO - - Стоимость шага цены: 9.80062 руб.
+02.02.2025 15:26:09 - AlorPy.Ticker - INFO - - Цена за лот: 75.69 / 0.01 * 9.80062 = 74171.09216 руб.
+02.02.2025 15:26:09 - AlorPy.Ticker - INFO - - Цена за штуку: 74171.09216 / 10 = 7417.109216 руб.
+02.02.2025 15:26:09 - AlorPy.Ticker - INFO - - Последняя цена сделки: 75.67 из цены за штуку в рублях
+02.02.2025 15:26:12 - AlorPy.Ticker - DEBUG - Ответ от сервера: {'symbol': 'CNYRUBF', 'shortname': 'CNYRUBF', 'description': 'CNYRUBF', 'exchange': 'MOEX', 'market': 'FORTS', 'type': 'CNYRUBF', 'lotsize': 1, 'facevalue': 1000, 'cfiCode': 'FFCCSX', 'cancellation': '2100-01-01T00:00:00.0000000', 'minstep': 0.001, 'rating': 2443575, 'marginbuy': 1072.14, 'marginsell': 1072.72, 'marginrate': 0, 'pricestep': 1, 'priceMax': 13.949, 'priceMin': 12.771, 'theorPrice': 0, 'theorPriceLimit': 0, 'volatility': 0, 'currency': 'RUB', 'ISIN': None, 'yield': None, 'board': 'RFUD', 'primary_board': 'RFUD', 'tradingStatus': 2, 'tradingStatusInfo': 'перерыв в торгах', 'complexProductCategory': '2', 'priceMultiplier': 1, 'priceShownUnits': 1, 'decimals': 3}
+02.02.2025 15:26:12 - AlorPy.Ticker - INFO - Информация о тикере RFUD.CNYRUBF (CNYRUBF, CNYRUBF) на бирже MOEX
+02.02.2025 15:26:12 - AlorPy.Ticker - INFO - - Валюта: RUB
+02.02.2025 15:26:12 - AlorPy.Ticker - INFO - - Лот: 1000
+02.02.2025 15:26:12 - AlorPy.Ticker - INFO - - Шаг цены: 0.001
+02.02.2025 15:26:12 - AlorPy.Ticker - INFO - - Кол-во десятичных знаков: 3
+02.02.2025 15:26:12 - AlorPy.Ticker - INFO - - Торговый счет: #0, Договор: 88268, Портфель: 7502HJ0 (Срочный рынок)
+02.02.2025 15:26:14 - AlorPy.Ticker - INFO - - Последняя цена сделки: 13.374
+02.02.2025 15:26:14 - AlorPy.Ticker - INFO - - Стоимость шага цены: 1 руб.
+02.02.2025 15:26:14 - AlorPy.Ticker - INFO - - Цена за лот: 13.374 / 0.001 * 1 = 13374.0 руб.
+02.02.2025 15:26:14 - AlorPy.Ticker - INFO - - Цена за штуку: 13374.0 / 1000 = 13.374 руб.
+02.02.2025 15:26:14 - AlorPy.Ticker - INFO - - Последняя цена сделки: 13.374 из цены за штуку в рублях
+02.02.2025 17:02:59 - AlorPy.Ticker - DEBUG - Ответ от сервера: {'symbol': 'SBER', 'shortname': 'Сбербанк', 'description': 'Сбербанк России ПАО ао', 'exchange': 'MOEX', 'market': 'FOND', 'type': 'CS', 'lotsize': 10, 'facevalue': 3, 'cfiCode': 'ESXXXX', 'cancellation': '9999-12-31T23:59:59.9999999', 'minstep': 0.01, 'rating': 18645160, 'marginbuy': 258.8, 'marginsell': 306, 'marginrate': 0, 'pricestep': 0, 'priceMax': 306.33, 'priceMin': 257.36, 'theorPrice': 0, 'theorPriceLimit': 0, 'volatility': 0, 'currency': 'RUB', 'ISIN': 'RU0009029540', 'yield': None, 'board': 'TQBR', 'primary_board': 'TQBR', 'tradingStatus': 18, 'tradingStatusInfo': 'нет торгов или торги закрыты', 'complexProductCategory': '', 'priceMultiplier': 1, 'priceShownUnits': 1, 'decimals': 2}
+02.02.2025 17:02:59 - AlorPy.Ticker - INFO - Информация о тикере TQBR.SBER (Сбербанк, CS) на бирже MOEX
+02.02.2025 17:02:59 - AlorPy.Ticker - INFO - - Валюта: RUB
+02.02.2025 17:02:59 - AlorPy.Ticker - INFO - - Лот: 10
+02.02.2025 17:02:59 - AlorPy.Ticker - INFO - - Шаг цены: 0.01
+02.02.2025 17:02:59 - AlorPy.Ticker - INFO - - Кол-во десятичных знаков: 2
+02.02.2025 17:02:59 - AlorPy.Ticker - INFO - - Торговый счет: #0, Договор: 88268, Портфель: D88268 (Фондовый рынок)
+02.02.2025 17:03:01 - AlorPy.Ticker - INFO - - Последняя цена сделки: 280.73
+02.02.2025 17:03:01 - AlorPy.Ticker - INFO - - Стоимость шага цены: 0 руб.
+02.02.2025 17:03:03 - AlorPy.Ticker - DEBUG - Ответ от сервера: {'symbol': 'HYDR', 'shortname': 'РусГидро', 'description': 'ПАО "РусГидро"', 'exchange': 'MOEX', 'market': 'FOND', 'type': 'CS', 'lotsize': 1000, 'facevalue': 1, 'cfiCode': 'ESXXXX', 'cancellation': '9999-12-31T23:59:59.9999999', 'minstep': 0.0001, 'rating': 2864024, 'marginbuy': 0.525, 'marginsell': 0.621, 'marginrate': 0, 'pricestep': 0, 'priceMax': 0.6366, 'priceMin': 0.5189, 'theorPrice': 0, 'theorPriceLimit': 0, 'volatility': 0, 'currency': 'RUB', 'ISIN': 'RU000A0JPKH7', 'yield': None, 'board': 'TQBR', 'primary_board': 'TQBR', 'tradingStatus': 18, 'tradingStatusInfo': 'нет торгов или торги закрыты', 'complexProductCategory': '', 'priceMultiplier': 1, 'priceShownUnits': 1, 'decimals': 4}
+02.02.2025 17:03:03 - AlorPy.Ticker - INFO - Информация о тикере TQBR.HYDR (РусГидро, CS) на бирже MOEX
+02.02.2025 17:03:03 - AlorPy.Ticker - INFO - - Валюта: RUB
+02.02.2025 17:03:03 - AlorPy.Ticker - INFO - - Лот: 1000
+02.02.2025 17:03:03 - AlorPy.Ticker - INFO - - Шаг цены: 0.0001
+02.02.2025 17:03:03 - AlorPy.Ticker - INFO - - Кол-во десятичных знаков: 4
+02.02.2025 17:03:03 - AlorPy.Ticker - INFO - - Торговый счет: #0, Договор: 88268, Портфель: D88268 (Фондовый рынок)
+02.02.2025 17:03:05 - AlorPy.Ticker - INFO - - Последняя цена сделки: 0.5697
+02.02.2025 17:03:05 - AlorPy.Ticker - INFO - - Стоимость шага цены: 0 руб.
+02.02.2025 17:03:08 - AlorPy.Ticker - DEBUG - Ответ от сервера: {'symbol': 'SI-3.25', 'shortname': 'SiH5', 'description': 'SiH5', 'exchange': 'MOEX', 'market': 'FORTS', 'type': 'Фьючерсный контракт Si-3.25', 'lotsize': 1, 'facevalue': 1000, 'cfiCode': 'FFXCSX', 'cancellation': '2025-03-20T00:00:00.0000000', 'minstep': 1, 'rating': 818422, 'marginbuy': 15228.09, 'marginsell': 15422.25, 'marginrate': 0, 'pricestep': 1, 'priceMax': 109353, 'priceMin': 92497, 'theorPrice': 0, 'theorPriceLimit': 0, 'volatility': 0, 'currency': 'RUB', 'ISIN': None, 'yield': None, 'board': 'RFUD', 'primary_board': 'RFUD', 'tradingStatus': 2, 'tradingStatusInfo': 'перерыв в торгах', 'complexProductCategory': '2', 'priceMultiplier': 1, 'priceShownUnits': 1, 'decimals': 0}
+02.02.2025 17:03:08 - AlorPy.Ticker - INFO - Информация о тикере RFUD.SI-3.25 (SiH5, Фьючерсный контракт Si-3.25) на бирже MOEX
+02.02.2025 17:03:08 - AlorPy.Ticker - INFO - - Валюта: RUB
+02.02.2025 17:03:08 - AlorPy.Ticker - INFO - - Лот: 1000
+02.02.2025 17:03:08 - AlorPy.Ticker - INFO - - Шаг цены: 1
+02.02.2025 17:03:08 - AlorPy.Ticker - INFO - - Кол-во десятичных знаков: 0
+02.02.2025 17:03:08 - AlorPy.Ticker - INFO - - Торговый счет: #0, Договор: 88268, Портфель: 7502HJ0 (Срочный рынок)
+02.02.2025 17:03:09 - AlorPy.Ticker - INFO - - Последняя цена сделки: 101090
+02.02.2025 17:03:09 - AlorPy.Ticker - INFO - - Стоимость шага цены: 1 руб.
+02.02.2025 17:03:09 - AlorPy.Ticker - INFO - - Цена за лот: 101090 / 1 * 1 = 101090 руб.
+02.02.2025 17:03:09 - AlorPy.Ticker - INFO - - Цена за штуку: 101090 / 1000 = 101.09 руб.
+02.02.2025 17:03:09 - AlorPy.Ticker - INFO - - Последняя цена сделки: 101090 из цены за штуку в рублях
+02.02.2025 17:03:12 - AlorPy.Ticker - DEBUG - Ответ от сервера: {'symbol': 'RTS-3.25', 'shortname': 'RIH5', 'description': 'RIH5', 'exchange': 'MOEX', 'market': 'FORTS', 'type': 'Фьючерсный контракт RTS-3.25', 'lotsize': 1, 'facevalue': 1, 'cfiCode': 'FFXCSX', 'cancellation': '2025-03-20T00:00:00.0000000', 'minstep': 10, 'rating': 117701, 'marginbuy': 28940.08, 'marginsell': 29308.17, 'marginrate': 0, 'pricestep': 19.60124, 'priceMax': 101150, 'priceMin': 88210, 'theorPrice': 0, 'theorPriceLimit': 0, 'volatility': 0, 'currency': 'USD', 'ISIN': None, 'yield': None, 'board': 'RFUD', 'primary_board': 'RFUD', 'tradingStatus': 2, 'tradingStatusInfo': 'перерыв в торгах', 'complexProductCategory': '2', 'priceMultiplier': 1, 'priceShownUnits': 1, 'decimals': 0}
+02.02.2025 17:03:12 - AlorPy.Ticker - INFO - Информация о тикере RFUD.RTS-3.25 (RIH5, Фьючерсный контракт RTS-3.25) на бирже MOEX
+02.02.2025 17:03:12 - AlorPy.Ticker - INFO - - Валюта: USD
+02.02.2025 17:03:12 - AlorPy.Ticker - INFO - - Лот: 1
+02.02.2025 17:03:12 - AlorPy.Ticker - INFO - - Шаг цены: 10
+02.02.2025 17:03:12 - AlorPy.Ticker - INFO - - Кол-во десятичных знаков: 0
+02.02.2025 17:03:12 - AlorPy.Ticker - INFO - - Торговый счет: #0, Договор: 88268, Портфель: 7502HJ0 (Срочный рынок)
+02.02.2025 17:03:14 - AlorPy.Ticker - INFO - - Последняя цена сделки: 94770
+02.02.2025 17:03:14 - AlorPy.Ticker - INFO - - Стоимость шага цены: 19.60124 руб.
+02.02.2025 17:03:17 - AlorPy.Ticker - DEBUG - Ответ от сервера: {'symbol': 'BR-3.25', 'shortname': 'BRH5', 'description': 'BRH5', 'exchange': 'MOEX', 'market': 'FORTS', 'type': 'Фьючерсный контракт BR-3.25', 'lotsize': 1, 'facevalue': 10, 'cfiCode': 'FCXCSX', 'cancellation': '2025-03-03T00:00:00.0000000', 'minstep': 0.01, 'rating': 163839, 'marginbuy': 10960.45, 'marginsell': 11124.85, 'marginrate': 0, 'pricestep': 9.80062, 'priceMax': 82.25, 'priceMin': 69.31, 'theorPrice': 0, 'theorPriceLimit': 0, 'volatility': 0, 'currency': 'USD', 'ISIN': None, 'yield': None, 'board': 'RFUD', 'primary_board': 'RFUD', 'tradingStatus': 2, 'tradingStatusInfo': 'перерыв в торгах', 'complexProductCategory': '2', 'priceMultiplier': 1, 'priceShownUnits': 1, 'decimals': 2}
+02.02.2025 17:03:17 - AlorPy.Ticker - INFO - Информация о тикере RFUD.BR-3.25 (BRH5, Фьючерсный контракт BR-3.25) на бирже MOEX
+02.02.2025 17:03:17 - AlorPy.Ticker - INFO - - Валюта: USD
+02.02.2025 17:03:17 - AlorPy.Ticker - INFO - - Лот: 10
+02.02.2025 17:03:17 - AlorPy.Ticker - INFO - - Шаг цены: 0.01
+02.02.2025 17:03:17 - AlorPy.Ticker - INFO - - Кол-во десятичных знаков: 2
+02.02.2025 17:03:17 - AlorPy.Ticker - INFO - - Торговый счет: #0, Договор: 88268, Портфель: 7502HJ0 (Срочный рынок)
+02.02.2025 17:03:18 - AlorPy.Ticker - INFO - - Последняя цена сделки: 75.69
+02.02.2025 17:03:18 - AlorPy.Ticker - INFO - - Стоимость шага цены: 9.80062 руб.
+02.02.2025 17:03:18 - AlorPy.Ticker - INFO - - Цена за лот: 75.69 / 0.01 * 9.80062 = 74171.09216 руб.
+02.02.2025 17:03:18 - AlorPy.Ticker - INFO - - Цена за штуку: 74171.09216 / 10 = 7417.109216 руб.
+02.02.2025 17:03:18 - AlorPy.Ticker - INFO - - Последняя цена сделки: 75.67 из цены за штуку в рублях
+02.02.2025 17:03:21 - AlorPy.Ticker - DEBUG - Ответ от сервера: {'symbol': 'CNYRUBF', 'shortname': 'CNYRUBF', 'description': 'CNYRUBF', 'exchange': 'MOEX', 'market': 'FORTS', 'type': 'CNYRUBF', 'lotsize': 1, 'facevalue': 1000, 'cfiCode': 'FFCCSX', 'cancellation': '2100-01-01T00:00:00.0000000', 'minstep': 0.001, 'rating': 2443575, 'marginbuy': 1072.14, 'marginsell': 1072.72, 'marginrate': 0, 'pricestep': 1, 'priceMax': 13.949, 'priceMin': 12.771, 'theorPrice': 0, 'theorPriceLimit': 0, 'volatility': 0, 'currency': 'RUB', 'ISIN': None, 'yield': None, 'board': 'RFUD', 'primary_board': 'RFUD', 'tradingStatus': 2, 'tradingStatusInfo': 'перерыв в торгах', 'complexProductCategory': '2', 'priceMultiplier': 1, 'priceShownUnits': 1, 'decimals': 3}
+02.02.2025 17:03:21 - AlorPy.Ticker - INFO - Информация о тикере RFUD.CNYRUBF (CNYRUBF, CNYRUBF) на бирже MOEX
+02.02.2025 17:03:21 - AlorPy.Ticker - INFO - - Валюта: RUB
+02.02.2025 17:03:21 - AlorPy.Ticker - INFO - - Лот: 1000
+02.02.2025 17:03:21 - AlorPy.Ticker - INFO - - Шаг цены: 0.001
+02.02.2025 17:03:21 - AlorPy.Ticker - INFO - - Кол-во десятичных знаков: 3
+02.02.2025 17:03:21 - AlorPy.Ticker - INFO - - Торговый счет: #0, Договор: 88268, Портфель: 7502HJ0 (Срочный рынок)
+02.02.2025 17:03:22 - AlorPy.Ticker - INFO - - Последняя цена сделки: 13.374
+02.02.2025 17:03:22 - AlorPy.Ticker - INFO - - Стоимость шага цены: 1 руб.
+02.02.2025 17:03:22 - AlorPy.Ticker - INFO - - Цена за лот: 13.374 / 0.001 * 1 = 13374.0 руб.
+02.02.2025 17:03:22 - AlorPy.Ticker - INFO - - Цена за штуку: 13374.0 / 1000 = 13.374 руб.
+02.02.2025 17:03:22 - AlorPy.Ticker - INFO - - Последняя цена сделки: 13.374 из цены за штуку в рублях

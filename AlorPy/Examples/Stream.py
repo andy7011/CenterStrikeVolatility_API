@@ -19,7 +19,7 @@ if __name__ == '__main__':  # Точка входа при запуске это
     logging.getLogger('websockets').setLevel(logging.CRITICAL + 1)  # в этих библиотеках
 
     exchange = 'MOEX'  # Код биржи MOEX или SPBX
-    symbol = 'SBER'  # Тикер
+    symbol = 'RIH5'  # Тикер
     # symbol = 'SiH4'  # Для фьючерсов: <Код тикера><Месяц экспирации: 3-H, 6-M, 9-U, 12-Z><Последняя цифра года>
 
     # Стакан
