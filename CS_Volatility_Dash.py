@@ -56,11 +56,11 @@ print(ap_provider.get_symbol_info(exchange, fut_1, reload=False))
 
 tf = 60  # 60 = 1 минута, 300 = 5 минут, 3600 = 1 час, 'D' = день, 'W' = неделя, 'M' = месяц, 'Y' = год
 days = 3  # Кол-во последних календарных дней, за которые берем историю
-ap_provider.on_entering
-ap_provider.on_enter
-ap_provider.on_connect
-ap_provider.on_ready
-ap_provider.on_new_bar
+ap_provider.on_entering()
+ap_provider.on_enter()
+ap_provider.on_connect()
+ap_provider.on_ready()
+ap_provider.on_new_bar()
 # ap_provider.websocket_handler()
 # # Подписка на информацию о котировках для выбранных инструментов и бирж
 # guid = ap_provider.quotes_subscribe(exchange, fut_1, frequency=0, format='Simple') # Уникальный идентификатор подписки
