@@ -6,6 +6,7 @@ from model.base_asset import BaseAsset
 from model.option import Option
 from model.option_model import OptionModel
 from model.watched_instruments_filter import WatchedInstrumentsFilter
+from view.flask_app import get_flask_app
 from datetime import datetime
 from infrastructure import moex_api, env_utils
 
@@ -54,6 +55,7 @@ class OptionApp:
                 self._watchedInstrumentsFilter.add_option_ticker(option.ticker)
 
     def _handle_option_quotes_event(self, ticker, data):
+        print(self._model.dump())
         option = self._model.option_repository.get_by_ticker(ticker)
         base_asset = self._model.base_asset_repository.get_by_ticker(option.base_asset_ticker)
         base_asset_last_price = base_asset.last_price
@@ -102,6 +104,11 @@ class OptionApp:
                                                     option.ask)
             option.bid_iv = get_iv_for_option_price(base_asset.last_price, option,
                                                     option.bid)
+
+    def _start_flask_app(self):
+        flask_app = get_flask_app()
+        flask_app.set_option_app(self)
+        flask_app.start_app_in_thread()
 
     def _prepare_model(self):
         for base_asset_ticker in supported_base_asset.MAP.keys():
