@@ -72,8 +72,12 @@ guid = ap_provider.bars_get_and_subscribe(exchange, fut_1, tf, seconds_from, fre
 subscription = ap_provider.subscriptions[guid]  # Получаем данные подписки
 print(f'Подписка на сервере: {guid} {subscription}')
 print(f'На бирже {subscription["exchange"]} тикер {subscription["code"]} подписан на новые бары через WebSocket на временнОм интервале {subscription["tf"]}. Код подписки {guid}')
+response_json = await ap_provider.ws_socket.recv()  # Ожидаем следующую строку в виде JSON
+response = loads(response_json)  # Переводим JSON в словарь
+opcode = subscription['opcode']  # Разбираем по типу подписки
+print(f'websocket_handler: Пришли данные подписки {opcode} - {guid} - {response}')
 response = ap_provider.websocket_handler
-print(ap_provider.on_new_bar(subscription['prev']))
+print(response)
 
 # ap_provider.close_web_socket()  # Перед выходом закрываем соединение с WebSocket
 

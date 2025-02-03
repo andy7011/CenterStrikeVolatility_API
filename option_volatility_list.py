@@ -42,10 +42,10 @@ for asset_code in asset_list: # Пробегаемся по списку акт�
     list_futures_all.append(info_fut_2['secid'])
     # fut_1 = info_fut_1['secid'] # Текущий фьючерс
     # fut_2 = info_fut_2['secid'] # Следующий фьючерс1
-print(list_futures_current)
-print(list_futures_all)
-symbol = 'RIH5'
-future_bars = {}
+print('\n list_futures_current', '\n', list_futures_current)
+print('list_futures_all', '\n', list_futures_all)
+# symbol = 'RIH5'
+futures_bars = {}
 
 # noinspection PyShadowingNames
 def log_bar(response):  # Вывод в лог полученного бара
@@ -55,7 +55,7 @@ def log_bar(response):  # Вывод в лог полученного бара
     guid = response['guid']  # Код подписки
     subscription = ap_provider.subscriptions[guid]  # Подписка
     print(f'{subscription["exchange"]}.{subscription["code"]} ({subscription["tf"]}) - {str_dt_msk} - Open = {response["data"]["open"]}, High = {response["data"]["high"]}, Low = {response["data"]["low"]}, Close = {response["data"]["close"]}, Volume = {response["data"]["volume"]}')
-    future_bars.update({'DateTime': str_dt_msk, 'Open': response["data"]["open"]})
+    futures_bars.update({'DateTime': str_dt_msk, 'Open': response["data"]["open"]})
 
 
 # Подписываемся на бары текущего фьючерса
@@ -64,13 +64,15 @@ days = 3  # Кол-во последних календарных дней, за
 seconds_from = ap_provider.msk_datetime_to_utc_timestamp(datetime.now() - timedelta(days=days))  # За последние дни. В секундах, прошедших с 01.01.1970 00:00 UTC
 for symbol in list_futures_current:
     guid = ap_provider.bars_get_and_subscribe(exchange, symbol, tf, seconds_from, frequency=1_000_000_000)  # Подписываемся на бары, получаем guid подписки
-    ap_provider.on_new_bar = log_bar  # Перед подпиской перехватим ответы
+    # ap_provider.on_new_bar = log_bar  # Перед подпиской перехватим ответы
+    # print(f'websocket_handler: Пришли данные подписки {opcode} - {guid} - {response}')
+print('\n data:', '\n', data)
 
 # Формируем кортеж тикеров "datanames" для подписки на котировки
 datanames_futures = []
 for i in range(len(list_futures_all)):
     datanames_futures.append(f'{exchange}:{list_futures_all[i]}')
-print(datanames_futures)
+print('\n datanames_futures:', '\n', datanames_futures)
 
 # option_expirations = get_option_expirations(fut_1) + get_option_expirations(fut_2) # Получить список дат окончания действия опционов базовых активов fut_1 + fut_2
 # datanames = (f'{exchange}:{symbol}',)
@@ -88,7 +90,7 @@ secid_list = []
 data = get_option_list_by_series(option_series_by_name_series[0])
 for i in range(len(data)):
     secid_list.append(data[i]['secid'])
-print(secid_list)
+print("\n Тикеры опционных серий:", '\n', secid_list)
 
 # Выход
 input('\nEnter - выход\n')
