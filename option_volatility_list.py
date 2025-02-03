@@ -62,14 +62,16 @@ def log_bar(response):  # Вывод в лог полученного бара
 tf = 60  # 60 = 1 минута, 300 = 5 минут, 3600 = 1 час, 'D' = день, 'W' = неделя, 'M' = месяц, 'Y' = год
 days = 3  # Кол-во последних календарных дней, за которые берем историю
 seconds_from = ap_provider.msk_datetime_to_utc_timestamp(datetime.now() - timedelta(days=days))  # За последние дни. В секундах, прошедших с 01.01.1970 00:00 UTC
-guid = ap_provider.bars_get_and_subscribe(exchange, symbol, tf, seconds_from, frequency=1_000_000_000)  # Подписываемся на бары, получаем guid подписки
-ap_provider.on_new_bar = log_bar  # Перед подпиской перехватим ответы
+for symbol in list_futures_current:
+    guid = ap_provider.bars_get_and_subscribe(exchange, symbol, tf, seconds_from, frequency=1_000_000_000)  # Подписываемся на бары, получаем guid подписки
+    ap_provider.on_new_bar = log_bar  # Перед подпиской перехватим ответы
 
 # Формируем кортеж тикеров "datanames" для подписки на котировки
 datanames_futures = []
 for i in range(len(list_futures_all)):
     datanames_futures.append(f'{exchange}:{list_futures_all[i]}')
 print(datanames_futures)
+
 # option_expirations = get_option_expirations(fut_1) + get_option_expirations(fut_2) # Получить список дат окончания действия опционов базовых активов fut_1 + fut_2
 # datanames = (f'{exchange}:{symbol}',)
 
@@ -82,8 +84,11 @@ for i in range(len(asset_list)):
             option_series_by_name_series.append(item['name'])
 print("\n Опционные серии:", '\n', option_series_by_name_series)
 
+secid_list = []
 data = get_option_list_by_series(option_series_by_name_series[0])
-print(data)
+for i in range(len(data)):
+    secid_list.append(data[i]['secid'])
+print(secid_list)
 
 # Выход
 input('\nEnter - выход\n')
