@@ -3,6 +3,8 @@ from datetime import datetime, timedelta  # Дата и время, времен
 import asyncio
 import json
 import hashlib
+from http.client import responses
+
 import websockets
 
 from moex_api import get_futures_series
@@ -55,18 +57,41 @@ def log_bar(response):  # Вывод в лог полученного бара
     guid = response['guid']  # Код подписки
     subscription = ap_provider.subscriptions[guid]  # Подписка
     print(f'{subscription["exchange"]}.{subscription["code"]} ({subscription["tf"]}) - {str_dt_msk} - Open = {response["data"]["open"]}, High = {response["data"]["high"]}, Low = {response["data"]["low"]}, Close = {response["data"]["close"]}, Volume = {response["data"]["volume"]}')
+
+
+def save_bar(response):
+    seconds = response['data']['time']  # Время в Alor OpenAPI V2 передается в секундах, прошедших с 01.01.1970 00:00 UTC
+    dt_msk = datetime.utcfromtimestamp(seconds) if type(tf) is str else ap_provider.utc_timestamp_to_msk_datetime(seconds)  # Дневные бары и выше ставим на начало дня по UTC. Остальные - по МСК
+    str_dt_msk = dt_msk.strftime('%d.%m.%Y') if type(tf) is str else dt_msk.strftime('%d.%m.%Y %H:%M:%S')  # Для дневных баров и выше показываем только дату. Для остальных - дату и время по МСК
+    guid = response['guid']  # Код подписки
+    subscription = ap_provider.subscriptions[guid]  # Подписка
+    print(f'{subscription["exchange"]}.{subscription["code"]} ({subscription["tf"]}) - {str_dt_msk} - Open = {response["data"]["open"]}, High = {response["data"]["high"]}, Low = {response["data"]["low"]}, Close = {response["data"]["close"]}, Volume = {response["data"]["volume"]}')
     futures_bars.update({'DateTime': str_dt_msk, 'Open': response["data"]["open"]})
 
 
+    # with open('futures_bars.json', 'w') as f:
+    #     json.dump(futures_bars, f)
+
 # Подписываемся на бары текущего фьючерса
-tf = 60  # 60 = 1 минута, 300 = 5 минут, 3600 = 1 час, 'D' = день, 'W' = неделя, 'M' = месяц, 'Y' = год
-days = 3  # Кол-во последних календарных дней, за которые берем историю
-seconds_from = ap_provider.msk_datetime_to_utc_timestamp(datetime.now() - timedelta(days=days))  # За последние дни. В секундах, прошедших с 01.01.1970 00:00 UTC
+data = {}
 for symbol in list_futures_current:
+    tf = 60  # 60 = 1 минута, 300 = 5 минут, 3600 = 1 час, 'D' = день, 'W' = неделя, 'M' = месяц, 'Y' = год
+    days = 3  # Кол-во последних календарных дней, за которые берем историю
+    seconds_from = ap_provider.msk_datetime_to_utc_timestamp(datetime.now() - timedelta(days=days))  # За последние дни. В секундах, прошедших с 01.01.1970 00:00 UTC
     guid = ap_provider.bars_get_and_subscribe(exchange, symbol, tf, seconds_from, frequency=1_000_000_000)  # Подписываемся на бары, получаем guid подписки
+    subscription = ap_provider.subscriptions[guid]  # Получаем данные подписки
+    ap_provider.on_new_bar = save_bar
+
+    # seconds = data['data']['time']  # Время в Alor OpenAPI V2 передается в секундах, прошедших с 01.01.1970 00:00 UTC
+    # dt_msk = datetime.utcfromtimestamp(seconds) if type(tf) is str else ap_provider.utc_timestamp_to_msk_datetime(seconds)  # Дневные бары и выше ставим на начало дня по UTC. Остальные - по МСК
+    # str_dt_msk = dt_msk.strftime('%d.%m.%Y') if type(tf) is str else dt_msk.strftime('%d.%m.%Y %H:%M:%S')  # Для дневных баров и выше показываем только дату. Для остальных - дату и время по МСК
+
+
+    # print(f'{subscription["exchange"]}.{subscription["code"]} ({subscription["tf"]}) - {str_dt_msk} - Open = {response["data"]["open"]}, High = {response["data"]["high"]}, Low = {response["data"]["low"]}, Close = {response["data"]["close"]}, Volume = {response["data"]["volume"]}')
     # ap_provider.on_new_bar = log_bar  # Перед подпиской перехватим ответы
     # print(f'websocket_handler: Пришли данные подписки {opcode} - {guid} - {response}')
-print('\n data:', '\n', data)
+print('\n Справочник подписок:', '\n', ap_provider.subscriptions)
+print('futures_bars:', '\n', futures_bars)
 
 # Формируем кортеж тикеров "datanames" для подписки на котировки
 datanames_futures = []
