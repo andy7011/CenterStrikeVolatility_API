@@ -36,11 +36,11 @@ print(f'Дата и время на сервере: {ap_provider.utc_timestamp_t
 list_futures_current = []
 list_futures_all = []
 for asset_code in asset_list: # Пробегаемся по списку активов
-    data = get_futures_series(asset_code)
-    info_fut_1 = data[len(data) - 1]
+    data_fut = get_futures_series(asset_code)
+    info_fut_1 = data_fut[len(data_fut) - 1]
     list_futures_current.append(info_fut_1['secid'])
     list_futures_all.append(info_fut_1['secid'])
-    info_fut_2 = data[len(data) - 2]
+    info_fut_2 = data_fut[len(data_fut) - 2]
     list_futures_all.append(info_fut_2['secid'])
     # fut_1 = info_fut_1['secid'] # Текущий фьючерс
     # fut_2 = info_fut_2['secid'] # Следующий фьючерс1
@@ -65,8 +65,10 @@ def save_bar(response):
     str_dt_msk = dt_msk.strftime('%d.%m.%Y') if type(tf) is str else dt_msk.strftime('%d.%m.%Y %H:%M:%S')  # Для дневных баров и выше показываем только дату. Для остальных - дату и время по МСК
     guid = response['guid']  # Код подписки
     subscription = ap_provider.subscriptions[guid]  # Подписка
-    print(f'{subscription["exchange"]}.{subscription["code"]} ({subscription["tf"]}) - {str_dt_msk} - Open = {response["data"]["open"]}, High = {response["data"]["high"]}, Low = {response["data"]["low"]}, Close = {response["data"]["close"]}, Volume = {response["data"]["volume"]}')
-    futures_bars.update({'DateTime': str_dt_msk, 'Open': response["data"]["open"]})
+    # print(f'{subscription["exchange"]}.{subscription["code"]} ({subscription["tf"]}) - {str_dt_msk} - Open = {response["data"]["open"]}, High = {response["data"]["high"]}, Low = {response["data"]["low"]}, Close = {response["data"]["close"]}, Volume = {response["data"]["volume"]}')
+    print('data:', response["data"])
+    # futures_bars.update({'Code': subscription["code"], 'DateTime': str_dt_msk, 'Open': response["data"]["open"]})
+    futures_bars.update(response["data"])
 
 
     # with open('futures_bars.json', 'w') as f:
