@@ -1,4 +1,4 @@
-from dash import Dash, html, dcc, callback, Output, Input, State
+from dash import Dash, html, dcc, callback, Output, Input
 import plotly.express as px
 import pandas as pd
 import plotly.graph_objects as go
@@ -246,9 +246,9 @@ def update_graph(value):
                     y=[df[df.columns[i]].iloc[-1]],
                     mode="text",
                     text=[df[df.columns[i]].iloc[-1]],
-                    textposition="middle left",
+                    textposition="middle right",
                     # fillcolor=dict(line_colors[i-1]),
-                    textfont=dict(size=10),
+                    textfont=dict(size=16),
                     showlegend=False,
                 ))
 
@@ -262,6 +262,12 @@ def update_graph(value):
 
     # fig.update_layout(margin=dict(l=0, r=0, t=0, b=0))
     fig.update_yaxes(automargin=True)
+
+    # @app.callback(
+    #     Output('graph-content', 'figure'),
+    #     Input('slider', 'value')
+    # )
+
 
     return fig
 
