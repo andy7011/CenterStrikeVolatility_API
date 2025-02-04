@@ -1,12 +1,15 @@
 import logging  # Выводим лог на консоль и в файл
 from datetime import datetime, timedelta  # Дата и время, временной интервал
+import pandas as pd
 import asyncio
 import json
 import hashlib
 from http.client import responses
+import time
 
 import websockets
-
+from central_strike import _calculate_central_strike
+from supported_base_asset import MAP
 from moex_api import get_futures_series
 from moex_api import get_option_series
 from moex_api import get_option_list_by_series
@@ -23,7 +26,7 @@ _API_METHOD_INSTRUMENTS_GET_AND_SUBSCRIBE = "InstrumentsGetAndSubscribeV2"
 
 from AlorPy import AlorPy  # Работа с Alor OpenAPI V2
 exchange = 'MOEX'
-asset_list = ('RTS','Si')
+asset_list = ('RTS','Si', 'CNY')
 asset_code = 'RTS'
 URL_API = f'https://api.alor.ru'
 
@@ -42,64 +45,52 @@ for asset_code in asset_list: # Пробегаемся по списку акт�
     list_futures_all.append(info_fut_1['secid'])
     info_fut_2 = data_fut[len(data_fut) - 2]
     list_futures_all.append(info_fut_2['secid'])
-    # fut_1 = info_fut_1['secid'] # Текущий фьючерс
-    # fut_2 = info_fut_2['secid'] # Следующий фьючерс1
-print('\n list_futures_current', '\n', list_futures_current)
-print('list_futures_all', '\n', list_futures_all)
-# symbol = 'RIH5'
+# print('\n list_futures_current', '\n', list_futures_current)
+# print('list_futures_all', '\n', list_futures_all)
+
 futures_bars = {}
 
-# noinspection PyShadowingNames
-def log_bar(response):  # Вывод в лог полученного бара
-    seconds = response['data']['time']  # Время в Alor OpenAPI V2 передается в секундах, прошедших с 01.01.1970 00:00 UTC
-    dt_msk = datetime.utcfromtimestamp(seconds) if type(tf) is str else ap_provider.utc_timestamp_to_msk_datetime(seconds)  # Дневные бары и выше ставим на начало дня по UTC. Остальные - по МСК
-    str_dt_msk = dt_msk.strftime('%d.%m.%Y') if type(tf) is str else dt_msk.strftime('%d.%m.%Y %H:%M:%S')  # Для дневных баров и выше показываем только дату. Для остальных - дату и время по МСК
-    guid = response['guid']  # Код подписки
-    subscription = ap_provider.subscriptions[guid]  # Подписка
-    print(f'{subscription["exchange"]}.{subscription["code"]} ({subscription["tf"]}) - {str_dt_msk} - Open = {response["data"]["open"]}, High = {response["data"]["high"]}, Low = {response["data"]["low"]}, Close = {response["data"]["close"]}, Volume = {response["data"]["volume"]}')
+# # noinspection PyShadowingNames
+# def log_bar(response):  # Вывод в лог полученного бара
+#     seconds = response['data']['time']  # Время в Alor OpenAPI V2 передается в секундах, прошедших с 01.01.1970 00:00 UTC
+#     dt_msk = datetime.utcfromtimestamp(seconds) if type(tf) is str else ap_provider.utc_timestamp_to_msk_datetime(seconds)  # Дневные бары и выше ставим на начало дня по UTC. Остальные - по МСК
+#     str_dt_msk = dt_msk.strftime('%d.%m.%Y') if type(tf) is str else dt_msk.strftime('%d.%m.%Y %H:%M:%S')  # Для дневных баров и выше показываем только дату. Для остальных - дату и время по МСК
+#     guid = response['guid']  # Код подписки
+#     subscription = ap_provider.subscriptions[guid]  # Подписка
+#     print(f'{subscription["exchange"]}.{subscription["code"]} ({subscription["tf"]}) - {str_dt_msk} - Open = {response["data"]["open"]}, High = {response["data"]["high"]}, Low = {response["data"]["low"]}, Close = {response["data"]["close"]}, Volume = {response["data"]["volume"]}')
 
-
+results = []
 def save_bar(response):
     seconds = response['data']['time']  # Время в Alor OpenAPI V2 передается в секундах, прошедших с 01.01.1970 00:00 UTC
     dt_msk = datetime.utcfromtimestamp(seconds) if type(tf) is str else ap_provider.utc_timestamp_to_msk_datetime(seconds)  # Дневные бары и выше ставим на начало дня по UTC. Остальные - по МСК
     str_dt_msk = dt_msk.strftime('%d.%m.%Y') if type(tf) is str else dt_msk.strftime('%d.%m.%Y %H:%M:%S')  # Для дневных баров и выше показываем только дату. Для остальных - дату и время по МСК
-    guid = response['guid']  # Код подписки
-    subscription = ap_provider.subscriptions[guid]  # Подписка
-    # print(f'{subscription["exchange"]}.{subscription["code"]} ({subscription["tf"]}) - {str_dt_msk} - Open = {response["data"]["open"]}, High = {response["data"]["high"]}, Low = {response["data"]["low"]}, Close = {response["data"]["close"]}, Volume = {response["data"]["volume"]}')
-    print('data:', response["data"])
-    # futures_bars.update({'Code': subscription["code"], 'DateTime': str_dt_msk, 'Open': response["data"]["open"]})
-    futures_bars.update(response["data"])
+    # opcode = subscription['opcode']  # Разбираем по типу подписки
+    # print(f'websocket_handler: Пришли данные подписки {opcode} - {guid} - {response}')
+    guid = response['guid']
+    response["data"]['time'] = str_dt_msk
+    response["data"]['code'] = guid_symbol.get(guid)
+    results.append(response["data"])
 
-
-    # with open('futures_bars.json', 'w') as f:
-    #     json.dump(futures_bars, f)
-
-# Подписываемся на бары текущего фьючерса
-data = {}
+# Подписываемся на бары текущего фьючерса из списка list_futures_current
+guid_symbol = {}
 for symbol in list_futures_current:
     tf = 60  # 60 = 1 минута, 300 = 5 минут, 3600 = 1 час, 'D' = день, 'W' = неделя, 'M' = месяц, 'Y' = год
     days = 3  # Кол-во последних календарных дней, за которые берем историю
     seconds_from = ap_provider.msk_datetime_to_utc_timestamp(datetime.now() - timedelta(days=days))  # За последние дни. В секундах, прошедших с 01.01.1970 00:00 UTC
     guid = ap_provider.bars_get_and_subscribe(exchange, symbol, tf, seconds_from, frequency=1_000_000_000)  # Подписываемся на бары, получаем guid подписки
-    subscription = ap_provider.subscriptions[guid]  # Получаем данные подписки
+    subscription = ap_provider.subscriptions[guid] # Получаем данные подписки
+    # print(symbol, subscription['code'], guid)
+    # Создание словаря для сопоставления 'gud' подписки и 'symbol'
+    guid_symbol[guid] = symbol
     ap_provider.on_new_bar = save_bar
+# print(guid_symbol)
 
-    # seconds = data['data']['time']  # Время в Alor OpenAPI V2 передается в секундах, прошедших с 01.01.1970 00:00 UTC
-    # dt_msk = datetime.utcfromtimestamp(seconds) if type(tf) is str else ap_provider.utc_timestamp_to_msk_datetime(seconds)  # Дневные бары и выше ставим на начало дня по UTC. Остальные - по МСК
-    # str_dt_msk = dt_msk.strftime('%d.%m.%Y') if type(tf) is str else dt_msk.strftime('%d.%m.%Y %H:%M:%S')  # Для дневных баров и выше показываем только дату. Для остальных - дату и время по МСК
-
-
-    # print(f'{subscription["exchange"]}.{subscription["code"]} ({subscription["tf"]}) - {str_dt_msk} - Open = {response["data"]["open"]}, High = {response["data"]["high"]}, Low = {response["data"]["low"]}, Close = {response["data"]["close"]}, Volume = {response["data"]["volume"]}')
-    # ap_provider.on_new_bar = log_bar  # Перед подпиской перехватим ответы
-    # print(f'websocket_handler: Пришли данные подписки {opcode} - {guid} - {response}')
-print('\n Справочник подписок:', '\n', ap_provider.subscriptions)
-print('futures_bars:', '\n', futures_bars)
 
 # Формируем кортеж тикеров "datanames" для подписки на котировки
 datanames_futures = []
 for i in range(len(list_futures_all)):
     datanames_futures.append(f'{exchange}:{list_futures_all[i]}')
-print('\n datanames_futures:', '\n', datanames_futures)
+# print('\n datanames_futures:', '\n', datanames_futures)
 
 # option_expirations = get_option_expirations(fut_1) + get_option_expirations(fut_2) # Получить список дат окончания действия опционов базовых активов fut_1 + fut_2
 # datanames = (f'{exchange}:{symbol}',)
@@ -111,13 +102,25 @@ for i in range(len(asset_list)):
     for item in data:
         if item['underlying_asset'] in list_futures_all:
             option_series_by_name_series.append(item['name'])
-print("\n Опционные серии:", '\n', option_series_by_name_series)
+# print("\n Опционные серии:", '\n', option_series_by_name_series)
 
 secid_list = []
 data = get_option_list_by_series(option_series_by_name_series[0])
 for i in range(len(data)):
     secid_list.append(data[i]['secid'])
-print("\n Тикеры опционных серий:", '\n', secid_list)
+# print("\n Тикеры опционных серий:", '\n', secid_list)
+
+time.sleep(5)
+print(f'Дата и время на сервере: {ap_provider.utc_timestamp_to_msk_datetime(seconds_from):%d.%m.%Y %H:%M:%S}')
+df_bars = pd.DataFrame(results, columns = ["code", "time", "open", "high", "low", "close", "volume"])
+print(df_bars)
+base_asset_price = df_bars['close'].iloc[-1]
+print(base_asset_price)
+strike_step = MAP['SiH5']['strike_step']
+central_strike = _calculate_central_strike(base_asset_price, strike_step)
+print(central_strike)
+
+
 
 # Выход
 input('\nEnter - выход\n')
