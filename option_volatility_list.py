@@ -26,7 +26,7 @@ _API_METHOD_INSTRUMENTS_GET_AND_SUBSCRIBE = "InstrumentsGetAndSubscribeV2"
 
 from AlorPy import AlorPy  # Работа с Alor OpenAPI V2
 exchange = 'MOEX'
-asset_list = ('RTS','Si', 'CNY')
+asset_list = ('RTS','Si')
 asset_code = 'RTS'
 URL_API = f'https://api.alor.ru'
 
@@ -49,7 +49,6 @@ for asset_code in asset_list: # Пробегаемся по списку акт�
 # print('list_futures_all', '\n', list_futures_all)
 
 futures_bars = {}
-
 # # noinspection PyShadowingNames
 # def log_bar(response):  # Вывод в лог полученного бара
 #     seconds = response['data']['time']  # Время в Alor OpenAPI V2 передается в секундах, прошедших с 01.01.1970 00:00 UTC
@@ -74,7 +73,7 @@ def save_bar(response):
 
 # Подписываемся на бары текущего фьючерса из списка list_futures_current
 guid_symbol = {}
-for symbol in list_futures_current:
+for symbol in list_futures_all:
     tf = 60  # 60 = 1 минута, 300 = 5 минут, 3600 = 1 час, 'D' = день, 'W' = неделя, 'M' = месяц, 'Y' = год
     days = 3  # Кол-во последних календарных дней, за которые берем историю
     seconds_from = ap_provider.msk_datetime_to_utc_timestamp(datetime.now() - timedelta(days=days))  # За последние дни. В секундах, прошедших с 01.01.1970 00:00 UTC
@@ -84,7 +83,24 @@ for symbol in list_futures_current:
     # Создание словаря для сопоставления 'gud' подписки и 'symbol'
     guid_symbol[guid] = symbol
     ap_provider.on_new_bar = save_bar
-# print(guid_symbol)
+print(guid_symbol)
+
+
+
+
+
+
+time.sleep(5)
+print(f'Дата и время на сервере: {ap_provider.utc_timestamp_to_msk_datetime(seconds_from):%d.%m.%Y %H:%M:%S}')
+df_bars = pd.DataFrame(results, columns = ["code", "time", "open", "high", "low", "close", "volume"])
+print(df_bars)
+
+# Расчет центральных страйков по базовым активам для формирования первоначального кортежа тикеров
+base_asset_price = df_bars['close'].iloc[-1]
+print(base_asset_price)
+strike_step = MAP['SiH5']['strike_step']
+central_strike = _calculate_central_strike(base_asset_price, strike_step)
+print(central_strike)
 
 
 # Формируем кортеж тикеров "datanames" для подписки на котировки
@@ -93,34 +109,27 @@ for i in range(len(list_futures_all)):
     datanames_futures.append(f'{exchange}:{list_futures_all[i]}')
 # print('\n datanames_futures:', '\n', datanames_futures)
 
-# option_expirations = get_option_expirations(fut_1) + get_option_expirations(fut_2) # Получить список дат окончания действия опционов базовых активов fut_1 + fut_2
+# option_expirations = get_option_expirations(fut_1) # Получить список дат окончания действия опционов базовых активов
+
 # datanames = (f'{exchange}:{symbol}',)
 
-# Опционные серии по базовому активу fut_1 (текущая серия)
+# Опционные серии по базовым активам
 option_series_by_name_series = []
 for i in range(len(asset_list)):
     data = get_option_series(asset_list[i])
     for item in data:
         if item['underlying_asset'] in list_futures_all:
             option_series_by_name_series.append(item['name'])
-# print("\n Опционные серии:", '\n', option_series_by_name_series)
+print("\n Опционные серии:", '\n', option_series_by_name_series)
+
+strike_list_by_name_series = [95000, 97500, 100000]
 
 secid_list = []
 data = get_option_list_by_series(option_series_by_name_series[0])
 for i in range(len(data)):
-    secid_list.append(data[i]['secid'])
-# print("\n Тикеры опционных серий:", '\n', secid_list)
-
-time.sleep(5)
-print(f'Дата и время на сервере: {ap_provider.utc_timestamp_to_msk_datetime(seconds_from):%d.%m.%Y %H:%M:%S}')
-df_bars = pd.DataFrame(results, columns = ["code", "time", "open", "high", "low", "close", "volume"])
-print(df_bars)
-base_asset_price = df_bars['close'].iloc[-1]
-print(base_asset_price)
-strike_step = MAP['SiH5']['strike_step']
-central_strike = _calculate_central_strike(base_asset_price, strike_step)
-print(central_strike)
-
+    if data[i]['strike'] in strike_list_by_name_series:
+        secid_list.append(data[i]['secid']) # ['secid']
+print("\n Тикеры опционных серий:", '\n', secid_list)
 
 
 # Выход
