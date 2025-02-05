@@ -131,8 +131,8 @@ for m in option_series_by_name_series.keys(): # Пробегаемся по сп
     # print(ticker, m, secid_list)
     # print('Количество опционов в серии: ', len(secid_list))
 time.sleep(5)
-print("\n Тикеры необходимых опционных серий:", '\n', secid_list)
-print('\n Количество тикеров:', len(secid_list))
+# print("\n Тикеры необходимых опционных серий:", '\n', secid_list)
+# print('\n Количество тикеров:', len(secid_list))
 
 # Формируем кортеж тикеров опционов "datanames_options" для подписки на котировки
 datanames_options = []
