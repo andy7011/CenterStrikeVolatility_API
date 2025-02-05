@@ -97,7 +97,7 @@ print(df_bars)
 datanames_futures = []
 for i in range(len(list_futures_all)):
     datanames_futures.append(f'{exchange}:{list_futures_all[i]}')
-# print('\n datanames_futures:', '\n', datanames_futures)
+print('\n datanames_futures:', '\n', datanames_futures)
 
 # option_expirations = get_option_expirations(fut_1) # Получить список дат окончания действия опционов базовых активов
 
@@ -134,9 +134,15 @@ time.sleep(5)
 print("\n Тикеры необходимых опционных серий:", '\n', secid_list)
 print('\n Количество тикеров:', len(secid_list))
 
+# Формируем кортеж тикеров опционов "datanames_options" для подписки на котировки
+datanames_options = []
+for i in range(len(secid_list)):
+    datanames_options.append(f'{exchange}:{secid_list[i]}')
+print('\n datanames_options:', '\n', datanames_options)
 
 # Выход
 input('\nEnter - выход\n')
-ap_provider.unsubscribe(guid)  # Отписываемся от получения новых баров
-print(f'Отмена подписки {guid}. Закрытие WebSocket по всем правилам займет некоторое время')
+for guid in guid_symbol.keys():
+    ap_provider.unsubscribe(guid)  # Отписываемся от получения новых баров
+    print(f'Отмена подписки {guid}. Закрытие WebSocket по всем правилам займет некоторое время')
 ap_provider.close_web_socket()  # Перед выходом закрываем соединение с WebSocket
