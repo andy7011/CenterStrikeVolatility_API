@@ -53,6 +53,7 @@ for asset_code in asset_list: # Пробегаемся по списку акт�
 
 results = []
 close_price_by_ticker_dict = {}
+# Подписка на свечи
 def save_bar(response):
     seconds = response['data']['time']  # Время в Alor OpenAPI V2 передается в секундах, прошедших с 01.01.1970 00:00 UTC
     dt_msk = datetime.utcfromtimestamp(seconds) if type(tf) is str else ap_provider.utc_timestamp_to_msk_datetime(seconds)  # Дневные бары и выше ставим на начало дня по UTC. Остальные - по МСК
@@ -123,13 +124,17 @@ for m in option_series_by_name_series.keys(): # Пробегаемся по сп
     # print('Количество опционов в серии: ', len(secid_list))
 time.sleep(5)
 print("\n Тикеры необходимых опционных серий:", '\n', secid_list)
-print('\n Количество тикеров:', len(secid_list))
+print('\n Количество тикеров опционов:', len(secid_list))
 
 # Формируем кортеж тикеров опционов "datanames_options" для подписки на котировки
 datanames_options = []
 for i in range(len(secid_list)):
     datanames_options.append(f'{exchange}:{secid_list[i]}')
 # print('\n Кортеж тикеров опционов типа MOEX:RI85000BF5 :', '\n', datanames_options)
+
+# Запрос котировок из списка тикеров (подписка)
+
+
 
 # Выход
 input('\nEnter - выход\n')
