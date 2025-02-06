@@ -34,6 +34,9 @@ ap_provider = AlorPy()  # Подключаемся ко всем торговы�
 # Проверяем работу запрос/ответ
 seconds_from = ap_provider.get_time()  # Время в Alor OpenAPI V2 передается в секундах, прошедших с 01.01.1970 00:00 UTC
 print(f'Дата и время на сервере: {ap_provider.utc_timestamp_to_msk_datetime(seconds_from):%d.%m.%Y %H:%M:%S}')  # В AlorPy это время можно перевести в МСК для удобства восприятия)
+S_time = datetime.now()
+print(f'Текущее время: {S_time.strftime('%d.%m.%Y %H:%M:%S')}')
+
 
 # Две ближайшие (текущая и следующая) фьючерсные серии по базовому активу из списка asset_list
 list_futures_current = []
@@ -47,16 +50,6 @@ for asset_code in asset_list: # Пробегаемся по списку акт�
     list_futures_all.append(info_fut_2['secid'])
 # print('\n list_futures_current', '\n', list_futures_current)
 # print('list_futures_all', '\n', list_futures_all)
-
-futures_bars = {}
-# # noinspection PyShadowingNames
-# def log_bar(response):  # Вывод в лог полученного бара
-#     seconds = response['data']['time']  # Время в Alor OpenAPI V2 передается в секундах, прошедших с 01.01.1970 00:00 UTC
-#     dt_msk = datetime.utcfromtimestamp(seconds) if type(tf) is str else ap_provider.utc_timestamp_to_msk_datetime(seconds)  # Дневные бары и выше ставим на начало дня по UTC. Остальные - по МСК
-#     str_dt_msk = dt_msk.strftime('%d.%m.%Y') if type(tf) is str else dt_msk.strftime('%d.%m.%Y %H:%M:%S')  # Для дневных баров и выше показываем только дату. Для остальных - дату и время по МСК
-#     guid = response['guid']  # Код подписки
-#     subscription = ap_provider.subscriptions[guid]  # Подписка
-#     print(f'{subscription["exchange"]}.{subscription["code"]} ({subscription["tf"]}) - {str_dt_msk} - Open = {response["data"]["open"]}, High = {response["data"]["high"]}, Low = {response["data"]["low"]}, Close = {response["data"]["close"]}, Volume = {response["data"]["volume"]}')
 
 results = []
 close_price_by_ticker_dict = {}
@@ -86,22 +79,20 @@ for symbol in list_futures_all:
     # Создание словаря для сопоставления 'gud' подписки и 'symbol'
     guid_symbol[guid] = symbol
     ap_provider.on_new_bar = save_bar
-print('\n Словарь для сопоставления подписки получения баров и тикера фьючерса:','\n', guid_symbol)
+# print('\n Словарь для сопоставления подписки получения баров и тикера фьючерса:','\n', guid_symbol)
 
 time.sleep(5)
 print(f'Дата и время на сервере: {ap_provider.utc_timestamp_to_msk_datetime(seconds_from):%d.%m.%Y %H:%M:%S}')
 df_bars = pd.DataFrame(results, columns = ["code", "time", "open", "high", "low", "close", "volume"])
 print(df_bars)
 
-# Формируем кортеж тикеров фьючерсов "datanames_futures" для подписки на котировки
+# Формируем кортеж тикеров фьючерсов "datanames_futures" типа MOEX:RIM5 для подписки на котировки
 datanames_futures = []
 for i in range(len(list_futures_all)):
     datanames_futures.append(f'{exchange}:{list_futures_all[i]}')
-print('\n datanames_futures:', '\n', datanames_futures)
+# print('\n datanames_futures:', '\n', datanames_futures)
 
 # option_expirations = get_option_expirations(fut_1) # Получить список дат окончания действия опционов базовых активов
-
-# datanames = (f'{exchange}:{symbol}',)
 
 # Опционные серии по базовым активам
 option_series_by_name_series = {}
@@ -119,7 +110,7 @@ secid_list = []
 # print(len(option_series_by_name_series.keys()))
 # print(option_series_by_name_series[1])
 for m in option_series_by_name_series.keys(): # Пробегаемся по списку опционных серий
-    ticker = option_series_by_name_series[m]
+    ticker = option_series_by_name_series[m] # Тикер базового актива
     base_asset_price = close_price_by_ticker_dict[ticker]  # Цена базового актива
     strike_step = MAP[ticker]['strike_step']  # Шаг страйка
     strikes_count = MAP[ticker]['max_strikes_count']  # Кол-во страйков
@@ -131,14 +122,14 @@ for m in option_series_by_name_series.keys(): # Пробегаемся по сп
     # print(ticker, m, secid_list)
     # print('Количество опционов в серии: ', len(secid_list))
 time.sleep(5)
-# print("\n Тикеры необходимых опционных серий:", '\n', secid_list)
-# print('\n Количество тикеров:', len(secid_list))
+print("\n Тикеры необходимых опционных серий:", '\n', secid_list)
+print('\n Количество тикеров:', len(secid_list))
 
 # Формируем кортеж тикеров опционов "datanames_options" для подписки на котировки
 datanames_options = []
 for i in range(len(secid_list)):
     datanames_options.append(f'{exchange}:{secid_list[i]}')
-print('\n datanames_options:', '\n', datanames_options)
+# print('\n Кортеж тикеров опционов типа MOEX:RI85000BF5 :', '\n', datanames_options)
 
 # Выход
 input('\nEnter - выход\n')
