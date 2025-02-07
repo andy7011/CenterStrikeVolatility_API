@@ -59,28 +59,31 @@ def save_bar(response):
     dt_msk = datetime.utcfromtimestamp(seconds) if type(tf) is str else ap_provider.utc_timestamp_to_msk_datetime(seconds)  # Дневные бары и выше ставим на начало дня по UTC. Остальные - по МСК
     str_dt_msk = dt_msk.strftime('%d.%m.%Y') if type(tf) is str else dt_msk.strftime('%d.%m.%Y %H:%M:%S')  # Для дневных баров и выше показываем только дату. Для остальных - дату и время по МСК
     guid = response['guid']
-    # opcode = subscription['opcode']  # Разбираем по типу подписки
-    # print(f'websocket_handler: Пришли данные подписки {opcode} - {guid} - {response}')
-    # print(f'{subscription["exchange"]}.{guid_symbol.get(guid)} ({subscription["tf"]}) - {str_dt_msk} - Open = {response["data"]["open"]}, High = {response["data"]["high"]}, Low = {response["data"]["low"]}, Close = {response["data"]["close"]}, Volume = {response["data"]["volume"]}')
-    response["data"]['time'] = str_dt_msk
-    response["data"]['code'] = guid_symbol.get(guid)
-    results.append(response["data"])
-    close_price_by_ticker_dict[guid_symbol.get(guid)] = response["data"]['close']
-    # print(close_price_by_ticker_dict)
+    opcode = subscription['opcode']  # Разбираем по типу подписки
+    if opcode == 'BarsGetAndSubscribe':
+        # print(f'websocket_handler: Пришли данные подписки {opcode} - {guid} - {response}')
+        # print(f'{subscription["exchange"]}.{guid_symbol.get(guid)} ({subscription["tf"]}) - {str_dt_msk} - Open = {response["data"]["open"]}, High = {response["data"]["high"]}, Low = {response["data"]["low"]}, Close = {response["data"]["close"]}, Volume = {response["data"]["volume"]}')
+        response["data"]['time'] = str_dt_msk
+        response["data"]['code'] = guid_symbol.get(guid)
+        results.append(response["data"])
+        close_price_by_ticker_dict[guid_symbol.get(guid)] = response["data"]['close']
+        # print(close_price_by_ticker_dict)
+    else:
+        print(f'websocket_handler: Пришли данные подписки {opcode} - {guid} - {response}')
 
 # Подписываемся на бары текущего фьючерса из списка list_futures_current
 guid_symbol = {}
-for symbol in list_futures_all:
+for symbol_fut in list_futures_all:
     tf = 60  # 60 = 1 минута, 300 = 5 минут, 3600 = 1 час, 'D' = день, 'W' = неделя, 'M' = месяц, 'Y' = год
     days = 3  # Кол-во последних календарных дней, за которые берем историю
     seconds_from = ap_provider.msk_datetime_to_utc_timestamp(datetime.now() - timedelta(days=days))  # За последние дни. В секундах, прошедших с 01.01.1970 00:00 UTC
-    guid = ap_provider.bars_get_and_subscribe(exchange, symbol, tf, seconds_from, frequency=1_000_000_000)  # Подписываемся на бары, получаем guid подписки
+    guid = ap_provider.bars_get_and_subscribe(exchange, symbol_fut, tf, seconds_from, frequency=1_000_000_000)  # Подписываемся на бары, получаем guid подписки
     subscription = ap_provider.subscriptions[guid] # Получаем данные подписки
-    # print(symbol, subscription['code'], guid)
+    print(subscription['code'], guid)
     # Создание словаря для сопоставления 'gud' подписки и 'symbol'
-    guid_symbol[guid] = symbol
+    guid_symbol[guid] = symbol_fut
     ap_provider.on_new_bar = save_bar
-# print('\n Словарь для сопоставления подписки получения баров и тикера фьючерса:','\n', guid_symbol)
+print('\n Словарь для сопоставления подписки получения баров и тикера фьючерса:','\n', guid_symbol)
 
 time.sleep(5)
 print(f'Дата и время на сервере: {ap_provider.utc_timestamp_to_msk_datetime(seconds_from):%d.%m.%Y %H:%M:%S}')
@@ -122,7 +125,7 @@ for m in option_series_by_name_series.keys(): # Пробегаемся по сп
             secid_list.append(data[k]['secid']) # Добавляем тикер в список
     # print(ticker, m, secid_list)
     # print('Количество опционов в серии: ', len(secid_list))
-time.sleep(5)
+time.sleep(7)
 print("\n Тикеры необходимых опционных серий:", '\n', secid_list)
 print('\n Количество тикеров опционов:', len(secid_list))
 
@@ -135,10 +138,31 @@ for i in range(len(secid_list)):
 # Запрос котировок из списка тикеров (подписка)
 
 
+# def save_options_list(response):
+#     opcode = subscription['opcode']  # Разбираем по типу подписки
+#     print(opcode)
+#     print(f'websocket_handler: Пришли данные подписки {opcode} - {guid} - {response}')
+#
+secid_list = ['RI90000BO5', 'RI92500BC5', 'RI92500BO5', 'RI95000BC5', 'RI95000BO5', 'RI97500BC5', 'RI97500BO5', 'RI100000BC5', 'RI100000BO5', 'RI102500BC5']
+for symbol_opt in secid_list:
+    guid = ap_provider.instruments_get_and_subscribe_v2(exchange, symbol_opt, frequency=0, format='Simple')
+    print('guid:', guid)
+    # guid = response['guid']
+    # opcode = subscription['opcode']  # Разбираем по типу подписки
+    subscription = ap_provider.subscriptions[guid]  # Получаем данные подписки
+    # print(f'websocket_handler: Пришли данные подписки {opcode} - {guid} - {response}')
+    # print(symbol_opt, subscription['code'], guid)
+    # guid = ap_provider.quotes_subscribe(exchange, symbol_opt)
+# print(ap_provider.subscriptions)
+ap_provider.on_new_bar = save_bar
+
 
 # Выход
 input('\nEnter - выход\n')
-for guid in guid_symbol.keys():
+guid_list_for_close = ap_provider.subscriptions.keys()
+for guid in guid_list_for_close:
+# for guid in guid_symbol.keys():
     ap_provider.unsubscribe(guid)  # Отписываемся от получения новых баров
-    print(f'Отмена подписки {guid}. Закрытие WebSocket по всем правилам займет некоторое время')
+    print(f'Отмена подписки {guid}')
+print(f'Закрытие WebSocket по всем правилам займет некоторое время')
 ap_provider.close_web_socket()  # Перед выходом закрываем соединение с WebSocket
