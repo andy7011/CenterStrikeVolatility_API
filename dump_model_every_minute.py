@@ -29,7 +29,7 @@ def my_function():
     # print(len(option_list))
 
 def run_function():
-    thread = threading.Timer(10.0, run_function) # 60 seconds = 1 minute
+    thread = threading.Timer(60.0, run_function) # 60 seconds = 1 minute
     # thread = threading.Timer(60.0, run_function) # 60 seconds = 1 minute
     thread.start()
     my_function()
