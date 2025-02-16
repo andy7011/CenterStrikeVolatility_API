@@ -23,6 +23,8 @@ def my_function():
     # print(option_list[5])
     df = pd.DataFrame.from_dict(option_list, orient='columns')
     df.set_index('datetime', inplace=True)
+    # Reformat the date index using strftime()
+    df.index = df.index.strftime('%d.%m.%Y %H:%M:%S')
     # print(df.columns)
     print(df)
 
