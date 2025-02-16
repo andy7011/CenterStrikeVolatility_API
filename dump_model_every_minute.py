@@ -24,6 +24,9 @@ def my_function():
     # print(option_list[5])
     # data = [{'name': 'vikash', 'age': 27}, {'name': 'Satyam', 'age': 14}]
     df = pd.DataFrame.from_dict(option_list, orient='columns')
+    # df.index = pd.to_datetime(df.index, errors='coerce')
+    df.set_index('datetime', inplace=True)
+    print(df.columns)
     print(df)
 
     # print(len(option_list))
