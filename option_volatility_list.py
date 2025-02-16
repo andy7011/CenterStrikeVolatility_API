@@ -6,6 +6,7 @@ import json
 import hashlib
 from http.client import responses
 import time
+from time import time_ns  # Текущее время в наносекундах, прошедших с 01.01.1970 UTC
 
 import websockets
 from central_strike import get_list_of_strikes
