@@ -14,7 +14,6 @@ def get_object_from_json_endpoint(url, method='GET', params={}):
     return response_data
 
 def my_function():
-    # put your code here
     model_from_api = get_object_from_json_endpoint('https://option-volatility-dashboard.ru/dump_model')
     base_asset_list = model_from_api[0]
     option_list = model_from_api[1]
@@ -22,11 +21,9 @@ def my_function():
     for option in option_list:
         option['datetime'] = current_datetime
     # print(option_list[5])
-    # data = [{'name': 'vikash', 'age': 27}, {'name': 'Satyam', 'age': 14}]
     df = pd.DataFrame.from_dict(option_list, orient='columns')
-    # df.index = pd.to_datetime(df.index, errors='coerce')
     df.set_index('datetime', inplace=True)
-    print(df.columns)
+    # print(df.columns)
     print(df)
 
     # print(len(option_list))
