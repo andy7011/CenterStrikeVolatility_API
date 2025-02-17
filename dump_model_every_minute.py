@@ -18,7 +18,7 @@ def get_object_from_json_endpoint(url, method='GET', params={}):
 def my_function():
     model_from_api = get_object_from_json_endpoint('https://option-volatility-dashboard.ru/dump_model')
 
-    # Список базовых активов, вычисление центрального страйка
+    # Список базовых активов, вычисление и добавление в словарь центрального страйка
     base_asset_list = model_from_api[0]
     for asset in base_asset_list:
         ticker = asset.get('_ticker')
