@@ -32,7 +32,6 @@ def my_function():
 
 def run_function():
     thread = threading.Timer(60.0, run_function) # 60 seconds = 1 minute
-    # thread = threading.Timer(60.0, run_function) # 60 seconds = 1 minute
     thread.start()
     my_function()
 
