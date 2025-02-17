@@ -2,6 +2,8 @@ import threading
 import requests
 import datetime
 import pandas as pd
+from central_strike import _calculate_central_strike
+from supported_base_asset import MAP
 
 def get_object_from_json_endpoint(url, method='GET', params={}):
     response = requests.request(method, url, params=params)
@@ -18,19 +20,24 @@ def my_function():
 
     # Список базовых активов, вычисление центрального страйка
     base_asset_list = model_from_api[0]
-    print(base_asset_list[0])
-    print(base_asset_list[0].get('_ticker'), base_asset_list[0].get('_last_price'))
+    for asset in base_asset_list:
+        ticker = asset.get('_ticker')
+        last_price = asset.get('_last_price')
+        strike_step = MAP[ticker]['strike_step']
+        central_strike = _calculate_central_strike(last_price, strike_step) # вычисление центрального страйка
+        asset.update({
+            'central_strike': central_strike
+        })
+    print('base_asset_list:', base_asset_list) # вывод списка базовых активов
 
     # Список опционов
     option_list = model_from_api[1]
     current_datetime = datetime.datetime.now()
     for option in option_list:
         option['datetime'] = current_datetime
-    # print(option_list[5])
     df = pd.DataFrame.from_dict(option_list, orient='columns')
     df.set_index('datetime', inplace=True)
-    # Reformat the date index using strftime()
-    df.index = df.index.strftime('%d.%m.%Y %H:%M:%S')
+    df.index = df.index.strftime('%d.%m.%Y %H:%M:%S') # Reformat the date index using strftime()
     print(df.columns)
     print(df)
 
@@ -38,8 +45,8 @@ def my_function():
 
 def run_function():
     # thread = threading.Timer(60.0, run_function) # 60 seconds = 1 minute
-    # thread = threading.Timer(10.0, run_function)  # 60 seconds = 1 minute
-    # thread.start()
+    thread = threading.Timer(60.0, run_function)  # 60 seconds = 1 minute
+    thread.start()
     my_function()
 
 
