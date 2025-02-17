@@ -31,7 +31,7 @@ URL_API = f'https://api.alor.ru'
 # Указываем путь к файлу CSV
 fn = r'C:\Users\Андрей\YandexDisk\_ИИС\Position\_TEST_CenterStrikeVola_RTS.csv'
 # Начальные параметры графиков: 840 - кол.торговых минуток за сутки
-limit_day = 500
+limit_day = 3900
 # Кол.торговых минуток за месяц 17640 = 840 мин x 21 раб. день
 limit_month = 17640
 asset_code = 'RTS'

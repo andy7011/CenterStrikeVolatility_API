@@ -7,17 +7,16 @@ from matplotlib.widgets import RangeSlider, CheckButtons
 import matplotlib
 import json
 
-ticker = "RTS. Center strike options volatility. Ver.4.2"
+ticker = "RTS. Center strike options volatility."
 SMALL_SIZE = 8
 matplotlib.rc('font', size=SMALL_SIZE)
 
 # Указываем путь к файлу CSV
-fn = r'C:\Users\Андрей\YandexDisk\_ИИС\Position\_TEST_CenterStrikeVola_RTS.csv'
+fn = r'C:\Users\шадрин\YandexDisk\_ИИС\Position\_TEST_CenterStrikeVola_RTS.csv'
 # Начальные параметры графиков: 840 - кол.торговых минуток за сутки
 limit_day = 840
 # Кол.торговых минуток за месяц 17640 = 840 мин x 21 раб. день
 limit_month = 17640
-
 
 def format_date_time(x):
     # Разделяем строку сначала по точкам, а затем берём первые два элемента списка (дату и месяц)
@@ -28,25 +27,20 @@ def format_date_time(x):
     formatted_datetime = date_part + " " + time_part[:5]
     return formatted_datetime
 
-
 def zero_to_nan(values):
     """Replace every 0 with 'nan' and return a copy."""
-    return [float('nan') if x == 0 else x for x in values]
-
+    return [float('nan') if x==0 else x for x in values]
 
 def dump_graph_state_to_file():
     graph_state_file = open('graph_state_v4_2.json', 'w', encoding="utf-8")
     json.dump(graph_state, graph_state_file)
     graph_state_file.close()
 
-
 def updateGraph():
     # print("RUN updateGraph!")
     """!!! Функция для обновления графика"""
     global slider_x_range
     global graph_axes
-    global x_min
-    global x_max
     global checkbuttons_grid
     global checkbuttons_series
     global rows_count
@@ -55,13 +49,15 @@ def updateGraph():
     global series_visible
     global ln
     global graph_state  # Добавляем словарь для хранения статуса видимости графиков
+    global valmin
+    global valmax
     global df
 
-    # Читаем CSV/TXT файл (разделённый точкой с запятой) в DataFrame
-    df = pd.read_csv(fn, sep=';')
     df_slider = df.loc[x_min:x_max]
     t = df_slider['DateTime'].apply(lambda x: format_date_time(x))
+
     graph_axes.clear()
+
     # Создаём скользящее окно
     window = df.rolling(1)  # Замените '1' на нужное вам количество строк
 
@@ -87,49 +83,41 @@ def updateGraph():
     graph_axes.grid(True)
     graph_axes.xaxis.set_major_locator(plt.MultipleLocator((x_max - x_min) / 8))
 
-    # Установка полей для обеих осей
-    graph_axes.margins(x=0.05, y=0.05)
-
-    # Определим, нужно ли показывать серию опционов на графике
-    series_visible = checkbuttons_series.get_status()[1]
-    # print("series_visible: ", series_visible)
-    # # ln.figure.canvas.draw_idle()
-
     # Определим, нужно ли показывать сетку на графике
     grid_visible = checkbuttons_grid.get_status()[0]
     graph_axes.grid(grid_visible)
 
     # Добавляем подписи с последним значением
     tx0 = graph_axes.text(x=len(df_slider) + 2, y=df_slider[df.columns[1]].iloc[len(df_slider) - 1],
-                          s="{:.2f}".format(df_slider[df.columns[1]].iloc[len(df_slider) - 1]),
-                          color="red", fontsize=9, label=df.columns[1])
+                    s="{:.2f}".format(df_slider[df.columns[1]].iloc[len(df_slider) - 1]),
+                    color="red", fontsize=9, label=df.columns[1])
     tx1 = graph_axes.text(x=len(df_slider) + 2, y=df_slider[df.columns[2]].iloc[len(df_slider) - 1],
-                          s="{:.2f}".format(df_slider[df.columns[2]].iloc[len(df_slider) - 1]),
-                          color="orange", fontsize=9, label=df.columns[2])
+                    s="{:.2f}".format(df_slider[df.columns[2]].iloc[len(df_slider) - 1]),
+                    color="orange", fontsize=9, label=df.columns[2])
     tx2 = graph_axes.text(x=len(df_slider) + 2, y=df_slider[df.columns[3]].iloc[len(df_slider) - 1],
-                          s="{:.2f}".format(df_slider[df.columns[3]].iloc[len(df_slider) - 1]),
-                          color="green", fontsize=9, label=df.columns[3])
+                    s="{:.2f}".format(df_slider[df.columns[3]].iloc[len(df_slider) - 1]),
+                    color="green", fontsize=9, label=df.columns[3])
     tx3 = graph_axes.text(x=len(df_slider) + 2, y=df_slider[df.columns[4]].iloc[len(df_slider) - 1],
-                          s="{:.2f}".format(df_slider[df.columns[4]].iloc[len(df_slider) - 1]),
-                          color="aqua", fontsize=9, label=df.columns[4])
+                    s="{:.2f}".format(df_slider[df.columns[4]].iloc[len(df_slider) - 1]),
+                    color="aqua", fontsize=9, label=df.columns[4])
     tx4 = graph_axes.text(x=len(df_slider) + 2, y=df_slider[df.columns[5]].iloc[len(df_slider) - 1],
-                          s="{:.2f}".format(df_slider[df.columns[5]].iloc[len(df_slider) - 1]),
-                          color="blue", fontsize=9, label=df.columns[5])
+                    s="{:.2f}".format(df_slider[df.columns[5]].iloc[len(df_slider) - 1]),
+                    color="blue", fontsize=9, label=df.columns[5])
     tx5 = graph_axes.text(x=len(df_slider) + 2, y=df_slider[df.columns[6]].iloc[len(df_slider) - 1],
-                          s="{:.2f}".format(df_slider[df.columns[6]].iloc[len(df_slider) - 1]),
-                          color="lightcoral", fontsize=9, label=df.columns[6])
+                    s="{:.2f}".format(df_slider[df.columns[6]].iloc[len(df_slider) - 1]),
+                    color="lightcoral", fontsize=9, label=df.columns[6])
     tx6 = graph_axes.text(x=len(df_slider) + 2, y=df_slider[df.columns[7]].iloc[len(df_slider) - 1],
-                          s="{:.2f}".format(df_slider[df.columns[7]].iloc[len(df_slider) - 1]),
-                          color="moccasin", fontsize=9, label=df.columns[7])
+                    s="{:.2f}".format(df_slider[df.columns[7]].iloc[len(df_slider) - 1]),
+                    color="moccasin", fontsize=9, label=df.columns[7])
     tx7 = graph_axes.text(x=len(df_slider) + 2, y=df_slider[df.columns[8]].iloc[len(df_slider) - 1],
-                          s="{:.2f}".format(df_slider[df.columns[8]].iloc[len(df_slider) - 1]),
-                          color="lime", fontsize=9, label=df.columns[8])
+                    s="{:.2f}".format(df_slider[df.columns[8]].iloc[len(df_slider) - 1]),
+                    color="lime", fontsize=9, label=df.columns[8])
     tx8 = graph_axes.text(x=len(df_slider) + 2, y=df_slider[df.columns[9]].iloc[len(df_slider) - 1],
-                          s="{:.2f}".format(df_slider[df.columns[9]].iloc[len(df_slider) - 1]),
-                          color="paleturquoise", fontsize=9, label=df.columns[9])
+                    s="{:.2f}".format(df_slider[df.columns[9]].iloc[len(df_slider) - 1]),
+                    color="paleturquoise", fontsize=9, label=df.columns[9])
     tx9 = graph_axes.text(x=len(df_slider) + 2, y=df_slider[df.columns[10]].iloc[len(df_slider) - 1],
-                          s="{:.2f}".format(df_slider[df.columns[10]].iloc[len(df_slider) - 1]),
-                          color="cornflowerblue", fontsize=9, label=df.columns[10])
+                    s="{:.2f}".format(df_slider[df.columns[10]].iloc[len(df_slider) - 1]),
+                    color="cornflowerblue", fontsize=9, label=df.columns[10])
     text_by_label = {tx.get_label(): tx for tx in [tx0, tx1, tx2, tx3, tx4, tx5, tx6, tx7, tx8, tx9]}
 
     for label, visible in graph_state.items():  # Восстанавливаем статус видимости графиков и IV
@@ -137,16 +125,11 @@ def updateGraph():
             lines_by_label[label].set_visible(True)
             text_by_label[label].set_visible(True)
         else:
-
-            try:
-                lines_by_label[label].set_visible(False)
-                text_by_label[label].set_visible(False)
-            except KeyError:
-                pass
+            lines_by_label[label].set_visible(False)
+            text_by_label[label].set_visible(False)
 
     dump_graph_state_to_file()
     plt.draw()
-
 
 def onCheckClicked1(label):
     """" Обработчик события при нажатии на флажок"""
@@ -168,28 +151,35 @@ def onCheckClicked1(label):
     global graph_state
     graph_state[label] = ln.get_visible()
 
-
 def onCheckClicked2(value: str):
     """ Обработчик события при нажатии на флажок"""
     updateGraph()
 
-
 def onChangeXRange(value: Tuple[np.float64, np.float64]):
     # print("Обработчик события изменения значения интервала по оси X")
     """Обработчик события изменения значения интервала по оси X"""
-    global x_min
+    global rows_count
     global x_max
+    global x_min
+    global valmax
+    global df
+    global df_slider
     # Получаем значение интервала
     x_min, x_max = slider_x_range.val
-    updateGraph()
 
+    # Читаем CSV/TXT файл (разделённый точкой с запятой) в DataFrame
+    df = pd.read_csv(fn, sep=';')
+    rows_count = len(df)
+    df_slider = df.loc[x_min:x_max]
+    # x_max = rows_count
+    valmax = x_max
+    # print("x_min onChangeXRange = ", x_min)
+    # print("x_max onChangeXRange = ", x_max)
+    plt.draw()
+    updateGraph()
 
 if __name__ == "__main__":
     # print("RUN main!")
-    global x_min
-    global x_max
-    global columns_count
-
     # Читаем CSV/TXT файл (разделённый точкой с запятой) в DataFrame
     df = pd.read_csv(fn, sep=';')
     rows_count = len(df)
@@ -197,22 +187,11 @@ if __name__ == "__main__":
     lines_by_label = {df.columns[1], df.columns[2], df.columns[3], df.columns[4], df.columns[5], df.columns[6],
                       df.columns[7], df.columns[8], df.columns[9], df.columns[10]}
     text_by_label = {df.columns[1], df.columns[2], df.columns[3], df.columns[4], df.columns[5], df.columns[6],
-                     df.columns[7], df.columns[8], df.columns[9], df.columns[10]}
-    line_colors = {"red", "orange", "green", "aqua", "blue", "lightcoral", "moccasin", "lime", "paleturquoise",
-                   "cornflowerblue"}
+                      df.columns[7], df.columns[8], df.columns[9], df.columns[10]}
+    line_colors = {"red", "orange", "green", "aqua", "blue", "lightcoral", "moccasin", "lime", "paleturquoise", "cornflowerblue"}
 
-    # Начальные параметры графиков
-    # 840 - кол. торговых минуток за сутки
-    limit_day = 840
-    # Кол.торговых минуток за месяц 17640 = 840 мин x 21 раб.день
-    limit_month = 17640
     x_max = rows_count
     x_min = rows_count - limit_day
-
-    # Ограничиваем данные числом limit_month
-    df = df.tail(limit_month)
-    df_slider = df.loc[x_min:x_max]
-    columns_count = len(df_slider.columns)  # Количество действующих серий, плюс столбец DateTime
 
     # Создадим окно с графиком
     fig, graph_axes = plt.subplots(figsize=(10, 5), num=ticker)
@@ -246,19 +225,14 @@ if __name__ == "__main__":
     for i in range(1, 11):
         checkbuttonLabel = df.columns[i]
         checkbuttonLabels.append(checkbuttonLabel)
-        try:
-            checkbuttonStates.append(graph_state[checkbuttonLabel])
-        except KeyError:
-            pass
+        checkbuttonStates.append(graph_state[checkbuttonLabel])
 
     # Создадим флажок выключателя опционных серий
     checkbuttons_series = CheckButtons(
         ax=axes_checkbuttons1,
         labels=checkbuttonLabels,
         actives=checkbuttonStates,
-        label_props={
-            'color': ["red", "orange", "green", "aqua", "blue", "lightcoral", "moccasin", "lime", "paleturquoise",
-                      "cornflowerblue"]},
+        label_props={'color':["red", "orange", "green", "aqua", "blue", "lightcoral", "moccasin", "lime", "paleturquoise", "cornflowerblue"]},
         frame_props={'edgecolor': 'black'},
         check_props={'facecolor': 'black'},
     )
@@ -283,9 +257,8 @@ if __name__ == "__main__":
 
     updateGraph()
 
-
 def animate(i):
-    # print("RUN animate")
+    # print("RUN animate!")
     global rows_count
     global x_max
     global valmax
@@ -298,7 +271,6 @@ def animate(i):
         x_max = rows_count
         valmax = x_max
     updateGraph()
-
 
 ani = animation.FuncAnimation(fig, animate, interval=10000, cache_frame_data=False)
 plt.show()
