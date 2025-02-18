@@ -1,7 +1,8 @@
 import threading
 import dash
-from dash import dcc
+from dash import dcc, Input, Output, callback, dash_table
 from dash import html
+from plotly.express import data
 import datetime
 import requests
 import plotly.express as px
@@ -9,12 +10,14 @@ import pandas as pd
 from central_strike import _calculate_central_strike
 from supported_base_asset import MAP
 
-# Create the app
-app = dash.Dash(__name__)
+# My positions data
+df_pos = pd.read_csv('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyPos.csv', sep=';')
 
-# Load dataset using Plotly
-tips = px.data.tips()
-print(tips)
+# Create the app
+# Initialize the app - incorporate css
+external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
+app = dash.Dash(external_stylesheets=external_stylesheets)
+# app = dash.Dash(__name__)
 
 def get_object_from_json_endpoint(url, method='GET', params={}):
     response = requests.request(method, url, params=params)
@@ -39,7 +42,7 @@ def my_function():
         asset.update({
             'central_strike': central_strike
         })
-    print('base_asset_list:', base_asset_list) # вывод списка базовых активов
+    # print('base_asset_list:', base_asset_list) # вывод списка базовых активов
 
     # Список опционов
     option_list = model_from_api[1]
@@ -50,26 +53,32 @@ def my_function():
     df.set_index('datetime', inplace=True)
     df.index = df.index.strftime('%d.%m.%Y %H:%M:%S') # Reformat the date index using strftime()
     print(df.columns)
-    print(type(df))
     return df
 
 df = my_function()
-fig = px.scatter(df, x="_strike", y="_volatility") # Create a scatterplot
+# fig = px.scatter(dff, x="_strike", y="_volatility") # Create a scatterplot
 
-app.layout = html.Div(children=[
-   html.Div(children='''
-       Dash: A web application framework for your data.
-   '''),  # Display some text
-
-   dcc.Graph(
-       id='example-graph',
-       figure=fig
+app.layout = html.Div([
+    dcc.Dropdown(df._base_asset_ticker.unique(), value=df._base_asset_ticker.unique()[0],  id='dropdown-selection'),
+    html.Div(id='pandas-output-container-2'),
+    dash_table.DataTable(data=df_pos.to_dict('records'), page_size=8),
+    dcc.Graph(
+       id='graph-content'
    )  # Display the Plotly figure
 ])
 
+@callback(
+    Output('graph-content', 'figure'),
+    Input('dropdown-selection', 'value')
+)
+
+def update_output(value):
+    dff = df[df._base_asset_ticker == value]
+    return px.line(dff, x='_strike', y='_volatility', color='_expiration_datetime')
+    # return px.scatter(dff, x="_strike", y='_ask_iv', color='_expiration_datetime')
+
 def run_function():
-    # thread = threading.Timer(60.0, run_function) # 60 seconds = 1 minute
-    thread = threading.Timer(60.0, run_function)  # 60 seconds = 1 minute
+    thread = threading.Timer(10.0, run_function)  # 60 seconds = 1 minute
     thread.start()
     my_function()
 
