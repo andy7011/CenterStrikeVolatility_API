@@ -1,4 +1,5 @@
 from dash import Dash, html, dcc, callback, Output, Input
+import requests
 import plotly.express as px
 import pandas as pd
 import plotly.graph_objects as go
@@ -8,12 +9,24 @@ import json
 from infrastructure.alor_api import AlorApi
 from moex_api import get_futures_series
 from moex_api import get_option_expirations
-from moex_api import get_option_board
-from moex_api import get_option_list_by_series
-from moex_api import get_option_series
-from moex_api import _convert_moex_data_structure_to_list_of_dicts
 
 from AlorPy import AlorPy  # Работа с Alor OpenAPI V2
+
+
+def get_object_from_json_endpoint(url, method='GET', params={}):
+    response = requests.request(method, url, params=params)
+
+    response_data = None
+    if response.status_code == 200:
+        response_data = response.json()
+    else:
+        raise Exception(f"Error: {response.status_code}")
+    return response_data
+
+model_from_api = get_object_from_json_endpoint('https://option-volatility-dashboard.ru/dump_model')
+option_list = model_from_api[1]
+df_option_list = pd.DataFrame.from_dict(option_list, orient='columns')
+print(df_option_list)
 
 ap_provider = AlorPy()  # Подключаемся ко всем торговым счетам
 # Проверяем работу запрос/ответ
@@ -29,7 +42,7 @@ _WEBSOCKET_URL = 'wss://api.alor.ru/ws'
 exchange = 'MOEX'
 URL_API = f'https://api.alor.ru'
 # Указываем путь к файлу CSV
-fn = r'C:\Users\Андрей\YandexDisk\_ИИС\Position\_TEST_CenterStrikeVola_RTS.csv'
+fn = r'C:\Users\ashadrin\YandexDisk\_ИИС\Position\_TEST_CenterStrikeVola_RTS.csv'
 # Начальные параметры графиков: 840 - кол.торговых минуток за сутки
 limit_day = 3900
 # Кол.торговых минуток за месяц 17640 = 840 мин x 21 раб. день
@@ -114,23 +127,7 @@ for i in option_expirations:
     options_series_names.append(options_series_name)
 print("\n Имена колонок для записи в csv файл options_series_names:",'\n',options_series_names)
 
-# # Опционные серии по базовому активу fut_1 (текущая серия)
-# fut_series = [fut_1]
-# data = get_option_series(asset_code)
-# option_series_by_name_series_1 = []
-# for item in data:
-#     if item['underlying_asset'] in fut_series:
-#         option_series_by_name_series_1.append(item['name'])
-# # print("\n Опционные серии по базовому активу", fut_series, '\n', option_series_by_name_series_1)
-#
-# # Опционные серии по базовому активу fut_2 (следующая серия)
-# fut_series = [fut_2]
-# data = get_option_series(asset_code)
-# option_series_by_name_series_2 = []
-# for item in data:
-#     if item['underlying_asset'] in fut_series:
-#         option_series_by_name_series_2.append(item['name'])
-# # print("\n Опционные серии по базовому активу", fut_series, '\n', option_series_by_name_series_2)
+
 
 # Функция для замены нулей на NaN
 def zero_to_nan(values):

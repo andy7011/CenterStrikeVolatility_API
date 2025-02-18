@@ -1,10 +1,20 @@
 import threading
-import requests
+import dash
+from dash import dcc
+from dash import html
 import datetime
+import requests
+import plotly.express as px
 import pandas as pd
 from central_strike import _calculate_central_strike
 from supported_base_asset import MAP
-import csv
+
+# Create the app
+app = dash.Dash(__name__)
+
+# Load dataset using Plotly
+tips = px.data.tips()
+print(tips)
 
 def get_object_from_json_endpoint(url, method='GET', params={}):
     response = requests.request(method, url, params=params)
@@ -40,19 +50,32 @@ def my_function():
     df.set_index('datetime', inplace=True)
     df.index = df.index.strftime('%d.%m.%Y %H:%M:%S') # Reformat the date index using strftime()
     print(df.columns)
-    print(df)
+    print(type(df))
+    return df
 
+df = my_function()
+fig = px.scatter(df, x="_strike", y="_volatility") # Create a scatterplot
 
+app.layout = html.Div(children=[
+   html.Div(children='''
+       Dash: A web application framework for your data.
+   '''),  # Display some text
+
+   dcc.Graph(
+       id='example-graph',
+       figure=fig
+   )  # Display the Plotly figure
+])
 
 def run_function():
     # thread = threading.Timer(60.0, run_function) # 60 seconds = 1 minute
-    thread = threading.Timer(60.0, run_function)  # 60 seconds = 1 minute
+    thread = threading.Timer(30.0, run_function)  # 60 seconds = 1 minute
     thread.start()
     my_function()
-
 
 def main():
     run_function()
 
 if __name__ == '__main__':
     main()
+    app.run_server(debug=True) # Run the Dash app
