@@ -2,6 +2,7 @@ import threading
 import dash
 from dash import dcc, Input, Output, callback, dash_table
 from dash import html
+from matplotlib.pyplot import figure
 from plotly.express import data
 import datetime
 import requests
@@ -29,7 +30,7 @@ def get_object_from_json_endpoint(url, method='GET', params={}):
 
 def my_function():
     # My positions data
-    df_pos = pd.read_csv('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyPos.csv', sep=';')
+    df_pos = pd.read_csv('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\MyPos.csv', sep=';')
 
     model_from_api = get_object_from_json_endpoint('https://option-volatility-dashboard.ru/dump_model')
 
@@ -51,24 +52,20 @@ def my_function():
     for option in option_list:
         option['datetime'] = current_datetime
     df = pd.DataFrame.from_dict(option_list, orient='columns')
+    # df = df.loc[df['_volatility'] != float("NaN")]
+    df = df.loc[df['_volatility'] > 0]
     df['_expiration_datetime'] = pd.to_datetime(df['_expiration_datetime'])
     df['_expiration_datetime'].dt.date
     df['expiration_date'] = df['_expiration_datetime'].dt.strftime('%d.%m.%Y')
-    # print(df['expiration_datetime'][0])
-    # print(type(df['expiration_datetime'][0]))
-
     df.set_index('datetime', inplace=True)
     df.index = df.index.strftime('%d.%m.%Y %H:%M:%S') # Reformat the date index using strftime()
-    print(df.columns)
 
 
     app.layout = html.Div([
         dcc.Dropdown(df._base_asset_ticker.unique(), value=df._base_asset_ticker.unique()[0], id='dropdown-selection'),
         html.Div(id='pandas-output-container-2'),
         dash_table.DataTable(data=df_pos.to_dict('records'), page_size=8),
-        dcc.Graph(
-            id='graph-content'
-        )  # Display the Plotly figure
+        dcc.Graph(id='graph-content')  # Display the Plotly figure
     ])
 
     @callback(
@@ -76,9 +73,12 @@ def my_function():
         Input('dropdown-selection', 'value')
     )
     def update_output(value):
-        dff = df[df._base_asset_ticker == value]
-        return px.line(dff, x='_strike', y='_volatility', color='expiration_date')
-        # return px.scatter(dff, x="_strike", y='_ask_iv', color='expiration_date')
+        # dff = df[(df._base_asset_ticker == value) & (df._volatility != float("nan"))]
+        dff = df[(df._base_asset_ticker == value) & (df._type == 'C')]
+        # dff = dff[(dff._volatility > 0)]
+        fig = px.line(dff, x='_strike', y='_volatility', color='expiration_date')
+        fig.update_xaxes(range=[dff._strike.min(), dff._strike.max()])
+        return fig
 
 def run_function():
     thread = threading.Timer(10.0, run_function)  # 60 seconds = 1 minute
