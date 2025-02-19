@@ -29,6 +29,8 @@ def get_object_from_json_endpoint(url, method='GET', params={}):
     return response_data
 
 def my_function():
+    print(datetime.datetime.now())
+
     # My positions data
     df_pos = pd.read_csv('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\MyPos.csv', sep=';')
 
@@ -62,22 +64,25 @@ def my_function():
 
 
     app.layout = html.Div([
+        html.H6(children=datetime.datetime.now()),
         dcc.Dropdown(df._base_asset_ticker.unique(), value=df._base_asset_ticker.unique()[0], id='dropdown-selection'),
-        html.Div(id='pandas-output-container-2'),
-        dash_table.DataTable(data=df_pos.to_dict('records'), page_size=8),
+        dcc.Interval('table-update', interval=10000, n_intervals=0),
+        dash_table.DataTable(id = 'table', data=df_pos.to_dict('records'), page_size=8),
         dcc.Graph(id='graph-content')  # Display the Plotly figure
     ])
 
     @callback(
-        Output('graph-content', 'figure'),
-        Input('dropdown-selection', 'value')
+        Output('table', 'data'),
+        Input('table-update', 'n_intervals')
     )
+    def updateTable(n):
+        df_pos = pd.read_csv('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\MyPos.csv', sep=';')
+        return df_pos.to_dict('records')
+
     def update_output(value):
-        # dff = df[(df._base_asset_ticker == value) & (df._volatility != float("nan"))]
         dff = df[(df._base_asset_ticker == value) & (df._type == 'C')]
-        # dff = dff[(dff._volatility > 0)]
         fig = px.line(dff, x='_strike', y='_volatility', color='expiration_date')
-        fig.update_xaxes(range=[dff._strike.min(), dff._strike.max()])
+        # fig.update_xaxes(range=[dff._strike.min(), dff._strike.max()])
         return fig
 
 def run_function():

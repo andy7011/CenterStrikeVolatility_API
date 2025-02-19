@@ -1,21 +1,27 @@
-# Import packages
-from dash import Dash, html, dash_table, dcc
+import dash
+from dash import dcc, Input, Output, callback, dash_table
+from dash import html
+import dash_table
 import pandas as pd
-import plotly.express as px
 
-# Incorporate data
-df = pd.read_csv('https://raw.githubusercontent.com/plotly/datasets/master/gapminder2007.csv')
+app = dash.Dash(__name__)
 
-# Initialize the app
-app = Dash()
+df = pd.read_csv('https://raw.githubusercontent.com/plotly/datasets/master/solar.csv')
 
-# App layout
-app.layout = [
-    html.Div(children='My First App with Data and a Graph'),
-    dash_table.DataTable(data=df.to_dict('records'), page_size=10),
-    dcc.Graph(figure=px.histogram(df, x='continent', y='lifeExp', histfunc='avg'))
-]
+app.layout = html.Div([
+      html.H4('Dashboard'),
+      dcc.Interval('graph-update', interval = 10000, n_intervals = 0),
+      dash_table.DataTable(
+          id = 'table',
+          data = df.to_dict('records'),
+          columns=[{"name": i, "id": i} for i in df.columns])])
 
-# Run the app
+@app.callback(
+        dash.dependencies.Output('table','data'),
+        [dash.dependencies.Input('graph-update', 'n_intervals')])
+def updateTable(n):
+    df = pd.read_csv('https://raw.githubusercontent.com/plotly/datasets/master/solar.csv')
+    return df.to_dict('records')
+
 if __name__ == '__main__':
-    app.run(debug=True)
+     app.run_server(debug=True, port=10451)
