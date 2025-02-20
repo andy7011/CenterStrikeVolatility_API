@@ -62,7 +62,8 @@ app.layout = html.Div(children=[
 
 
 # Callback to update the invisible intermediate-value element
-@app.callback(Output('intermediate-value', 'children'), [Input('interval-component', 'n_intervals')],
+@app.callback(Output('intermediate-value', 'children'),
+              [Input('interval-component', 'n_intervals')],
               [State('intermediate-value', 'children')])
 def clean_data(value, json_old):
     df_old = pd.read_json(json_old, orient='split')
@@ -82,7 +83,7 @@ def clean_data(value, json_old):
 @app.callback(Output('last_update_time', 'children'),
               [Input('interval-component', 'n_intervals')])
 def update_time(n):
-    return 'Last update time (UTC): {}'.format(datetime.utcnow())
+    return 'Last update time (UTC): {}'.format(datetime.now())
 
 
 # Callback to update the latest rate value
