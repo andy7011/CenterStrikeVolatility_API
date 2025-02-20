@@ -5,6 +5,7 @@ from dash import html
 import datetime
 import requests
 import plotly.express as px
+import plotly.graph_objects as go
 import pandas as pd
 from central_strike import _calculate_central_strike
 from supported_base_asset import MAP
@@ -125,10 +126,13 @@ def update_output(value, n):
 
     dff = df[(df._base_asset_ticker == value) & (df._type == 'C')]
 
-    print(dff)
+    # print(dff)
 
+    # fig = go.Figure()
     fig = px.line(dff, x='_strike', y='_volatility', color='expiration_date')
-    # fig_last = px.line(dff, x='_strike', y='_volatility', color='expiration_date')
+    # strike = dff._strike.unique()
+    # last_price_iv = dff._last_price_iv
+    # fig.add_trace(go.Scatter(x=strike, y=last_price_iv, color='expiration_date'))
     # fig.update_xaxes(range=[dff._strike.min(), dff._strike.max()])
     # fig.update_layout(title_text="Volatility smile of the option series", uirevision="Don't change")
     fig.update_layout(
