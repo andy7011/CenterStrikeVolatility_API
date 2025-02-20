@@ -110,9 +110,10 @@ def update_time(n):
 
 #Callback to update the line-graph
 @app.callback(Output('plot', 'figure', allow_duplicate=True),
-              Input('intermediate-value', 'children'),
+              [Input('dropdown-selection', 'value'),
+               Input('interval-component', 'n_intervals')],
               prevent_initial_call=True)
-def update_output(value):
+def update_output(value, n):
     model_from_api = get_object_from_json_endpoint('https://option-volatility-dashboard.ru/dump_model')
     # Список опционов
     option_list = model_from_api[1]
@@ -127,7 +128,7 @@ def update_output(value):
     print(dff)
 
     fig = px.line(dff, x='_strike', y='_volatility', color='expiration_date')
-    fig_last = px.line(dff, x='_strike', y='_volatility', color='expiration_date')
+    # fig_last = px.line(dff, x='_strike', y='_volatility', color='expiration_date')
     # fig.update_xaxes(range=[dff._strike.min(), dff._strike.max()])
     # fig.update_layout(title_text="Volatility smile of the option series", uirevision="Don't change")
     fig.update_layout(
