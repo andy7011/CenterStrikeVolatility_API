@@ -122,6 +122,9 @@ def update_output(value):
     fig = px.line(dff, x='_strike', y='_volatility', color='expiration_date')
     # fig.update_xaxes(range=[dff._strike.min(), dff._strike.max()])
     # fig.update_layout(title_text="Volatility smile of the option series", uirevision="Don't change")
+    fig.update_layout(
+        title_text="Volatility smile of the option series", uirevision="Don't change"
+    )
     return fig
 
 #Callback to update the table
