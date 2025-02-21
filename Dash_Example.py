@@ -9,13 +9,14 @@ import plotly.graph_objects as go
 import pandas as pd
 from central_strike import _calculate_central_strike
 from supported_base_asset import MAP
+import numpy as np
 
 
 
 # Create the app
 # Initialize the app - incorporate css
-external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
-app = dash.Dash(external_stylesheets=external_stylesheets)
+# external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
+# app = dash.Dash(external_stylesheets=external_stylesheets)
 app = dash.Dash(__name__)
 
 # # Initialize the app
@@ -23,15 +24,23 @@ app = dash.Dash(__name__)
 # app.config.suppress_callback_exceptions = True
 
 # My positions data
-df_table = pd.read_csv('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\MyPos.csv', sep=';')
+df_table = pd.read_csv('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyPos.csv', sep=';')
 print(df_table.columns)
 print(df_table)
 
 
 # Volatility history data RTS
-df_RTS_volatility = pd.read_csv('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\_TEST_CenterStrikeVola_RTS.csv', sep=';')
+df_RTS_volatility = pd.read_csv('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\_TEST_CenterStrikeVola_RTS.csv', sep=';')
 df_RTS_volatility = df_RTS_volatility.tail(900)
 df_RTS_volatility.set_index('DateTime', inplace=True)
+# for col in range(1, len(df_RTS_volatility.columns)):
+#     for row in range(1, len(df_RTS_volatility)-1):
+#         df_RTS_volatility.iloc[row, col] = df_RTS_volatility.iloc[row, col].replace(0, 'nan')
+# print(df_RTS_volatility)
+
+
+
+
 # print(df_RTS_volatility)
 
 def get_object_from_json_endpoint(url, method='GET', params={}):
@@ -43,6 +52,10 @@ def get_object_from_json_endpoint(url, method='GET', params={}):
     else:
         raise Exception(f"Error: {response.status_code}")
     return response_data
+
+def zero_to_nan(values):
+    """Replace every 0 with 'nan' and return a copy."""
+    return [float('nan') if x==0 else x for x in values]
 
 model_from_api = get_object_from_json_endpoint('https://option-volatility-dashboard.ru/dump_model')
 
@@ -126,7 +139,7 @@ def update_output(value):
 def update_time(n):
     return 'Last update time: {}'.format(datetime.datetime.now())
 
-#Callback to update the line-graph
+#Callback to update the line-graph volatility smile
 @app.callback(Output('plot_smile', 'figure', allow_duplicate=True),
               [Input('dropdown-selection', 'value'),
                Input('interval-component', 'n_intervals')],
@@ -151,7 +164,7 @@ def update_output(value, n):
     #                          mode='lines',
     #                          ))
     # My positions data
-    df_table = pd.read_csv('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\MyPos.csv', sep=';')
+    df_table = pd.read_csv('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyPos.csv', sep=';')
     df_table = df_table[(df_table.optionbase == value)]
 
     fig.add_trace(go.Scatter(x=df_table['strike'], y=df_table['OpenIV'],
@@ -167,19 +180,23 @@ def update_output(value, n):
     )
     return fig
 
-#Callback to update the line-graph
+#Callback to update the line-graph history data
 @app.callback(Output('plot_history', 'figure', allow_duplicate=True),
                Input('interval-component', 'n_intervals'),
               prevent_initial_call=True)
 def update_output(value):
     # Volatility history data RTS
-    df_RTS_volatility = pd.read_csv('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\_TEST_CenterStrikeVola_RTS.csv',
+    df_RTS_volatility = pd.read_csv('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\_TEST_CenterStrikeVola_RTS.csv',
                                     sep=';')
     df_RTS_volatility = df_RTS_volatility.tail(900)
     df_RTS_volatility.set_index('DateTime', inplace=True)
+    # Преобразуйте 0 в NaN с помощью pandas DataFrame.replace()
+    # df_RTS_volatility.replace(0, pd.NA, inplace=True)
+    # df_RTS_volatility = df_RTS_volatility.replace({0: pd.NA})
+    df_RTS_volatility.replace(0, np.nan, inplace=True)
     print(df_RTS_volatility.columns)
     print(df_RTS_volatility)
-    fig = px.line(df_RTS_volatility, x='DateTime', y='W 27.02.2025')
+    fig = px.line(df_RTS_volatility, x=df_RTS_volatility.index, y=df_RTS_volatility.columns)
     fig.update_layout(
         title_text="Volatility history of the option series", uirevision="Don't change"
     )
@@ -192,7 +209,7 @@ def update_output(value):
     Input('interval-component', 'n_intervals')
 )
 def updateTable(n):
-    df_pos = pd.read_csv('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\MyPos.csv', sep=';')
+    df_pos = pd.read_csv('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyPos.csv', sep=';')
     return df_pos.to_dict('records')
 
 if __name__ == '__main__':
