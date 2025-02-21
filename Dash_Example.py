@@ -152,6 +152,8 @@ def update_output(value, n):
     #                          ))
     # My positions data
     df_table = pd.read_csv('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\MyPos.csv', sep=';')
+    df_table = df_table[(df_table.optionbase == value)]
+
     fig.add_trace(go.Scatter(x=df_table['strike'], y=df_table['OpenIV'],
                              mode='markers'
                              ))
