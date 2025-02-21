@@ -32,7 +32,7 @@ print(df_table)
 df_RTS_volatility = pd.read_csv('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\_TEST_CenterStrikeVola_RTS.csv', sep=';')
 df_RTS_volatility = df_RTS_volatility.tail(900)
 df_RTS_volatility.set_index('DateTime', inplace=True)
-print(df_RTS_volatility)
+# print(df_RTS_volatility)
 
 def get_object_from_json_endpoint(url, method='GET', params={}):
     response = requests.request(method, url, params=params)
@@ -155,7 +155,7 @@ def update_output(value, n):
     df_table = df_table[(df_table.optionbase == value)]
 
     fig.add_trace(go.Scatter(x=df_table['strike'], y=df_table['OpenIV'],
-                             mode='markers'
+                             mode='markers', name='MyPos'
                              ))
     # strike = dff._strike.unique()
     # last_price_iv = dff._last_price_iv
@@ -166,6 +166,25 @@ def update_output(value, n):
         title_text="Volatility smile of the option series", uirevision="Don't change"
     )
     return fig
+
+#Callback to update the line-graph
+@app.callback(Output('plot_history', 'figure', allow_duplicate=True),
+               Input('interval-component', 'n_intervals'),
+              prevent_initial_call=True)
+def update_output(value):
+    # Volatility history data RTS
+    df_RTS_volatility = pd.read_csv('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\_TEST_CenterStrikeVola_RTS.csv',
+                                    sep=';')
+    df_RTS_volatility = df_RTS_volatility.tail(900)
+    df_RTS_volatility.set_index('DateTime', inplace=True)
+    print(df_RTS_volatility.columns)
+    print(df_RTS_volatility)
+    fig = px.line(df_RTS_volatility, x='DateTime', y='W 27.02.2025')
+    fig.update_layout(
+        title_text="Volatility history of the option series", uirevision="Don't change"
+    )
+    return fig
+
 
 #Callback to update the table
 @app.callback(
