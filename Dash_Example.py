@@ -7,6 +7,7 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 import pandas as pd
+
 from central_strike import _calculate_central_strike
 from supported_base_asset import MAP
 import numpy as np
@@ -186,20 +187,38 @@ def update_output(value, n):
               prevent_initial_call=True)
 def update_output(value):
     # Volatility history data RTS
-    df_RTS_volatility = pd.read_csv('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\_TEST_CenterStrikeVola_RTS.csv',
-                                    sep=';')
+    df_RTS_volatility = pd.read_csv('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\_TEST_CenterStrikeVola_RTS.csv', sep=';')
+
     df_RTS_volatility = df_RTS_volatility.tail(900)
-    df_RTS_volatility.set_index('DateTime', inplace=True)
+
+    # Преобразуем DateTime в формат datetime
+    df_RTS_volatility['DateTime'] = pd.to_datetime(df_RTS_volatility['DateTime'], format='%d.%m.%Y %H:%M:%S')
+    print(df_RTS_volatility['DateTime'])
+
+    # # Создание индекса по дате
+    # df_RTS_volatility.set_index('DateTime', inplace=True)
+
     # Преобразуйте 0 в NaN с помощью pandas DataFrame.replace()
-    # df_RTS_volatility.replace(0, pd.NA, inplace=True)
-    # df_RTS_volatility = df_RTS_volatility.replace({0: pd.NA})
     df_RTS_volatility.replace(0, np.nan, inplace=True)
+
     print(df_RTS_volatility.columns)
     print(df_RTS_volatility)
-    fig = px.line(df_RTS_volatility, x=df_RTS_volatility.index, y=df_RTS_volatility.columns)
+
+    fig = px.line(df_RTS_volatility, x='DateTime', y=df_RTS_volatility.columns)
+
+    # # Убираем неторговое время
+    # fig.update_xaxes(
+    #     rangebreaks=[
+    #         dict(bounds=[23.9, 9], pattern="hour"),  # hide hours outside of 9am-5pm
+    #     ]
+    # )
+
+
+
     fig.update_layout(
         title_text="Volatility history of the option series", uirevision="Don't change"
     )
+
     return fig
 
 
