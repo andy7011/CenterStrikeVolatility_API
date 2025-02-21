@@ -1,24 +1,38 @@
-import threading
 import dash
 from dash import dcc, Input, Output, callback, dash_table, State
 from dash import html
 import datetime
 import requests
 import plotly.express as px
+from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 import pandas as pd
 from central_strike import _calculate_central_strike
 from supported_base_asset import MAP
 
 
+
 # Create the app
 # Initialize the app - incorporate css
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 app = dash.Dash(external_stylesheets=external_stylesheets)
+app = dash.Dash(__name__)
+
+# # Initialize the app
 # app = dash.Dash(__name__)
+# app.config.suppress_callback_exceptions = True
 
 # My positions data
-df_table = pd.read_csv('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyPos.csv', sep=';')
+df_table = pd.read_csv('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\MyPos.csv', sep=';')
+print(df_table.columns)
+print(df_table)
+
+
+# Volatility history data RTS
+df_RTS_volatility = pd.read_csv('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\_TEST_CenterStrikeVola_RTS.csv', sep=';')
+df_RTS_volatility = df_RTS_volatility.tail(900)
+df_RTS_volatility.set_index('DateTime', inplace=True)
+print(df_RTS_volatility)
 
 def get_object_from_json_endpoint(url, method='GET', params={}):
     response = requests.request(method, url, params=params)
@@ -63,7 +77,10 @@ app.layout = html.Div(children=[
         html.Div(id='dd-output-container')]),
 
         html.Div(children=[
-            dcc.Graph(id='plot')]),
+            dcc.Graph(id='plot_smile')]),
+
+        html.Div(children=[
+            dcc.Graph(id='plot_history')]),
 
     dcc.Interval(
         id='interval-component',
@@ -110,7 +127,7 @@ def update_time(n):
     return 'Last update time: {}'.format(datetime.datetime.now())
 
 #Callback to update the line-graph
-@app.callback(Output('plot', 'figure', allow_duplicate=True),
+@app.callback(Output('plot_smile', 'figure', allow_duplicate=True),
               [Input('dropdown-selection', 'value'),
                Input('interval-component', 'n_intervals')],
               prevent_initial_call=True)
@@ -130,9 +147,17 @@ def update_output(value, n):
 
     # fig = go.Figure()
     fig = px.line(dff, x='_strike', y='_volatility', color='expiration_date')
+    # fig.add_trace(go.Scatter(x=dff['_strike'], y=dff['_volatility'],
+    #                          mode='lines',
+    #                          ))
+    # My positions data
+    df_table = pd.read_csv('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\MyPos.csv', sep=';')
+    fig.add_trace(go.Scatter(x=df_table['strike'], y=df_table['OpenIV'],
+                             mode='markers'
+                             ))
     # strike = dff._strike.unique()
     # last_price_iv = dff._last_price_iv
-    # fig.add_trace(go.Scatter(x=strike, y=last_price_iv, color='expiration_date'))
+    # fig.add_trace(go.Scatter(y='_last_price_iv'), row=2, col=1)
     # fig.update_xaxes(range=[dff._strike.min(), dff._strike.max()])
     # fig.update_layout(title_text="Volatility smile of the option series", uirevision="Don't change")
     fig.update_layout(
@@ -146,7 +171,7 @@ def update_output(value, n):
     Input('interval-component', 'n_intervals')
 )
 def updateTable(n):
-    df_pos = pd.read_csv('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyPos.csv', sep=';')
+    df_pos = pd.read_csv('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\MyPos.csv', sep=';')
     return df_pos.to_dict('records')
 
 if __name__ == '__main__':
