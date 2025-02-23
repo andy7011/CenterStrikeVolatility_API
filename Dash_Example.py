@@ -271,6 +271,11 @@ def updateTable(n, value):
     df_pos = pd.read_csv('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyPos.csv', sep=';')
     # Фильтрация строк по базовому активу
     df_pos = df_pos[df_pos['optionbase'] == value]
+
+    # # Замена RealIV на _last_price_iv опционов моих позиций
+    # for i, df in df_pos.iterrows():
+    #     df_pos['RealIV'] = df['_last_price_iv']
+
     return df_pos.to_dict('records')
 
 if __name__ == '__main__':
