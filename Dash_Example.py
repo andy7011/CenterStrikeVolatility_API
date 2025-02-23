@@ -172,17 +172,17 @@ def update_output_smile(value, n):
                              name='MyPos',
                              ))
 
-    fig.update_traces(
-        marker=dict(
-            size=8,
-            symbol="diamond-open",
-            line=dict(
-                width=2,
-                #             color="DarkSlateGrey" Line colors don't apply to open markers
-            )
-        ),
-        selector=dict(mode="markers"),
-    )
+    # fig.update_traces(
+    #     marker=dict(
+    #         size=8,
+    #         symbol="diamond-open",
+    #         line=dict(
+    #             width=2,
+    #             #             color="DarkSlateGrey" Line colors don't apply to open markers
+    #         )
+    #     ),
+    #     selector=dict(mode="markers"),
+    # )
 
 
     # Цена базового актива
