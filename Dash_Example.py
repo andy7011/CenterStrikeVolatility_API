@@ -42,10 +42,6 @@ file.close()
 # print(df_RTS_volatility)
 
 
-
-
-# print(df_RTS_volatility)
-
 def get_object_from_json_endpoint(url, method='GET', params={}):
     response = requests.request(method, url, params=params)
 
@@ -72,7 +68,7 @@ for asset in base_asset_list:
     asset.update({
         'central_strike': central_strike
     })
-print('base_asset_list:', base_asset_list) # вывод списка базовых активов
+# print('base_asset_list:', base_asset_list) # вывод списка базовых активов
 
 # Список опционов
 option_list = model_from_api[1]
@@ -107,8 +103,6 @@ app.layout = html.Div(children=[
         dash_table.DataTable(id='table', data=df_table.to_dict('records'), page_size=8)
 
 ])
-
-
 
 # Callback to update the invisible intermediate-value element
 @app.callback(Output('intermediate-value', 'children'),
@@ -163,13 +157,11 @@ def update_output_smile(value, n):
     for asset in base_asset_list:
         if asset['_ticker'] == value:
             base_asset_last_price = asset['_last_price']
-    print('base_asset_last_price:', base_asset_last_price)
+    # print('base_asset_last_price:', base_asset_last_price)
 
     # fig = go.Figure()
     fig = px.line(dff, x='_strike', y='_volatility', color='expiration_date')
-    # fig.add_trace(go.Scatter(x=dff['_strike'], y=dff['_volatility'],
-    #                          mode='lines',
-    #                          ))
+
     # My positions data
     df_table = pd.read_csv('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyPos.csv', sep=';')
     df_table = df_table[(df_table.optionbase == value)]
@@ -177,6 +169,7 @@ def update_output_smile(value, n):
     fig.add_trace(go.Scatter(x=df_table['strike'], y=df_table['OpenIV'],
                              mode='markers', name='MyPos'
                              ))
+    # Цена базового актива
     fig.add_trace(go.Scatter(x=[base_asset_last_price, base_asset_last_price], y=[dff._volatility.min(), dff._volatility.max()],
                              mode='lines', line=go.scatter.Line(color='gray'),
                              showlegend=False
@@ -213,35 +206,58 @@ def update_output_histiry(value):
 
     # Преобразуйте 0 в NaN с помощью pandas DataFrame.replace()
     df_RTS_volatility.replace(0, np.nan, inplace=True)
-    df_RTS_volatility.set_index('DateTime')
-    # print(df_RTS_volatility.columns)
 
-    fig1 = px.line(df_RTS_volatility, x='DateTime', y=df_RTS_volatility.columns)
+    # # Устанавливаем индекс по столбцу DateTime
+    df_RTS_volatility.index = pd.DatetimeIndex(df_RTS_volatility['DateTime'])
+    del df_RTS_volatility['DateTime']
+    print(df_RTS_volatility.index)
+    print('type columns df_RTS_volatility:', df_RTS_volatility.dtypes)
 
-    fig1.update_layout(
-        title_text="Volatility history of the option series", uirevision="Don't change"
-    )
+    # column_name_series = []
+    # for col in df_RTS_volatility.columns:
+    #     column_name_series.append(col)
+    # # print('column_name_series:', column_name_series)
 
-    fig1.update_xaxes(range=[df_RTS_volatility.DateTime.min(), df_RTS_volatility.DateTime.max() + timedelta(minutes=60)])
+
+    fig = px.line(df_RTS_volatility, x=df_RTS_volatility.index, y=df_RTS_volatility.columns)
+    # Добавляем к оси Х 60 минут
+    fig.update_xaxes(range=[df_RTS_volatility.index.min(), df_RTS_volatility.index.max() + timedelta(minutes=60)])
+
+
+    # fig = px.line(df_RTS_volatility, x=df_RTS_volatility.index, y=df_RTS_volatility.columns)
+
+        # fig = go.Figure(data=[go.Scatter(x=df_RTS_volatility.index, y=df_RTS_volatility[i])])
 
     # # Убираем неторговое время
-    # fig1.update_xaxes(
+    # fig.update_xaxes(
     #     rangebreaks=[
-    #         dict(bounds=["sat", "mon"]),  # hide weekends, eg. hide sat to before mon
-    #         dict(bounds=[24, 9], pattern="hour")  # hide hours outside of 9am-24pm
+    #         # dict(bounds=["sat", "mon"]),  # hide weekends, eg. hide sat to before mon
+    #         dict(bounds=[24, 9], pattern="hour"),  # hide hours outside of 9am-24pm
     #     ]
     # )
 
-    return fig1
+    fig.update_layout(
+        title_text="Volatility history of the option series", uirevision="Don't change"
+    )
 
+    # fig.add_trace(
+    #     go.Scatter(x=df_RTS_volatility.index, y=df_RTS_volatility['W 27.02.2025'],
+    #                mode='lines',
+    #                ))
+
+    return fig
 
 #Callback to update the table
 @app.callback(
-    Output('table', 'data'),
-    Input('interval-component', 'n_intervals')
+    Output('table', 'data', allow_duplicate=True),
+    [Input('interval-component', 'n_intervals'),
+    Input('dropdown-selection', 'value')],
+    prevent_initial_call=True
 )
-def updateTable(n):
+def updateTable(n, value):
     df_pos = pd.read_csv('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyPos.csv', sep=';')
+    # Фильтрация строк по базовому активу
+    df_pos = df_pos[df_pos['optionbase'] == value]
     return df_pos.to_dict('records')
 
 if __name__ == '__main__':
