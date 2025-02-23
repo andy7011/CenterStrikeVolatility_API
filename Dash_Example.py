@@ -2,6 +2,7 @@ import dash
 from dash import dcc, Input, Output, callback, dash_table, State
 from dash import html
 import datetime
+from datetime import timedelta
 import requests
 import plotly.express as px
 from plotly.subplots import make_subplots
@@ -31,12 +32,13 @@ print(df_table)
 
 
 # Volatility history data RTS
-df_RTS_volatility = pd.read_csv('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\_TEST_CenterStrikeVola_RTS.csv', sep=';')
-df_RTS_volatility = df_RTS_volatility.tail(900)
-df_RTS_volatility.set_index('DateTime', inplace=True)
-# for col in range(1, len(df_RTS_volatility.columns)):
-#     for row in range(1, len(df_RTS_volatility)-1):
-#         df_RTS_volatility.iloc[row, col] = df_RTS_volatility.iloc[row, col].replace(0, 'nan')
+# Open the file using the "with" statement
+with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\_TEST_CenterStrikeVola_RTS.csv', 'r') as file:
+    df_RTS_volatility = pd.read_csv(file, sep=';')
+    df_RTS_volatility = df_RTS_volatility.tail(900)
+    df_RTS_volatility.set_index('DateTime', inplace=True)
+# Close the file explicitly file.close()
+file.close()
 # print(df_RTS_volatility)
 
 
@@ -145,7 +147,7 @@ def update_time(n):
               [Input('dropdown-selection', 'value'),
                Input('interval-component', 'n_intervals')],
               prevent_initial_call=True)
-def update_output(value, n):
+def update_output_smile(value, n):
     model_from_api = get_object_from_json_endpoint('https://option-volatility-dashboard.ru/dump_model')
     # Список опционов
     option_list = model_from_api[1]
@@ -171,6 +173,10 @@ def update_output(value, n):
     fig.add_trace(go.Scatter(x=df_table['strike'], y=df_table['OpenIV'],
                              mode='markers', name='MyPos'
                              ))
+    fig.add_trace(go.Scatter(x=[115000, 115000], y=[dff._volatility.min(), dff._volatility.max()],
+                             mode='lines', line=go.scatter.Line(color='gray'),
+                             showlegend=False
+                             ))
     # strike = dff._strike.unique()
     # last_price_iv = dff._last_price_iv
     # fig.add_trace(go.Scatter(y='_last_price_iv'), row=2, col=1)
@@ -185,41 +191,44 @@ def update_output(value, n):
 @app.callback(Output('plot_history', 'figure', allow_duplicate=True),
                Input('interval-component', 'n_intervals'),
               prevent_initial_call=True)
-def update_output(value):
-    # Volatility history data RTS
-    df_RTS_volatility = pd.read_csv('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\_TEST_CenterStrikeVola_RTS.csv', sep=';')
+def update_output_histiry(value):
 
-    df_RTS_volatility = df_RTS_volatility.tail(900)
+    # Volatility history data RTS
+    # Open the file using the "with" statement
+    with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\_TEST_CenterStrikeVola_RTS.csv', 'r') as file:
+        df_RTS_volatility = pd.read_csv(file, sep=';')
+        df_RTS_volatility = df_RTS_volatility.tail(900)
+    # Close the file explicitly file.close()
+    file.close()
 
     # Преобразуем DateTime в формат datetime
-    df_RTS_volatility['DateTime'] = pd.to_datetime(df_RTS_volatility['DateTime'], format='%d.%m.%Y %H:%M:%S')
-    print(df_RTS_volatility['DateTime'])
+    df_RTS_volatility['DateTime'] = pd.to_datetime(df_RTS_volatility['DateTime'], format='%d.%m.%Y %H:%M:%S', dayfirst=True)
 
-    # # Создание индекса по дате
-    # df_RTS_volatility.set_index('DateTime', inplace=True)
+    # Удаляем столбцы содержащие только нулевые значения
+    df_RTS_volatility = df_RTS_volatility.loc[:, (df_RTS_volatility != 0).any(axis=0)]
 
     # Преобразуйте 0 в NaN с помощью pandas DataFrame.replace()
     df_RTS_volatility.replace(0, np.nan, inplace=True)
+    df_RTS_volatility.set_index('DateTime')
+    # print(df_RTS_volatility.columns)
 
-    print(df_RTS_volatility.columns)
-    print(df_RTS_volatility)
+    fig1 = px.line(df_RTS_volatility, x='DateTime', y=df_RTS_volatility.columns)
 
-    fig = px.line(df_RTS_volatility, x='DateTime', y=df_RTS_volatility.columns)
-
-    # # Убираем неторговое время
-    # fig.update_xaxes(
-    #     rangebreaks=[
-    #         dict(bounds=[23.9, 9], pattern="hour"),  # hide hours outside of 9am-5pm
-    #     ]
-    # )
-
-
-
-    fig.update_layout(
+    fig1.update_layout(
         title_text="Volatility history of the option series", uirevision="Don't change"
     )
 
-    return fig
+    fig1.update_xaxes(range=[df_RTS_volatility.DateTime.min(), df_RTS_volatility.DateTime.max() + timedelta(minutes=60)])
+
+    # # Убираем неторговое время
+    # fig1.update_xaxes(
+    #     rangebreaks=[
+    #         dict(bounds=["sat", "mon"]),  # hide weekends, eg. hide sat to before mon
+    #         dict(bounds=[24, 9], pattern="hour")  # hide hours outside of 9am-24pm
+    #     ]
+    # )
+
+    return fig1
 
 
 #Callback to update the table
