@@ -167,8 +167,24 @@ def update_output_smile(value, n):
     df_table = df_table[(df_table.optionbase == value)]
 
     fig.add_trace(go.Scatter(x=df_table['strike'], y=df_table['OpenIV'],
-                             mode='markers', name='MyPos'
+                             mode='markers+text', text=df_table['OpenIV'], textposition='top left',
+                             # marker=dict(size=10, color='darkmagenta'),
+                             name='MyPos',
                              ))
+
+    fig.update_traces(
+        marker=dict(
+            size=8,
+            symbol="diamond-open",
+            line=dict(
+                width=2,
+                #             color="DarkSlateGrey" Line colors don't apply to open markers
+            )
+        ),
+        selector=dict(mode="markers"),
+    )
+
+
     # Цена базового актива
     fig.add_trace(go.Scatter(x=[base_asset_last_price, base_asset_last_price], y=[dff._volatility.min(), dff._volatility.max()],
                              mode='lines', line=go.scatter.Line(color='gray'),
@@ -210,31 +226,28 @@ def update_output_histiry(value):
     # # Устанавливаем индекс по столбцу DateTime
     df_RTS_volatility.index = pd.DatetimeIndex(df_RTS_volatility['DateTime'])
     del df_RTS_volatility['DateTime']
-    print(df_RTS_volatility.index)
-    print('type columns df_RTS_volatility:', df_RTS_volatility.dtypes)
+    # print(df_RTS_volatility.index)
+    # print('type columns df_RTS_volatility:', df_RTS_volatility.dtypes)
 
     # column_name_series = []
     # for col in df_RTS_volatility.columns:
     #     column_name_series.append(col)
     # # print('column_name_series:', column_name_series)
 
-
     fig = px.line(df_RTS_volatility, x=df_RTS_volatility.index, y=df_RTS_volatility.columns)
     # Добавляем к оси Х 60 минут
     fig.update_xaxes(range=[df_RTS_volatility.index.min(), df_RTS_volatility.index.max() + timedelta(minutes=60)])
 
 
-    # fig = px.line(df_RTS_volatility, x=df_RTS_volatility.index, y=df_RTS_volatility.columns)
+    # fig = go.Figure(data=[go.Scatter(x=df_RTS_volatility.index, y=df_RTS_volatility[i])])
 
-        # fig = go.Figure(data=[go.Scatter(x=df_RTS_volatility.index, y=df_RTS_volatility[i])])
-
-    # # Убираем неторговое время
-    # fig.update_xaxes(
-    #     rangebreaks=[
-    #         # dict(bounds=["sat", "mon"]),  # hide weekends, eg. hide sat to before mon
-    #         dict(bounds=[24, 9], pattern="hour"),  # hide hours outside of 9am-24pm
-    #     ]
-    # )
+    # Убираем неторговое время
+    fig.update_xaxes(
+        rangebreaks=[
+            # dict(bounds=["sat", "mon"]),  # hide weekends, eg. hide sat to before mon
+            # dict(bounds=[24, 9], pattern="hour"),  # hide hours outside of 9am-24pm
+        ]
+    )
 
     fig.update_layout(
         title_text="Volatility history of the option series", uirevision="Don't change"
