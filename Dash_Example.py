@@ -72,7 +72,7 @@ for asset in base_asset_list:
     asset.update({
         'central_strike': central_strike
     })
-# print('base_asset_list:', base_asset_list) # вывод списка базовых активов
+print('base_asset_list:', base_asset_list) # вывод списка базовых активов
 
 # Список опционов
 option_list = model_from_api[1]
@@ -149,6 +149,7 @@ def update_time(n):
               prevent_initial_call=True)
 def update_output_smile(value, n):
     model_from_api = get_object_from_json_endpoint('https://option-volatility-dashboard.ru/dump_model')
+
     # Список опционов
     option_list = model_from_api[1]
     df = pd.DataFrame.from_dict(option_list, orient='columns')
@@ -159,7 +160,10 @@ def update_output_smile(value, n):
 
     dff = df[(df._base_asset_ticker == value) & (df._type == 'C')]
 
-    # print(dff)
+    for asset in base_asset_list:
+        if asset['_ticker'] == value:
+            base_asset_last_price = asset['_last_price']
+    print('base_asset_last_price:', base_asset_last_price)
 
     # fig = go.Figure()
     fig = px.line(dff, x='_strike', y='_volatility', color='expiration_date')
@@ -173,7 +177,7 @@ def update_output_smile(value, n):
     fig.add_trace(go.Scatter(x=df_table['strike'], y=df_table['OpenIV'],
                              mode='markers', name='MyPos'
                              ))
-    fig.add_trace(go.Scatter(x=[115000, 115000], y=[dff._volatility.min(), dff._volatility.max()],
+    fig.add_trace(go.Scatter(x=[base_asset_last_price, base_asset_last_price], y=[dff._volatility.min(), dff._volatility.max()],
                              mode='lines', line=go.scatter.Line(color='gray'),
                              showlegend=False
                              ))
