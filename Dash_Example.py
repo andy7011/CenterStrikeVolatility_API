@@ -5,10 +5,8 @@ import datetime
 from datetime import timedelta
 import requests
 import plotly.express as px
-from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 import pandas as pd
-
 from central_strike import _calculate_central_strike
 from supported_base_asset import MAP
 import numpy as np
@@ -26,16 +24,16 @@ app = dash.Dash(__name__)
 # app.config.suppress_callback_exceptions = True
 
 # My positions data
-df_table = pd.read_csv('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyPos.csv', sep=';')
+df_table = pd.read_csv('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\MyPos.csv', sep=';')
 print(df_table.columns)
 print(df_table)
 
 
 # Volatility history data RTS
 # Open the file using the "with" statement
-with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\_TEST_CenterStrikeVola_RTS.csv', 'r') as file:
+with open('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\_TEST_CenterStrikeVola_RTS.csv', 'r') as file:
     df_RTS_volatility = pd.read_csv(file, sep=';')
-    df_RTS_volatility = df_RTS_volatility.tail(900)
+    df_RTS_volatility = df_RTS_volatility.tail(300)
     df_RTS_volatility.set_index('DateTime', inplace=True)
 # Close the file explicitly file.close()
 file.close()
@@ -101,7 +99,6 @@ app.layout = html.Div(children=[
 
     html.Div(id='intermediate-value', style={'display': 'none'}),
         dash_table.DataTable(id='table', data=df_table.to_dict('records'), page_size=8)
-
 ])
 
 # Callback to update the invisible intermediate-value element
@@ -120,7 +117,7 @@ def clean_data(value, dff):
     df['expiration_date'] = df['_expiration_datetime'].dt.strftime('%d.%m.%Y')
     dff = df[(df._base_asset_ticker == value) & (df._type == 'C')]
     # print(dff)
-    return dff.tail(100).to_json(date_format='iso', orient='split')
+    return dff.tail(420).to_json(date_format='iso', orient='split')
 
 # Callback to update the dropdown
 @app.callback(
@@ -163,29 +160,31 @@ def update_output_smile(value, n):
     fig = px.line(dff, x='_strike', y='_volatility', color='expiration_date')
 
     # My positions data
-    df_table = pd.read_csv('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyPos.csv', sep=';')
+    df_table = pd.read_csv('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\MyPos.csv', sep=';')
     df_table = df_table[(df_table.optionbase == value)]
+    MyPos_ticker_list = []
+    for i in range(len(df_table)):
+        MyPos_ticker_list.append(df_table['ticker'][i])
+    # print('MyPos_ticker_list:', MyPos_ticker_list)
 
+
+    # Мои позиции
     fig.add_trace(go.Scatter(x=df_table['strike'], y=df_table['OpenIV'],
-                             mode='markers+text', text=df_table['OpenIV'], textposition='top left',
+                             mode='markers+text', text=df_table['OpenIV'], textposition='middle left',
                              # marker=dict(size=10, color='darkmagenta'),
                              name='MyPos',
                              ))
-
-    # fig.update_traces(
-    #     marker=dict(
-    #         size=8,
-    #         symbol="diamond-open",
-    #         line=dict(
-    #             width=2,
-    #             #             color="DarkSlateGrey" Line colors don't apply to open markers
-    #         )
-    #     ),
-    #     selector=dict(mode="markers"),
-    # )
+    # LastPrice
+    dff_LastPrice_Call = df[(df._base_asset_ticker == value) & (df._ticker.isin(MyPos_ticker_list))]
+    fig.add_trace(go.Scatter(x=dff_LastPrice_Call['_strike'], y=dff_LastPrice_Call['_last_price_iv'],
+                             mode='markers', text=dff_LastPrice_Call['_last_price_iv'], textposition='top left',
+                             # marker=dict(size=5, color='darkmagenta'),
+                             name='Last',
+                             ))
 
 
-    # Цена базового актива
+
+    # Цена базового актива (вертикальная линия)
     fig.add_trace(go.Scatter(x=[base_asset_last_price, base_asset_last_price], y=[dff._volatility.min(), dff._volatility.max()],
                              mode='lines', line=go.scatter.Line(color='gray'),
                              showlegend=False
@@ -208,9 +207,9 @@ def update_output_histiry(value):
 
     # Volatility history data RTS
     # Open the file using the "with" statement
-    with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\_TEST_CenterStrikeVola_RTS.csv', 'r') as file:
+    with open('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\_TEST_CenterStrikeVola_RTS.csv', 'r') as file:
         df_RTS_volatility = pd.read_csv(file, sep=';')
-        df_RTS_volatility = df_RTS_volatility.tail(900)
+        df_RTS_volatility = df_RTS_volatility.tail(300)
     # Close the file explicitly file.close()
     file.close()
 
@@ -241,21 +240,21 @@ def update_output_histiry(value):
 
     # fig = go.Figure(data=[go.Scatter(x=df_RTS_volatility.index, y=df_RTS_volatility[i])])
 
-    # Убираем неторговое время
-    fig.update_xaxes(
-        rangebreaks=[
-            # dict(bounds=["sat", "mon"]),  # hide weekends, eg. hide sat to before mon
-            # dict(bounds=[24, 9], pattern="hour"),  # hide hours outside of 9am-24pm
-        ]
-    )
+    # # Убираем неторговое время
+    # fig.update_xaxes(
+    #     rangebreaks=[
+    #         dict(bounds=["sat", "mon"]),  # hide weekends, eg. hide sat to before mon
+    #         dict(bounds=[24, 9], pattern="hour"),  # hide hours outside of 9am-24pm
+    #     ]
+    # )
 
     fig.update_layout(
         title_text="Volatility history of the option series", uirevision="Don't change"
     )
 
     # fig.add_trace(
-    #     go.Scatter(x=df_RTS_volatility.index, y=df_RTS_volatility['W 27.02.2025'],
-    #                mode='lines',
+    #     go.Scatter(x=df_RTS_volatility.index, y=df_RTS_volatility[0],
+    #                mode='lines'
     #                ))
 
     return fig
@@ -268,11 +267,11 @@ def update_output_histiry(value):
     prevent_initial_call=True
 )
 def updateTable(n, value):
-    df_pos = pd.read_csv('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyPos.csv', sep=';')
+    df_pos = pd.read_csv('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\MyPos.csv', sep=';')
     # Фильтрация строк по базовому активу
     df_pos = df_pos[df_pos['optionbase'] == value]
 
-    # # Замена RealIV на _last_price_iv опционов моих позиций
+    # # Замена RealIV в таблице на _last_price_iv опционов моих позиций
     # for i, df in df_pos.iterrows():
     #     df_pos['RealIV'] = df['_last_price_iv']
 
