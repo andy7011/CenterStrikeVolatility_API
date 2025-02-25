@@ -24,14 +24,27 @@ app = dash.Dash(__name__)
 # app.config.suppress_callback_exceptions = True
 
 # My positions data
-df_table = pd.read_csv('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\MyPos.csv', sep=';')
-print(df_table.columns)
-print(df_table)
+# Open the file using the "with" statement
+with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyPos.csv', 'r') as file:
+    df_table = pd.read_csv(file, sep=';')
+# Close the file explicitly file.close()
+file.close()
+print('\n df_table.columns:\n', df_table.columns)
+print('df_table:\n', df_table)
+
+# My orders data
+# Open the file using the "with" statement
+with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyOrders.csv', 'r') as file:
+  df_orders = pd.read_csv(file, sep=';')
+# Close the file explicitly file.close()
+file.close()
+# print('\n df_orders.columns:\n', df_orders.columns)
+# print('\n df_orders:\n', df_orders)
 
 
 # Volatility history data RTS
 # Open the file using the "with" statement
-with open('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\_TEST_CenterStrikeVola_RTS.csv', 'r') as file:
+with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\_TEST_CenterStrikeVola_RTS.csv', 'r') as file:
     df_RTS_volatility = pd.read_csv(file, sep=';')
     df_RTS_volatility = df_RTS_volatility.tail(300)
     df_RTS_volatility.set_index('DateTime', inplace=True)
@@ -160,25 +173,55 @@ def update_output_smile(value, n):
     fig = px.line(dff, x='_strike', y='_volatility', color='expiration_date')
 
     # My positions data
-    df_table = pd.read_csv('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\MyPos.csv', sep=';')
-    df_table = df_table[(df_table.optionbase == value)]
-    MyPos_ticker_list = []
-    for i in range(len(df_table)):
-        MyPos_ticker_list.append(df_table['ticker'][i])
+    # Open the file using the "with" statement
+    with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyPos.csv', 'r') as file:
+        df_table = pd.read_csv(file, sep=';')
+        df_table_buy = df_table[(df_table.optionbase == value) & (df_table.net_position > 0)]
+        df_table_sell = df_table[(df_table.optionbase == value) & (df_table.net_position < 0)]
+        MyPos_ticker_list = []
+        for i in range(len(df_table)):
+            MyPos_ticker_list.append(df_table['ticker'][i])
     # print('MyPos_ticker_list:', MyPos_ticker_list)
+    # Close the file explicitly file.close()
+    file.close()
 
-
-    # Мои позиции
-    fig.add_trace(go.Scatter(x=df_table['strike'], y=df_table['OpenIV'],
-                             mode='markers+text', text=df_table['OpenIV'], textposition='middle left',
-                             # marker=dict(size=10, color='darkmagenta'),
-                             name='MyPos',
+    # Мои позиции BUY
+    fig.add_trace(go.Scatter(x=df_table_buy['strike'], y=df_table_buy['OpenIV'],
+                             mode='markers+text', text=df_table_buy['OpenIV'], textposition='middle left',
+                             marker=dict(size=10, symbol="star-triangle-up-open", color='darkgreen'),
+                             name='My Pos Buy',
                              ))
+
+    # Мои позиции SELL
+    fig.add_trace(go.Scatter(x=df_table_sell['strike'], y=df_table_sell['OpenIV'],
+                             mode='markers+text', text=df_table_sell['OpenIV'], textposition='middle left',
+                             marker=dict(size=10, symbol="star-triangle-down-open", color='darkmagenta'),
+                             name='My Pos Sell',
+                             ))
+
+    # My orders data
+    # Open the file using the "with" statement
+    with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyOrders.csv', 'r') as file:
+        df_orders = pd.read_csv(file, sep=';')
+        df_orders = df_orders[(df_orders.optionbase == value)]
+    # Close the file explicitly file.close()
+    file.close()
+    print('\n df_orders.columns:\n', df_orders.columns)
+    print('\n df_orders:\n', df_orders)
+
+    # Мои ордерра
+    fig.add_trace(go.Scatter(x=df_orders['strike'], y=df_orders['volatility'],
+                             mode='markers+text', text=df_orders['volatility'], textposition='middle left',
+                             marker=dict(size=8, symbol="cross-thin", line=dict(width=1, color="DarkSlateGrey")),
+                             name='My Orders',
+                             ))
+
+
     # LastPrice
     dff_LastPrice_Call = df[(df._base_asset_ticker == value) & (df._ticker.isin(MyPos_ticker_list))]
     fig.add_trace(go.Scatter(x=dff_LastPrice_Call['_strike'], y=dff_LastPrice_Call['_last_price_iv'],
                              mode='markers', text=dff_LastPrice_Call['_last_price_iv'], textposition='top left',
-                             # marker=dict(size=5, color='darkmagenta'),
+                             marker=dict(size=8, color='goldenrod'),
                              name='Last',
                              ))
 
@@ -207,7 +250,7 @@ def update_output_histiry(value):
 
     # Volatility history data RTS
     # Open the file using the "with" statement
-    with open('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\_TEST_CenterStrikeVola_RTS.csv', 'r') as file:
+    with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\_TEST_CenterStrikeVola_RTS.csv', 'r') as file:
         df_RTS_volatility = pd.read_csv(file, sep=';')
         df_RTS_volatility = df_RTS_volatility.tail(300)
     # Close the file explicitly file.close()
@@ -267,7 +310,7 @@ def update_output_histiry(value):
     prevent_initial_call=True
 )
 def updateTable(n, value):
-    df_pos = pd.read_csv('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\MyPos.csv', sep=';')
+    df_pos = pd.read_csv('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyPos.csv', sep=';')
     # Фильтрация строк по базовому активу
     df_pos = df_pos[df_pos['optionbase'] == value]
 
