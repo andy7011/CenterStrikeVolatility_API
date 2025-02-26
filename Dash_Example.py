@@ -25,7 +25,7 @@ app = dash.Dash(__name__)
 
 # My positions data
 # Open the file using the "with" statement
-with open('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\MyPos.csv', 'r') as file:
+with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyPos.csv', 'r') as file:
     df_table = pd.read_csv(file, sep=';')
 # Close the file explicitly file.close()
 file.close()
@@ -34,7 +34,7 @@ print('df_table:\n', df_table)
 
 # My orders data
 # Open the file using the "with" statement
-with open('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\MyOrders.csv', 'r') as file:
+with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyOrders.csv', 'r') as file:
   df_orders = pd.read_csv(file, sep=';')
 # Close the file explicitly file.close()
 file.close()
@@ -44,7 +44,7 @@ file.close()
 
 # Volatility history data RTS
 # Open the file using the "with" statement
-with open('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\_TEST_CenterStrikeVola_RTS.csv', 'r') as file:
+with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\_TEST_CenterStrikeVola_RTS.csv', 'r') as file:
     df_RTS_volatility = pd.read_csv(file, sep=';')
     df_RTS_volatility = df_RTS_volatility.tail(300)
     df_RTS_volatility.set_index('DateTime', inplace=True)
@@ -162,7 +162,7 @@ def update_output_smile(value, n):
     df['_expiration_datetime'].dt.date
     df['expiration_date'] = df['_expiration_datetime'].dt.strftime('%d.%m.%Y')
 
-    dff = df[(df._base_asset_ticker == value) & (df._type == 'C')]
+    dff = df[(df._base_asset_ticker == value)] # оставим только опционы базового актива
 
     for asset in base_asset_list:
         if asset['_ticker'] == value:
@@ -170,11 +170,12 @@ def update_output_smile(value, n):
     # print('base_asset_last_price:', base_asset_last_price)
 
     # fig = go.Figure()
-    fig = px.line(dff, x='_strike', y='_volatility', color='expiration_date', width=800, height=600)
+    dff_call = dff[(dff._type == 'C')]  # оставим только коллы
+    fig = px.line(dff_call, x='_strike', y='_volatility', color='expiration_date', width=900, height=600)
 
     # My positions data
     # Open the file using the "with" statement
-    with open('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\MyPos.csv', 'r') as file:
+    with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyPos.csv', 'r') as file:
         df_table = pd.read_csv(file, sep=';')
         df_table_buy = df_table[(df_table.optionbase == value) & (df_table.net_position > 0)]
         df_table_sell = df_table[(df_table.optionbase == value) & (df_table.net_position < 0)]
@@ -187,7 +188,7 @@ def update_output_smile(value, n):
 
     # My orders data
     # Open the file using the "with" statement
-    with open('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\MyOrders.csv', 'r') as file:
+    with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyOrders.csv', 'r') as file:
         df_orders = pd.read_csv(file, sep=';')
         df_orders = df_orders[(df_orders.optionbase == value)]
     # Close the file explicitly file.close()
@@ -196,13 +197,19 @@ def update_output_smile(value, n):
     print('\n df_orders:\n', df_orders)
 
     # # Создание общего датафрейма опционов с позициями и ордерами
-    # dff_pos_orders = df[(df._base_asset_ticker == value)]
-    # print('dff_pos_orders:\n', dff_pos_orders)
-    # df_all = pd.concat([df_table, df_orders])
-    # print('\n df_all.columns:\n', df_all.columns)
-    # print('\n df_all:\n', df_all)
-    # dff_pos_orders = df[(df._base_asset_ticker == value)]
-    # # Добавим в dff_pos_orders столбец OpenIV из df_table в позиции с одинаковыми значениями ticker
+    # # Проиндексируем dff
+    # dff.index = range(len(dff))
+    # for i in df_table_buy['ticker'].unique():
+    #     print(dff.loc[i,dff["_ticker"]])
+    #     # dff.loc[i,dff["_ticker"] == df_table_buy['OpenIV']
+    # #             dff.loc[i,"my_pos_buy"] = df_table_buy.loc[i,'OpenIV']
+    # #         else:
+    # #             dff.loc[i,"my_pos_buy"] = 'NaN'
+    # #
+    # #
+    # # print('len(dff):', len(dff))
+    # # print('\n dff.columns:\n', dff.columns)
+    # # print('\n dff:\n', dff)
 
 
 
@@ -262,7 +269,7 @@ def update_output_history(value):
 
     # Volatility history data RTS
     # Open the file using the "with" statement
-    with open('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\_TEST_CenterStrikeVola_RTS.csv', 'r') as file:
+    with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\_TEST_CenterStrikeVola_RTS.csv', 'r') as file:
         df_RTS_volatility = pd.read_csv(file, sep=';')
         df_RTS_volatility = df_RTS_volatility.tail(300)
     # Close the file explicitly file.close()
@@ -322,7 +329,7 @@ def update_output_history(value):
     prevent_initial_call=True
 )
 def updateTable(n, value):
-    df_pos = pd.read_csv('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\MyPos.csv', sep=';')
+    df_pos = pd.read_csv('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyPos.csv', sep=';')
     # Фильтрация строк по базовому активу
     df_pos = df_pos[df_pos['optionbase'] == value]
 
