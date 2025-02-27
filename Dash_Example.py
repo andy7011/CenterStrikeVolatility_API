@@ -350,6 +350,14 @@ def updateTable(n, value):
     # for i, df in df_pos.iterrows():
     #     df_pos['RealIV'] = df['_last_price_iv']
 
+    # Вычисление P/L
+    # # df_pos.assign(P/L=df_pos['OpenIV'] - df_pos['RealIV'])
+    #     if df_pos['net_position'] < 0:
+    #         df_pos['P/L'] = df_pos['OpenIV'] - df_pos['RealIV']
+    #     else:
+    #         df_pos['P/L'] = df_pos['RealIV'] - df_pos['OpenIV']
+    #
+
     return df_pos.to_dict('records')
 
 if __name__ == '__main__':
