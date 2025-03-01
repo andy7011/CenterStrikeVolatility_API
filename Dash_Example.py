@@ -116,7 +116,6 @@ app.layout = html.Div(children=[
         {
             'if': {
                 'filter_query': '{P/L} > 1'
-
             },
             'backgroundColor': '#3D9970',
             'color': 'white'
