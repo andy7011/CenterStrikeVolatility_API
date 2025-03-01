@@ -25,7 +25,7 @@ app = dash.Dash(__name__)
 
 # My positions data
 # Open the file using the "with" statement
-with open('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\MyPos.csv', 'r') as file:
+with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyPos.csv', 'r') as file:
     df_table = pd.read_csv(file, sep=';')
 # Close the file explicitly file.close()
 file.close()
@@ -34,8 +34,8 @@ print('df_table:\n', df_table)
 
 # My orders data
 # Open the file using the "with" statement
-with open('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\MyOrders.csv', 'r') as file:
-  df_orders = pd.read_csv(file, sep=';')
+with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyOrders.csv', 'r') as file:
+    df_orders = pd.read_csv(file, sep=';')
 # Close the file explicitly file.close()
 file.close()
 # print('\n df_orders.columns:\n', df_orders.columns)
@@ -44,7 +44,7 @@ file.close()
 
 # Volatility history data RTS
 # Open the file using the "with" statement
-with open('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\_TEST_CenterStrikeVola_RTS.csv', 'r') as file:
+with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\_TEST_CenterStrikeVola_RTS.csv', 'r') as file:
     df_RTS_volatility = pd.read_csv(file, sep=';')
     df_RTS_volatility = df_RTS_volatility.tail(300)
     df_RTS_volatility.set_index('DateTime', inplace=True)
@@ -111,7 +111,17 @@ app.layout = html.Div(children=[
         n_intervals=0),
 
     html.Div(id='intermediate-value', style={'display': 'none'}),
-        dash_table.DataTable(id='table', data=df_table.to_dict('records'), page_size=8, style_table={'max-width': '50px'})
+        dash_table.DataTable(id='table', data=df_table.to_dict('records'), page_size=8, style_table={'max-width': '50px'},
+        style_data_conditional = [
+        {
+            'if': {
+                'filter_query': '{P/L} > 1'
+
+            },
+            'backgroundColor': '#3D9970',
+            'color': 'white'
+        }]
+    )
 ])
 
 # Callback to update the invisible intermediate-value element
@@ -173,7 +183,7 @@ def update_output_smile(value, n):
 
     # My positions data
     # Open the file using the "with" statement
-    with open('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\MyPos.csv', 'r') as file:
+    with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyPos.csv', 'r') as file:
         df_table = pd.read_csv(file, sep=';')
         df_table_buy = df_table[(df_table.optionbase == value) & (df_table.net_position > 0)]
         df_table_sell = df_table[(df_table.optionbase == value) & (df_table.net_position < 0)]
@@ -186,7 +196,7 @@ def update_output_smile(value, n):
 
     # My orders data
     # Open the file using the "with" statement
-    with open('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\MyOrders.csv', 'r') as file:
+    with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyOrders.csv', 'r') as file:
         df_orders = pd.read_csv(file, sep=';')
         df_orders = df_orders[(df_orders.optionbase == value)]
     # Close the file explicitly file.close()
@@ -282,7 +292,7 @@ def update_output_history(value):
 
     # Volatility history data RTS
     # Open the file using the "with" statement
-    with open('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\_TEST_CenterStrikeVola_RTS.csv', 'r') as file:
+    with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\_TEST_CenterStrikeVola_RTS.csv', 'r') as file:
         df_RTS_volatility = pd.read_csv(file, sep=';')
         df_RTS_volatility = df_RTS_volatility.tail(300)
     # Close the file explicitly file.close()
@@ -342,21 +352,10 @@ def update_output_history(value):
     prevent_initial_call=True
 )
 def updateTable(n, value):
-    df_pos = pd.read_csv('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\MyPos.csv', sep=';')
+    df_pos = pd.read_csv('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyPos.csv', sep=';')
     # Фильтрация строк по базовому активу
     df_pos = df_pos[df_pos['optionbase'] == value]
 
-    # # Замена RealIV в таблице на _last_price_iv опционов моих позиций
-    # for i, df in df_pos.iterrows():
-    #     df_pos['RealIV'] = df['_last_price_iv']
-
-    # Вычисление P/L
-    # # df_pos.assign(P/L=df_pos['OpenIV'] - df_pos['RealIV'])
-    #     if df_pos['net_position'] < 0:
-    #         df_pos['P/L'] = df_pos['OpenIV'] - df_pos['RealIV']
-    #     else:
-    #         df_pos['P/L'] = df_pos['RealIV'] - df_pos['OpenIV']
-    #
 
     return df_pos.to_dict('records')
 
