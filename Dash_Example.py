@@ -222,14 +222,14 @@ def update_output_smile(value, n):
 
     # fig = go.Figure()
     # fig.add_trace(go.Line(x=dff_call['_strike'], y=dff['_volatility'], mode='lines+markers', name='Volatility'))
-    fig = px.line(dff_call, x='_strike', y='_volatility', color='expiration_date', width=900, height=600)
+    fig = px.line(dff_call, x='_strike', y='_volatility', color='expiration_date', width=1000, height=600)
 
     # Мои позиции BUY
     # fig = px.scatter(dff, x='_strike', y='my_pos_buy', color='expiration_date')
     fig.add_trace(go.Scatter(x=dff['_strike'], y=dff['my_pos_buy'],
                              mode='markers+text', text=dff['my_pos_buy'], textposition='middle left',
                              marker=dict(size=10, symbol="star-triangle-up-open", color=[i for i in range(color_palette)]),
-                             name='My Pos Buy',
+                             name='My Pos Buy'
                              ))
     fig.update_traces(
         marker=dict(
@@ -240,8 +240,10 @@ def update_output_smile(value, n):
                 #             color="DarkSlateGrey" Line colors don't apply to open markers
             )
         ),
-        selector=dict(mode="markers"),
+        selector=dict(mode="markers")
     )
+
+    # fig.update_traces(hoverinfo="all", hovertemplate=dff['expiration_date'])
 
     # Мои позиции SELL
     fig.add_trace(go.Scatter(x=df_table_sell['strike'], y=df_table_sell['OpenIV'],
