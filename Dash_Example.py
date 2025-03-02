@@ -226,11 +226,17 @@ def update_output_smile(value, n):
 
     # Мои позиции BUY
     # fig = px.scatter(dff, x='_strike', y='my_pos_buy', color='expiration_date')
-    fig.add_trace(go.Scatter(x=dff['_strike'], y=dff['my_pos_buy'],
-                             mode='markers+text', text=dff['my_pos_buy'], textposition='middle left',
-                             marker=dict(size=10, symbol="star-triangle-up-open", color=[i for i in range(color_palette)]),
-                             name='My Pos Buy'
-                             ))
+    # fig.add_trace(go.Scatter(x=dff['_strike'], y=dff['my_pos_buy'],
+    #                          mode='markers+text', text=dff['my_pos_buy'], textposition='middle left',
+    #                          marker=dict(size=10, symbol="star-triangle-up-open", color=[i for i in range(color_palette)]),
+    #                          name='My Pos Buy'
+    #                          ))
+    fig.add_trace(go.Scatter(x=df_table_buy['strike'], y=df_table_buy['OpenIV'],
+                                mode='markers+text', text=df_table_buy['OpenIV'], textposition='middle left',
+                                marker=dict(size=10, symbol="star-triangle-up-open", color=[i for i in range(color_palette)]),
+                                name='My Pos Buy'
+                                ))
+
     fig.update_traces(
         marker=dict(
             size=8,
