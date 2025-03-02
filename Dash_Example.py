@@ -203,19 +203,19 @@ def update_output_smile(value, n):
     # print('\n df_orders.columns:\n', df_orders.columns)
     print('\n df_orders:\n', df_orders)
 
-    # Создание общего датафрейма опционов с позициями и ордерами
-    # # Проиндексируем dff
-    # dff.index = range(len(dff))
-    # Добавляем в dff столбец my_pos_buy и вносим в него значения из df_table_buy (купленные позиции)
-    for i in df_table_buy['ticker'].unique():
-        m = dff["_ticker"] == i
-        dff.loc[m, 'my_pos_buy'] = df_table_buy.loc[df_table_buy['ticker'] == i, 'OpenIV'].values[0]
-        print(dff[m])
-    #
-    for i in df_table_sell['ticker'].unique():
-        m = dff["_ticker"] == i
-        dff.loc[m, 'my_pos_sell'] = df_table_sell.loc[df_table_sell['ticker'] == i, 'OpenIV'].values[0]
-        print(dff[m])
+    # # Создание общего датафрейма опционов с позициями и ордерами
+    # # # Проиндексируем dff
+    # # dff.index = range(len(dff))
+    # # Добавляем в dff столбец my_pos_buy и вносим в него значения из df_table_buy (купленные позиции)
+    # for i in df_table_buy['ticker'].unique():
+    #     m = dff["_ticker"] == i
+    #     dff.loc[m, 'my_pos_buy'] = df_table_buy.loc[df_table_buy['ticker'] == i, 'OpenIV'].values[0]
+    #     print(dff[m])
+    # #
+    # for i in df_table_sell['ticker'].unique():
+    #     m = dff["_ticker"] == i
+    #     dff.loc[m, 'my_pos_sell'] = df_table_sell.loc[df_table_sell['ticker'] == i, 'OpenIV'].values[0]
+    #     print(dff[m])
 
 
     color_palette = len(set(dff['expiration_date']))
