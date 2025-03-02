@@ -184,8 +184,8 @@ def update_output_smile(value, n):
     # Open the file using the "with" statement
     with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyPos.csv', 'r') as file:
         df_table = pd.read_csv(file, sep=';')
-        df_table_buy = df_table[(df_table.optionbase == value) & (df_table.net_position > 0)]
-        df_table_sell = df_table[(df_table.optionbase == value) & (df_table.net_position < 0)]
+        df_table_buy = df_table[(df_table.optionbase == value) & (df_table.net_pos > 0)]
+        df_table_sell = df_table[(df_table.optionbase == value) & (df_table.net_pos < 0)]
         MyPos_ticker_list = []
         for i in range(len(df_table)):
             MyPos_ticker_list.append(df_table['ticker'][i])
