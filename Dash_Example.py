@@ -26,7 +26,7 @@ app = dash.Dash(__name__)
 
 # My positions data
 # Open the file using the "with" statement
-with open('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\MyPos.csv', 'r') as file:
+with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyPos.csv', 'r') as file:
     df_table = pd.read_csv(file, sep=';')
 # Close the file explicitly file.close()
 file.close()
@@ -35,7 +35,7 @@ print('df_table:\n', df_table)
 
 # My orders data
 # Open the file using the "with" statement
-with open('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\MyOrders.csv', 'r') as file:
+with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyOrders.csv', 'r') as file:
     df_orders = pd.read_csv(file, sep=';')
 # Close the file explicitly file.close()
 file.close()
@@ -45,7 +45,7 @@ file.close()
 
 # Volatility history data RTS
 # Open the file using the "with" statement
-with open('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\_TEST_CenterStrikeVola_RTS.csv', 'r') as file:
+with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\_TEST_CenterStrikeVola_RTS.csv', 'r') as file:
     df_RTS_volatility = pd.read_csv(file, sep=';')
     df_RTS_volatility = df_RTS_volatility.tail(300)
     df_RTS_volatility.set_index('DateTime', inplace=True)
@@ -102,15 +102,7 @@ app.layout = html.Div(children=[
 
         html.Div(children=[
             dcc.Graph(id='plot_smile')]),
-                # https://stackoverflow.com/questions/69275527/python-dash-gauge-how-can-i-use-strings-as-values-instead-of-numbers
-                daq.Gauge(
-                    color={"gradient": True, "ranges": {"green":[0,4],"yellow":[4,6],"red":[6,10]}},
-                    value=5,
-                    showCurrentValue=True,
-                    label='TrueVega',
-                    max=10,
-                    min=0,
-                ),
+
 
         html.Div(children=[
             dcc.Graph(id='plot_history')]),
@@ -130,6 +122,31 @@ app.layout = html.Div(children=[
             'backgroundColor': '#3D9970',
             'color': 'white'
         }]
+    ),
+    # https://stackoverflow.com/questions/69275527/python-dash-gauge-how-can-i-use-strings-as-values-instead-of-numbers
+    daq.Gauge(id="graph-gauge",
+        label='TrueVega',
+        color={
+            "ranges": {
+                "red": [0, 2],
+                "pink": [2, 4],
+                "#ADD8E6": [4, 6],
+                "#4169E1": [6, 8],
+                "blue": [8, 10],
+            },
+        },
+        scale={
+            "custom": {
+                1: {"label": "Strong Sell"},
+                3: {"label": "Sell"},
+                5: {"label": "Neutral"},
+                7: {"label": "Buy"},
+                9: {"label": "Strong Buy"},
+            }
+        },
+        value=2,
+        max=10,
+        min=0,
     )
 ])
 
@@ -192,7 +209,7 @@ def update_output_smile(value, n):
 
     # My positions data
     # Open the file using the "with" statement
-    with open('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\MyPos.csv', 'r') as file:
+    with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyPos.csv', 'r') as file:
         df_table = pd.read_csv(file, sep=';')
         df_table_buy = df_table[(df_table.optionbase == value) & (df_table.net_pos > 0)]
         df_table_sell = df_table[(df_table.optionbase == value) & (df_table.net_pos < 0)]
@@ -205,7 +222,7 @@ def update_output_smile(value, n):
 
     # My orders data
     # Open the file using the "with" statement
-    with open('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\MyOrders.csv', 'r') as file:
+    with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyOrders.csv', 'r') as file:
         df_orders = pd.read_csv(file, sep=';')
         df_orders = df_orders[(df_orders.optionbase == value)]
     # Close the file explicitly file.close()
@@ -309,7 +326,7 @@ def update_output_history(value):
 
     # Volatility history data RTS
     # Open the file using the "with" statement
-    with open('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\_TEST_CenterStrikeVola_RTS.csv', 'r') as file:
+    with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\_TEST_CenterStrikeVola_RTS.csv', 'r') as file:
         df_RTS_volatility = pd.read_csv(file, sep=';')
         df_RTS_volatility = df_RTS_volatility.tail(300)
     # Close the file explicitly file.close()
@@ -369,7 +386,7 @@ def update_output_history(value):
     prevent_initial_call=True
 )
 def updateTable(n, value):
-    df_pos = pd.read_csv('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\MyPos.csv', sep=';')
+    df_pos = pd.read_csv('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyPos.csv', sep=';')
     # Фильтрация строк по базовому активу
     df_pos = df_pos[df_pos['optionbase'] == value]
 
