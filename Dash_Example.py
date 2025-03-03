@@ -1,6 +1,7 @@
 import dash
 from dash import dcc, Input, Output, callback, dash_table, State
 from dash import html
+import dash_daq as daq
 import datetime
 from datetime import timedelta
 import requests
@@ -25,7 +26,7 @@ app = dash.Dash(__name__)
 
 # My positions data
 # Open the file using the "with" statement
-with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyPos.csv', 'r') as file:
+with open('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\MyPos.csv', 'r') as file:
     df_table = pd.read_csv(file, sep=';')
 # Close the file explicitly file.close()
 file.close()
@@ -34,7 +35,7 @@ print('df_table:\n', df_table)
 
 # My orders data
 # Open the file using the "with" statement
-with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyOrders.csv', 'r') as file:
+with open('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\MyOrders.csv', 'r') as file:
     df_orders = pd.read_csv(file, sep=';')
 # Close the file explicitly file.close()
 file.close()
@@ -44,7 +45,7 @@ file.close()
 
 # Volatility history data RTS
 # Open the file using the "with" statement
-with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\_TEST_CenterStrikeVola_RTS.csv', 'r') as file:
+with open('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\_TEST_CenterStrikeVola_RTS.csv', 'r') as file:
     df_RTS_volatility = pd.read_csv(file, sep=';')
     df_RTS_volatility = df_RTS_volatility.tail(300)
     df_RTS_volatility.set_index('DateTime', inplace=True)
@@ -101,6 +102,13 @@ app.layout = html.Div(children=[
 
         html.Div(children=[
             dcc.Graph(id='plot_smile')]),
+                daq.Gauge(
+                    color={"gradient": True, "ranges": {"green":[0,6],"yellow":[6,8],"red":[8,10]}},
+                    value=0,
+                    label='TrueVega',
+                    max=10,
+                    min=-10,
+                ),
 
         html.Div(children=[
             dcc.Graph(id='plot_history')]),
@@ -182,7 +190,7 @@ def update_output_smile(value, n):
 
     # My positions data
     # Open the file using the "with" statement
-    with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyPos.csv', 'r') as file:
+    with open('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\MyPos.csv', 'r') as file:
         df_table = pd.read_csv(file, sep=';')
         df_table_buy = df_table[(df_table.optionbase == value) & (df_table.net_pos > 0)]
         df_table_sell = df_table[(df_table.optionbase == value) & (df_table.net_pos < 0)]
@@ -195,7 +203,7 @@ def update_output_smile(value, n):
 
     # My orders data
     # Open the file using the "with" statement
-    with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyOrders.csv', 'r') as file:
+    with open('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\MyOrders.csv', 'r') as file:
         df_orders = pd.read_csv(file, sep=';')
         df_orders = df_orders[(df_orders.optionbase == value)]
     # Close the file explicitly file.close()
@@ -299,7 +307,7 @@ def update_output_history(value):
 
     # Volatility history data RTS
     # Open the file using the "with" statement
-    with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\_TEST_CenterStrikeVola_RTS.csv', 'r') as file:
+    with open('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\_TEST_CenterStrikeVola_RTS.csv', 'r') as file:
         df_RTS_volatility = pd.read_csv(file, sep=';')
         df_RTS_volatility = df_RTS_volatility.tail(300)
     # Close the file explicitly file.close()
@@ -359,7 +367,7 @@ def update_output_history(value):
     prevent_initial_call=True
 )
 def updateTable(n, value):
-    df_pos = pd.read_csv('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyPos.csv', sep=';')
+    df_pos = pd.read_csv('C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\MyPos.csv', sep=';')
     # Фильтрация строк по базовому активу
     df_pos = df_pos[df_pos['optionbase'] == value]
 
