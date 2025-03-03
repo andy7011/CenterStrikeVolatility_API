@@ -102,12 +102,14 @@ app.layout = html.Div(children=[
 
         html.Div(children=[
             dcc.Graph(id='plot_smile')]),
+                # https://stackoverflow.com/questions/69275527/python-dash-gauge-how-can-i-use-strings-as-values-instead-of-numbers
                 daq.Gauge(
-                    color={"gradient": True, "ranges": {"green":[0,6],"yellow":[6,8],"red":[8,10]}},
-                    value=0,
+                    color={"gradient": True, "ranges": {"green":[0,4],"yellow":[4,6],"red":[6,10]}},
+                    value=5,
+                    showCurrentValue=True,
                     label='TrueVega',
                     max=10,
-                    min=-10,
+                    min=0,
                 ),
 
         html.Div(children=[
