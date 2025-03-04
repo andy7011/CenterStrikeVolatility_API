@@ -45,15 +45,15 @@ file.close()
 # print('\n df_orders:\n', df_orders)
 
 
-# Volatility history data RTS
-# Open the file using the "with" statement
-with open(temp_obj.substitute(name_file='_TEST_CenterStrikeVola_RTS.csv'), 'r') as file:
-    df_RTS_volatility = pd.read_csv(file, sep=';')
-    df_RTS_volatility = df_RTS_volatility.tail(300)
-    df_RTS_volatility.set_index('DateTime', inplace=True)
-# Close the file explicitly file.close()
-file.close()
-# print(df_RTS_volatility)
+# # Volatility history data RTS
+# # Open the file using the "with" statement
+# with open(temp_obj.substitute(name_file='_TEST_CenterStrikeVola_RTS.csv'), 'r') as file:
+#     df_RTS_volatility = pd.read_csv(file, sep=';')
+#     df_RTS_volatility = df_RTS_volatility.tail(300)
+#     df_RTS_volatility.set_index('DateTime', inplace=True)
+# # Close the file explicitly file.close()
+# file.close()
+# # print(df_RTS_volatility)
 
 
 def get_object_from_json_endpoint(url, method='GET', params={}):
@@ -83,6 +83,7 @@ for asset in base_asset_list:
         'central_strike': central_strike
     })
 # print('base_asset_list:', base_asset_list) # вывод списка базовых активов
+# print(base_asset_list['_base_asset_code'])
 
 # Список опционов
 option_list = model_from_api[1]
@@ -313,15 +314,17 @@ def update_output_smile(value, n):
 
 #Callback to update the line-graph history data
 @app.callback(Output('plot_history', 'figure', allow_duplicate=True),
-               Input('interval-component', 'n_intervals'),
+               [Input('dropdown-selection', 'value'),
+                Input('interval-component', 'n_intervals')],
               prevent_initial_call=True)
-def update_output_history(value):
-
+def update_output_history(value, n):
+    print(value)
     # Volatility history data RTS
     # Open the file using the "with" statement
     with open(temp_obj.substitute(name_file='_TEST_CenterStrikeVola_RTS.csv'), 'r') as file:
         df_RTS_volatility = pd.read_csv(file, sep=';')
         df_RTS_volatility = df_RTS_volatility.tail(300)
+        # df_RTS_volatility.insert(1, 'base_asset_ticker', RIH5)
     # Close the file explicitly file.close()
     file.close()
 
@@ -349,7 +352,7 @@ def update_output_history(value):
     fig = px.line(df_RTS_volatility, x=df_RTS_volatility.index, y=df_RTS_volatility.columns)
     # Добавляем к оси Х 30 минут
     fig.update_xaxes(range=[df_RTS_volatility.index.min(), df_RTS_volatility.index.max() + timedelta(minutes=30)])
-
+    fig.update_layout(xaxis_title=None)
 
     # fig = go.Figure(data=[go.Scatter(x=df_RTS_volatility.index, y=df_RTS_volatility[i])])
 
@@ -362,7 +365,7 @@ def update_output_history(value):
     # )
 
     fig.update_layout(
-        title_text="Volatility history of the option series", uirevision="Don't change"
+        title_text=f'Volatility history of the option series {value}', uirevision="Don't change"
     )
 
     # fig.add_trace(
