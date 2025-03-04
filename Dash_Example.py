@@ -13,7 +13,7 @@ from supported_base_asset import MAP
 from string import Template
 import numpy as np
 
-temp_str = 'C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 # Create the app
@@ -45,15 +45,15 @@ file.close()
 # print('\n df_orders:\n', df_orders)
 
 
-# # Volatility history data RTS
+# # Volatility history data
 # # Open the file using the "with" statement
 # with open(temp_obj.substitute(name_file='_TEST_CenterStrikeVola_RTS.csv'), 'r') as file:
-#     df_RTS_volatility = pd.read_csv(file, sep=';')
-#     df_RTS_volatility = df_RTS_volatility.tail(300)
-#     df_RTS_volatility.set_index('DateTime', inplace=True)
+#     df_volatility = pd.read_csv(file, sep=';')
+#     df_volatility = df_volatility.tail(300)
+#     df_volatility.set_index('DateTime', inplace=True)
 # # Close the file explicitly file.close()
 # file.close()
-# # print(df_RTS_volatility)
+# # print(df_volatility)
 
 
 def get_object_from_json_endpoint(url, method='GET', params={}):
@@ -83,7 +83,11 @@ for asset in base_asset_list:
         'central_strike': central_strike
     })
 # print('base_asset_list:', base_asset_list) # вывод списка базовых активов
-# print(base_asset_list['_base_asset_code'])
+base_asset_ticker_list = {}
+for i in range(len(base_asset_list)):
+    # print(base_asset_list[i]['_ticker'])
+    base_asset_ticker_list.update({base_asset_list[i]['_ticker']:base_asset_list[i]['_base_asset_code']})
+# print(base_asset_ticker_list)
 
 # Список опционов
 option_list = model_from_api[1]
@@ -318,43 +322,41 @@ def update_output_smile(value, n):
                 Input('interval-component', 'n_intervals')],
               prevent_initial_call=True)
 def update_output_history(value, n):
-    print(value)
-    # Volatility history data RTS
-    # Open the file using the "with" statement
-    with open(temp_obj.substitute(name_file='_TEST_CenterStrikeVola_RTS.csv'), 'r') as file:
-        df_RTS_volatility = pd.read_csv(file, sep=';')
-        df_RTS_volatility = df_RTS_volatility.tail(300)
-        # df_RTS_volatility.insert(1, 'base_asset_ticker', RIH5)
-    # Close the file explicitly file.close()
-    file.close()
-
+    # print(value)
+    for base_asset_ticker in base_asset_ticker_list:
+        # print(base_asset_ticker_list.get(base_asset_ticker))
+        if value == base_asset_ticker:
+            substitution_text = base_asset_ticker_list.get(base_asset_ticker)
+            print(f'_TEST_CenterStrikeVola_{substitution_text}.csv')
+            # Volatility history data
+            with open(temp_obj.substitute(name_file=f'_TEST_CenterStrikeVola_{substitution_text}.csv'), 'r') as file:
+                df_volatility = pd.read_csv(file, sep=';')
+                df_volatility = df_volatility.tail(300)
+            # Close the file explicitly file.close()
+            file.close()
     # Преобразуем DateTime в формат datetime
-    df_RTS_volatility['DateTime'] = pd.to_datetime(df_RTS_volatility['DateTime'], format='%d.%m.%Y %H:%M:%S', dayfirst=True)
-
+    df_volatility['DateTime'] = pd.to_datetime(df_volatility['DateTime'], format='%d.%m.%Y %H:%M:%S', dayfirst=True)
     # Удаляем столбцы содержащие только нулевые значения
-    df_RTS_volatility = df_RTS_volatility.loc[:, (df_RTS_volatility != 0).any(axis=0)]
-
+    df_volatility = df_volatility.loc[:, (df_volatility != 0).any(axis=0)]
     # Преобразуйте 0 в NaN с помощью pandas DataFrame.replace()
-    df_RTS_volatility.replace(0, np.nan, inplace=True)
-
+    df_volatility.replace(0, np.nan, inplace=True)
     # # Устанавливаем индекс по столбцу DateTime
-    df_RTS_volatility.index = pd.DatetimeIndex(df_RTS_volatility['DateTime'])
-    del df_RTS_volatility['DateTime']
-    # print(df_RTS_volatility.index)
-    # print('type columns df_RTS_volatility:', df_RTS_volatility.dtypes)
+    df_volatility.index = pd.DatetimeIndex(df_volatility['DateTime'])
+    del df_volatility['DateTime']
+
 
     # column_name_series = []
-    # for col in df_RTS_volatility.columns:
+    # for col in df_volatility.columns:
     #     column_name_series.append(col)
-    # # print('column_name_series:', column_name_series)
+    # print('column_name_series:', column_name_series)
 
     # График истории волатильности
-    fig = px.line(df_RTS_volatility, x=df_RTS_volatility.index, y=df_RTS_volatility.columns)
+    fig = px.line(df_volatility, x=df_volatility.index, y=df_volatility.columns)
     # Добавляем к оси Х 30 минут
-    fig.update_xaxes(range=[df_RTS_volatility.index.min(), df_RTS_volatility.index.max() + timedelta(minutes=30)])
+    fig.update_xaxes(range=[df_volatility.index.min(), df_volatility.index.max() + timedelta(minutes=30)])
     fig.update_layout(xaxis_title=None)
 
-    # fig = go.Figure(data=[go.Scatter(x=df_RTS_volatility.index, y=df_RTS_volatility[i])])
+    # fig = go.Figure(data=[go.Scatter(x=df_volatility.index, y=df_volatility[i])])
 
     # # Убираем неторговое время
     # fig.update_xaxes(
@@ -369,7 +371,7 @@ def update_output_history(value, n):
     )
 
     # fig.add_trace(
-    #     go.Scatter(x=df_RTS_volatility.index, y=df_RTS_volatility[0],
+    #     go.Scatter(x=df_volatility.index, y=df_latility[0],
     #                mode='lines'
     #                ))
 
@@ -405,7 +407,10 @@ def updateGauge(n, value):
     tv_sum_positive = df_pos.loc[df_pos['net_pos'] > 0, 'TrueVega'].sum()
     tv_sum_negative = df_pos.loc[df_pos['net_pos'] < 0, 'TrueVega'].sum()
     tv_sum = abs(tv_sum_positive) + abs(tv_sum_negative)
-    value = (abs(tv_sum_positive) / (abs(tv_sum_positive) + abs(tv_sum_negative))) * 10
+    if tv_sum == 0:
+        value = 0
+    else:
+        value = (abs(tv_sum_positive) / (abs(tv_sum_positive) + abs(tv_sum_negative))) * 10
     return value
 
 
