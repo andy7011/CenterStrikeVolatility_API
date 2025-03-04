@@ -130,7 +130,9 @@ app.layout = html.Div(children=[
     # Спидометр
     # https://stackoverflow.com/questions/69275527/python-dash-gauge-how-can-i-use-strings-as-values-instead-of-numbers
     daq.Gauge(id="graph-gauge",
+        units="TrueVega",
         label='TrueVega',
+        labelPosition='bottom',
         color={
             "ranges": {
                 "red": [0, 2],
