@@ -10,9 +10,11 @@ import plotly.graph_objects as go
 import pandas as pd
 from central_strike import _calculate_central_strike
 from supported_base_asset import MAP
+from string import Template
 import numpy as np
 
-
+temp_str = 'C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_obj = Template(temp_str)
 
 # Create the app
 # Initialize the app - incorporate css
@@ -26,7 +28,7 @@ app = dash.Dash(__name__)
 
 # My positions data
 # Open the file using the "with" statement
-with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyPos.csv', 'r') as file:
+with open(temp_obj.substitute(name_file='MyPos.csv'), 'r') as file:
     df_table = pd.read_csv(file, sep=';')
 # Close the file explicitly file.close()
 file.close()
@@ -35,7 +37,7 @@ print('df_table:\n', df_table)
 
 # My orders data
 # Open the file using the "with" statement
-with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyOrders.csv', 'r') as file:
+with open(temp_obj.substitute(name_file='MyOrders.csv'), 'r') as file:
     df_orders = pd.read_csv(file, sep=';')
 # Close the file explicitly file.close()
 file.close()
@@ -45,7 +47,7 @@ file.close()
 
 # Volatility history data RTS
 # Open the file using the "with" statement
-with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\_TEST_CenterStrikeVola_RTS.csv', 'r') as file:
+with open(temp_obj.substitute(name_file='_TEST_CenterStrikeVola_RTS.csv'), 'r') as file:
     df_RTS_volatility = pd.read_csv(file, sep=';')
     df_RTS_volatility = df_RTS_volatility.tail(300)
     df_RTS_volatility.set_index('DateTime', inplace=True)
@@ -112,17 +114,20 @@ app.layout = html.Div(children=[
         interval=1000 * 10,
         n_intervals=0),
 
+    # Таблица
     html.Div(id='intermediate-value', style={'display': 'none'}),
         dash_table.DataTable(id='table', data=df_table.to_dict('records'), page_size=8, style_table={'max-width': '50px'},
         style_data_conditional = [
         {
             'if': {
-                'filter_query': '{P/L} > 1'
+                'filter_query': '{P/L} > 1',
+                'column_id': 'P/L'
             },
             'backgroundColor': '#3D9970',
             'color': 'white'
         }]
     ),
+    # Спидометр
     # https://stackoverflow.com/questions/69275527/python-dash-gauge-how-can-i-use-strings-as-values-instead-of-numbers
     daq.Gauge(id="graph-gauge",
         label='TrueVega',
@@ -144,7 +149,7 @@ app.layout = html.Div(children=[
                 9: {"label": "Strong Buy"},
             }
         },
-        value=2,
+        value=8,
         max=10,
         min=0,
     )
@@ -209,7 +214,7 @@ def update_output_smile(value, n):
 
     # My positions data
     # Open the file using the "with" statement
-    with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyPos.csv', 'r') as file:
+    with open(temp_obj.substitute(name_file='MyPos.csv'), 'r') as file:
         df_table = pd.read_csv(file, sep=';')
         df_table_buy = df_table[(df_table.optionbase == value) & (df_table.net_pos > 0)]
         df_table_sell = df_table[(df_table.optionbase == value) & (df_table.net_pos < 0)]
@@ -222,27 +227,13 @@ def update_output_smile(value, n):
 
     # My orders data
     # Open the file using the "with" statement
-    with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyOrders.csv', 'r') as file:
+    with open(temp_obj.substitute(name_file='MyOrders.csv'), 'r') as file:
         df_orders = pd.read_csv(file, sep=';')
         df_orders = df_orders[(df_orders.optionbase == value)]
     # Close the file explicitly file.close()
     file.close()
     # print('\n df_orders.columns:\n', df_orders.columns)
     print('\n df_orders:\n', df_orders)
-
-    # # Создание общего датафрейма опционов с позициями и ордерами
-    # # # Проиндексируем dff
-    # # dff.index = range(len(dff))
-    # # Добавляем в dff столбец my_pos_buy и вносим в него значения из df_table_buy (купленные позиции)
-    # for i in df_table_buy['ticker'].unique():
-    #     m = dff["_ticker"] == i
-    #     dff.loc[m, 'my_pos_buy'] = df_table_buy.loc[df_table_buy['ticker'] == i, 'OpenIV'].values[0]
-    #     print(dff[m])
-    # #
-    # for i in df_table_sell['ticker'].unique():
-    #     m = dff["_ticker"] == i
-    #     dff.loc[m, 'my_pos_sell'] = df_table_sell.loc[df_table_sell['ticker'] == i, 'OpenIV'].values[0]
-    #     print(dff[m])
 
 
     color_palette = len(set(dff['expiration_date']))
@@ -260,7 +251,7 @@ def update_output_smile(value, n):
     #                          ))
     fig.add_trace(go.Scatter(x=df_table_buy['strike'], y=df_table_buy['OpenIV'],
                                 mode='markers+text', text=df_table_buy['OpenIV'], textposition='middle left',
-                                marker=dict(size=10, symbol="star-triangle-up-open", color=[i for i in range(color_palette)]),
+                                marker=dict(size=10, symbol="star-triangle-up-open", color='darkgreen'),
                                 name='My Pos Buy'
                                 ))
 
@@ -326,7 +317,7 @@ def update_output_history(value):
 
     # Volatility history data RTS
     # Open the file using the "with" statement
-    with open('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\_TEST_CenterStrikeVola_RTS.csv', 'r') as file:
+    with open(temp_obj.substitute(name_file='_TEST_CenterStrikeVola_RTS.csv'), 'r') as file:
         df_RTS_volatility = pd.read_csv(file, sep=';')
         df_RTS_volatility = df_RTS_volatility.tail(300)
     # Close the file explicitly file.close()
@@ -352,9 +343,10 @@ def update_output_history(value):
     #     column_name_series.append(col)
     # # print('column_name_series:', column_name_series)
 
+    # График истории волатильности
     fig = px.line(df_RTS_volatility, x=df_RTS_volatility.index, y=df_RTS_volatility.columns)
-    # Добавляем к оси Х 60 минут
-    fig.update_xaxes(range=[df_RTS_volatility.index.min(), df_RTS_volatility.index.max() + timedelta(minutes=60)])
+    # Добавляем к оси Х 30 минут
+    fig.update_xaxes(range=[df_RTS_volatility.index.min(), df_RTS_volatility.index.max() + timedelta(minutes=30)])
 
 
     # fig = go.Figure(data=[go.Scatter(x=df_RTS_volatility.index, y=df_RTS_volatility[i])])
@@ -386,12 +378,31 @@ def update_output_history(value):
     prevent_initial_call=True
 )
 def updateTable(n, value):
-    df_pos = pd.read_csv('C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\MyPos.csv', sep=';')
+    df_pos = pd.read_csv(temp_obj.substitute(name_file='MyPos.csv'), sep=';')
     # Фильтрация строк по базовому активу
     df_pos = df_pos[df_pos['optionbase'] == value]
 
-
     return df_pos.to_dict('records')
+
+# Callback to update the graph-gauge
+@app.callback(
+    Output('graph-gauge', 'value', allow_duplicate=True),
+    [Input('interval-component', 'n_intervals'),
+     Input('dropdown-selection', 'value')],
+    prevent_initial_call=True
+)
+def updateGauge(n, value):
+    df_pos = pd.read_csv(temp_obj.substitute(name_file='MyPos.csv'), sep=';')
+    # Фильтрация строк по базовому активу
+    df_pos = df_pos[df_pos['optionbase'] == value]
+
+    # TrueVega
+    tv_sum_positive = df_pos.loc[df_pos['net_pos'] > 0, 'TrueVega'].sum()
+    tv_sum_negative = df_pos.loc[df_pos['net_pos'] < 0, 'TrueVega'].sum()
+    tv_sum = abs(tv_sum_positive) + abs(tv_sum_negative)
+    value = (abs(tv_sum_positive) / (abs(tv_sum_positive) + abs(tv_sum_negative))) * 10
+    return value
+
 
 if __name__ == '__main__':
 
