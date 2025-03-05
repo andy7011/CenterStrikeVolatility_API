@@ -349,11 +349,12 @@ def update_output_history(value, n):
     # Добавляем к оси Х 30 минут
     fig.update_xaxes(range=[df_volatility.index.min(), df_volatility.index.max() + timedelta(minutes=30)])
     # # Добавляем аннотацию
-    # fig.add_annotation(x=2, y=5,
+    # fig.add_annotation(x=df_volatility.index[-1], y=df_volatility.columns[-1],
     #                    text="Text annotation with arrow",
     #                    showarrow=True,
     #                    arrowhead=1)
-    # fig.update_layout(xaxis_title=None)
+
+    fig.update_layout(xaxis_title=None)
 
     # fig = go.Figure(data=[go.Scatter(x=df_volatility.index, y=df_volatility[i])])
 
