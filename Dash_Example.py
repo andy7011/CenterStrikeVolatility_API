@@ -13,7 +13,7 @@ from supported_base_asset import MAP
 from string import Template
 import numpy as np
 
-temp_str = 'C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 # Create the app
@@ -32,8 +32,8 @@ with open(temp_obj.substitute(name_file='MyPos.csv'), 'r') as file:
     df_table = pd.read_csv(file, sep=';')
 # Close the file explicitly file.close()
 file.close()
-print('\n df_table.columns:\n', df_table.columns)
-print('df_table:\n', df_table)
+# print('\n df_table.columns:\n', df_table.columns)
+# print('df_table:\n', df_table)
 
 # My orders data
 # Open the file using the "with" statement
@@ -97,14 +97,14 @@ df = df.loc[df['_volatility'] > 0]
 df['_expiration_datetime'] = pd.to_datetime(df['_expiration_datetime'])
 df['_expiration_datetime'].dt.date
 df['expiration_date'] = df['_expiration_datetime'].dt.strftime('%d.%m.%Y')
-print(df.columns)
+# print(df.columns)
 
 app.layout = html.Div(children=[
 
     html.H6(id='last_update_time', style={'textAlign': 'left'}),
 
     html.Div(children=[
-        dcc.Dropdown(df._base_asset_ticker.unique(), value=df._base_asset_ticker.unique()[0], id='dropdown-selection'),
+        dcc.Dropdown(df._base_asset_ticker.unique(), value=df._base_asset_ticker.unique()[0], id='dropdown-selection',  style={'width':'40%'}),
         html.Div(id='dd-output-container')]),
 
         html.Div(children=[
@@ -258,7 +258,7 @@ def update_output_smile(value, n):
     #                          ))
     fig.add_trace(go.Scatter(x=df_table_buy['strike'], y=df_table_buy['OpenIV'],
                                 mode='markers+text', text=df_table_buy['OpenIV'], textposition='middle left',
-                                marker=dict(size=10, symbol="star-triangle-up-open", color='darkgreen'),
+                                marker=dict(size=11, symbol="star-triangle-up-open", color='darkgreen'),
                                 name='My Pos Buy'
                                 ))
 
@@ -279,7 +279,7 @@ def update_output_smile(value, n):
     # Мои позиции SELL
     fig.add_trace(go.Scatter(x=df_table_sell['strike'], y=df_table_sell['OpenIV'],
                              mode='markers+text', text=df_table_sell['OpenIV'], textposition='middle left',
-                             marker=dict(size=10, symbol="star-triangle-down-open", color='darkmagenta'),
+                             marker=dict(size=11, symbol="star-triangle-down-open", color='darkmagenta'),
                              name='My Pos Sell',
                              ))
 
@@ -302,10 +302,7 @@ def update_output_smile(value, n):
 
 
     # Цена базового актива (вертикальная линия)
-    fig.add_trace(go.Scatter(x=[base_asset_last_price, base_asset_last_price], y=[dff._volatility.min(), dff._volatility.max()],
-                             mode='lines', line=go.scatter.Line(color='gray'),
-                             showlegend=False
-                             ))
+    fig.add_vline(x=base_asset_last_price, line_dash='dash', line_color='firebrick')
     # strike = dff._strike.unique()
     # last_price_iv = dff._last_price_iv
     # fig.add_trace(go.Scatter(y='_last_price_iv'), row=2, col=1)
@@ -322,17 +319,14 @@ def update_output_smile(value, n):
                 Input('interval-component', 'n_intervals')],
               prevent_initial_call=True)
 def update_output_history(value, n):
-    # print(value)
     for base_asset_ticker in base_asset_ticker_list:
-        # print(base_asset_ticker_list.get(base_asset_ticker))
         if value == base_asset_ticker:
             substitution_text = base_asset_ticker_list.get(base_asset_ticker)
-            print(f'_TEST_CenterStrikeVola_{substitution_text}.csv')
             # Volatility history data
             with open(temp_obj.substitute(name_file=f'_TEST_CenterStrikeVola_{substitution_text}.csv'), 'r') as file:
                 df_volatility = pd.read_csv(file, sep=';')
                 df_volatility = df_volatility.tail(300)
-            # Close the file explicitly file.close()
+            # Close the file
             file.close()
     # Преобразуем DateTime в формат datetime
     df_volatility['DateTime'] = pd.to_datetime(df_volatility['DateTime'], format='%d.%m.%Y %H:%M:%S', dayfirst=True)
@@ -354,7 +348,12 @@ def update_output_history(value, n):
     fig = px.line(df_volatility, x=df_volatility.index, y=df_volatility.columns)
     # Добавляем к оси Х 30 минут
     fig.update_xaxes(range=[df_volatility.index.min(), df_volatility.index.max() + timedelta(minutes=30)])
-    fig.update_layout(xaxis_title=None)
+    # # Добавляем аннотацию
+    # fig.add_annotation(x=2, y=5,
+    #                    text="Text annotation with arrow",
+    #                    showarrow=True,
+    #                    arrowhead=1)
+    # fig.update_layout(xaxis_title=None)
 
     # fig = go.Figure(data=[go.Scatter(x=df_volatility.index, y=df_volatility[i])])
 
