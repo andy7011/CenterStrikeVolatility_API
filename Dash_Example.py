@@ -13,7 +13,7 @@ from supported_base_asset import MAP
 from string import Template
 import numpy as np
 
-temp_str = 'C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 # Create the app
@@ -35,14 +35,14 @@ file.close()
 # print('\n df_table.columns:\n', df_table.columns)
 # print('df_table:\n', df_table)
 
-# My orders data
-# Open the file using the "with" statement
-with open(temp_obj.substitute(name_file='MyOrders.csv'), 'r') as file:
-    df_orders = pd.read_csv(file, sep=';')
-# Close the file explicitly file.close()
-file.close()
-# print('\n df_orders.columns:\n', df_orders.columns)
-# print('\n df_orders:\n', df_orders)
+# # My orders data
+# # Open the file using the "with" statement
+# with open(temp_obj.substitute(name_file='MyOrders.csv'), 'r') as file:
+#     df_orders = pd.read_csv(file, sep=';')
+# # Close the file explicitly file.close()
+# file.close()
+# # print('\n df_orders.columns:\n', df_orders.columns)
+# # print('\n df_orders:\n', df_orders)
 
 
 # # Volatility history data
@@ -346,13 +346,27 @@ def update_output_history(value, n):
 
     # График истории волатильности
     fig = px.line(df_volatility, x=df_volatility.index, y=df_volatility.columns)
+
+    # fig = px.scatter(x=df_volatility.index, y=df_volatility.columns, mode='lines', hover_name=df_volatility.columns)
+
+
+
     # Добавляем к оси Х 30 минут
     fig.update_xaxes(range=[df_volatility.index.min(), df_volatility.index.max() + timedelta(minutes=30)])
+
     # # Добавляем аннотацию
-    # fig.add_annotation(x=df_volatility.index[-1], y=df_volatility.columns[-1],
-    #                    text="Text annotation with arrow",
-    #                    showarrow=True,
-    #                    arrowhead=1)
+    # print('TEST')
+    # print(df_volatility.index.max() + timedelta(minutes=5))
+    # print(df_volatility.iloc[-1].tolist())
+    # for num_vol in df_volatility.iloc[-1].tolist():
+    #     fig.add_annotation(x=df_volatility.index.max() + timedelta(minutes=5), y=num_vol,
+    #                        text=num_vol,
+    #                        showarrow=False,
+    #                        arrowhead=1)
+
+    # tx0 = graph_axes.text(x=len(df_slider) + 2, y=df_slider[df.columns[1]].iloc[len(df_slider) - 1],
+    #                       s="{:.2f}".format(df_slider[df.columns[1]].iloc[len(df_slider) - 1]),
+    #                       color="red", fontsize=9, label=df.columns[1])
 
     fig.update_layout(xaxis_title=None)
 
