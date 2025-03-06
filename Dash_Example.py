@@ -4,9 +4,11 @@ from dash import html
 import dash_daq as daq
 import datetime
 from datetime import timedelta
+from pytz import timezone, utc  # Работаем с временнОй зоной и UTC
 import requests
 import plotly.express as px
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import pandas as pd
 from central_strike import _calculate_central_strike
 from supported_base_asset import MAP
@@ -16,15 +18,32 @@ import numpy as np
 temp_str = 'C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
-# Create the app
-# Initialize the app - incorporate css
-# external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
-# app = dash.Dash(external_stylesheets=external_stylesheets)
-app = dash.Dash(__name__)
+tz_msk = timezone('Europe/Moscow')  # Время UTC будем приводить к московскому времени
+def utc_to_msk_datetime(dt, tzinfo=False) -> datetime:
+    """Перевод времени из UTC в московское
 
-# # Initialize the app
-# app = dash.Dash(__name__)
-# app.config.suppress_callback_exceptions = True
+    :param datetime dt: Время UTC
+    :param bool tzinfo: Отображать временнУю зону
+    :return: Московское время
+    """
+    dt_utc = utc.localize(dt)  # Задаем временнУю зону UTC
+    dt_msk = dt_utc.astimezone(tz_msk)  # Переводим в МСК
+    return dt_msk if tzinfo else dt_msk.replace(tzinfo=None)
+
+
+def utc_timestamp_to_msk_datetime(seconds) -> datetime:
+    """Перевод кол-ва секунд, прошедших с 01.01.1970 00:00 UTC в московское время
+
+    :param int seconds: Кол-во секунд, прошедших с 01.01.1970 00:00 UTC
+    :return: Московское время без временнОй зоны
+    """
+    dt_utc = datetime.utcfromtimestamp(seconds)  # Переводим кол-во секунд, прошедших с 01.01.1970 в UTC
+    return utc_to_msk_datetime(dt_utc)  # Переводим время из UTC в московское
+
+
+
+# Create the app
+app = dash.Dash(__name__)
 
 # My positions data
 # Open the file using the "with" statement
@@ -89,7 +108,7 @@ for i in range(len(base_asset_list)):
     base_asset_ticker_list.update({base_asset_list[i]['_ticker']:base_asset_list[i]['_base_asset_code']})
 # print(base_asset_ticker_list)
 
-# Список опционов
+# Список опционов из dump_model
 option_list = model_from_api[1]
 current_datetime = datetime.datetime.now()
 df = pd.DataFrame.from_dict(option_list, orient='columns')
@@ -97,7 +116,17 @@ df = df.loc[df['_volatility'] > 0]
 df['_expiration_datetime'] = pd.to_datetime(df['_expiration_datetime'])
 df['_expiration_datetime'].dt.date
 df['expiration_date'] = df['_expiration_datetime'].dt.strftime('%d.%m.%Y')
-# print(df.columns)
+# # print(df['_last_price_timestamp'].iloc[-2])
+# # dt = str(df['_last_price_timestamp'].iloc[-2])
+# now = int(datetime.datetime.timestamp(datetime.datetime.now()))  # Текущая дата и время в виде UNIX времени в секундах
+# print(now)
+# dt = now
+# dt_utc = utc.localize(dt)  # Задаем временнУю зону UTC
+# # dt_msk = utc_to_msk_datetime(1741274879, False)
+# print(dt_utc)
+
+
+
 
 app.layout = html.Div(children=[
 
@@ -133,7 +162,7 @@ app.layout = html.Div(children=[
                         9: {"label": "Strong Buy"},
                     }
                 },
-                value=8,
+                value=0,
                 max=10,
                 min=0,
             ),
@@ -251,13 +280,6 @@ def update_output_smile(value, n):
     # fig.add_trace(go.Line(x=dff_call['_strike'], y=dff['_volatility'], mode='lines+markers', name='Volatility'))
     fig = px.line(dff_call, x='_strike', y='_volatility', color='expiration_date', width=1000, height=600)
 
-    # Мои позиции BUY
-    # fig = px.scatter(dff, x='_strike', y='my_pos_buy', color='expiration_date')
-    # fig.add_trace(go.Scatter(x=dff['_strike'], y=dff['my_pos_buy'],
-    #                          mode='markers+text', text=dff['my_pos_buy'], textposition='middle left',
-    #                          marker=dict(size=10, symbol="star-triangle-up-open", color=[i for i in range(color_palette)]),
-    #                          name='My Pos Buy'
-    #                          ))
     fig.add_trace(go.Scatter(x=df_table_buy['strike'], y=df_table_buy['OpenIV'],
                                 mode='markers+text', text=df_table_buy['OpenIV'], textposition='middle left',
                                 marker=dict(size=11, symbol="star-triangle-up-open", color='darkgreen'),
@@ -347,9 +369,30 @@ def update_output_history(value, n):
     # print('column_name_series:', column_name_series)
 
     # График истории волатильности
-    fig = px.line(df_volatility, x=df_volatility.index, y=df_volatility.columns)
-    # Добавляем к оси Х 30 минут
-    fig.update_xaxes(range=[df_volatility.index.min(), df_volatility.index.max() + timedelta(minutes=30)])
+    fig = go.Figure()
+    # Create figure with secondary y-axis
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+    for i in df_volatility.columns:
+        # fig.add_trace(go.Line(x=df_volatility.index, y=df_volatility[i], name=i))
+        fig.add_trace(go.Scatter(x=df_volatility.index, y=df_volatility[i], mode='lines+text',
+                                 # text=[1, 2, 3, 4, 5, 6],
+                                 # textposition='middle right',
+                                 name=i), secondary_y=True,)
+    # fig.add_trace(go.Line(x=df_volatility.index, y=dff['_volatility'], mode='lines+markers', name='Volatility'))
+    # fig = px.line(df_volatility, x=df_volatility.index, y=df_volatility.columns)
+    # fig = go.Figure(data=[go.Scatter(x=df_volatility.index, y=df_volatility[i])])
+
+    # Убираем неторговое время
+    fig.update_xaxes(
+        rangebreaks=[
+            dict(bounds=["sat", "mon"]),  # hide weekends, eg. hide sat to before mon
+            dict(bounds=[24, 9], pattern="hour"),  # hide hours outside of 9am-24pm
+        ]
+    )
+
+    # Добавляем к оси Х 10 минут
+    fig.update_xaxes(range=[df_volatility.index.min(), df_volatility.index.max() + timedelta(minutes=10)])
     # # Добавляем аннотацию
     # fig.add_annotation(x=df_volatility.index[-1], y=df_volatility.columns[-1],
     #                    text="Text annotation with arrow",
@@ -358,24 +401,9 @@ def update_output_history(value, n):
 
     fig.update_layout(xaxis_title=None)
 
-    # fig = go.Figure(data=[go.Scatter(x=df_volatility.index, y=df_volatility[i])])
-
-    # # Убираем неторговое время
-    # fig.update_xaxes(
-    #     rangebreaks=[
-    #         dict(bounds=["sat", "mon"]),  # hide weekends, eg. hide sat to before mon
-    #         dict(bounds=[24, 9], pattern="hour"),  # hide hours outside of 9am-24pm
-    #     ]
-    # )
-
     fig.update_layout(
         title_text=f'Volatility history of the option series {value}', uirevision="Don't change"
     )
-
-    # fig.add_trace(
-    #     go.Scatter(x=df_volatility.index, y=df_latility[0],
-    #                mode='lines'
-    #                ))
 
     return fig
 
