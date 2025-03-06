@@ -108,11 +108,40 @@ app.layout = html.Div(children=[
         html.Div(id='dd-output-container')]),
 
         html.Div(children=[
-            dcc.Graph(id='plot_smile')]),
+            dcc.Graph(id='plot_smile', style={'display': 'inline-block'}),
+            # Спидометр
+            # https://stackoverflow.com/questions/69275527/python-dash-gauge-how-can-i-use-strings-as-values-instead-of-numbers
+            daq.Gauge(id="graph-gauge", style={'display': 'inline-block'},
+                units="TrueVega",
+                label='TrueVega',
+                labelPosition='bottom',
+                color={
+                    "ranges": {
+                        "red": [0, 2],
+                        "pink": [2, 4],
+                        "#ADD8E6": [4, 6],
+                        "#4169E1": [6, 8],
+                        "blue": [8, 10],
+                    },
+                },
+                scale={
+                    "custom": {
+                        1: {"label": "Strong Sell"},
+                        3: {"label": "Sell"},
+                        5: {"label": "Neutral"},
+                        7: {"label": "Buy"},
+                        9: {"label": "Strong Buy"},
+                    }
+                },
+                value=8,
+                max=10,
+                min=0,
+            ),
+        ]),
 
 
-        html.Div(children=[
-            dcc.Graph(id='plot_history')]),
+    html.Div(children=[
+        dcc.Graph(id='plot_history')]),
 
     dcc.Interval(
         id='interval-component',
@@ -132,34 +161,7 @@ app.layout = html.Div(children=[
             'color': 'white'
         }]
     ),
-    # Спидометр
-    # https://stackoverflow.com/questions/69275527/python-dash-gauge-how-can-i-use-strings-as-values-instead-of-numbers
-    daq.Gauge(id="graph-gauge",
-        units="TrueVega",
-        label='TrueVega',
-        labelPosition='bottom',
-        color={
-            "ranges": {
-                "red": [0, 2],
-                "pink": [2, 4],
-                "#ADD8E6": [4, 6],
-                "#4169E1": [6, 8],
-                "blue": [8, 10],
-            },
-        },
-        scale={
-            "custom": {
-                1: {"label": "Strong Sell"},
-                3: {"label": "Sell"},
-                5: {"label": "Neutral"},
-                7: {"label": "Buy"},
-                9: {"label": "Strong Buy"},
-            }
-        },
-        value=8,
-        max=10,
-        min=0,
-    )
+
 ])
 
 # Callback to update the invisible intermediate-value element
