@@ -18,8 +18,10 @@ import numpy as np
 temp_str = 'C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
+
 tz_msk = timezone('Europe/Moscow')  # Время UTC будем приводить к московскому времени
-def utc_to_msk_datetime(dt, tzinfo=False) -> datetime:
+
+def utc_to_msk_datetime(dt, tzinfo=False):
     """Перевод времени из UTC в московское
 
     :param datetime dt: Время UTC
@@ -37,7 +39,7 @@ def utc_timestamp_to_msk_datetime(seconds) -> datetime:
     :param int seconds: Кол-во секунд, прошедших с 01.01.1970 00:00 UTC
     :return: Московское время без временнОй зоны
     """
-    dt_utc = datetime.utcfromtimestamp(seconds)  # Переводим кол-во секунд, прошедших с 01.01.1970 в UTC
+    dt_utc = datetime.datetime.fromtimestamp(seconds)  # Переводим кол-во секунд, прошедших с 01.01.1970 в UTC
     return utc_to_msk_datetime(dt_utc)  # Переводим время из UTC в московское
 
 
@@ -116,8 +118,19 @@ df = df.loc[df['_volatility'] > 0]
 df['_expiration_datetime'] = pd.to_datetime(df['_expiration_datetime'])
 df['_expiration_datetime'].dt.date
 df['expiration_date'] = df['_expiration_datetime'].dt.strftime('%d.%m.%Y')
-# # print(df['_last_price_timestamp'].iloc[-2])
-# # dt = str(df['_last_price_timestamp'].iloc[-2])
+
+# df['_last_price_timestamp'] = df['_last_price_timestamp'].apply(pd.to_datetime, utc=True)
+df['_last_price_timestamp'] = df['_last_price_timestamp'].astype('Int64') # форматирование float64 to UTC int seconds
+print(df['_last_price_timestamp'])
+print(df['_last_price_timestamp'][1587])
+print(utc_timestamp_to_msk_datetime(df['_last_price_timestamp'][1587]))
+print(utc_timestamp_to_msk_datetime(df['_last_price_timestamp'][1587]).strftime('%H:%M:%S'))
+
+now = int(datetime.datetime.timestamp(datetime.datetime.now()))  # Текущая дата и время в виде UNIX времени в секундах
+print(now)
+
+
+
 # now = int(datetime.datetime.timestamp(datetime.datetime.now()))  # Текущая дата и время в виде UNIX времени в секундах
 # print(now)
 # dt = now
@@ -280,10 +293,14 @@ def update_output_smile(value, n):
     # fig.add_trace(go.Line(x=dff_call['_strike'], y=dff['_volatility'], mode='lines+markers', name='Volatility'))
     fig = px.line(dff_call, x='_strike', y='_volatility', color='expiration_date', width=1000, height=600)
 
+    # Мои позиции BUY
     fig.add_trace(go.Scatter(x=df_table_buy['strike'], y=df_table_buy['OpenIV'],
                                 mode='markers+text', text=df_table_buy['OpenIV'], textposition='middle left',
                                 marker=dict(size=11, symbol="star-triangle-up-open", color='darkgreen'),
-                                name='My Pos Buy'
+                                name='My Pos Buy',
+                                customdata=df_table_buy[['optiontype', 'net_pos', 'expdate', 'ticker']],
+                                hovertemplate=
+                                "<b>%{customdata}</b><br>"
                                 ))
 
     fig.update_traces(
@@ -305,6 +322,9 @@ def update_output_smile(value, n):
                              mode='markers+text', text=df_table_sell['OpenIV'], textposition='middle left',
                              marker=dict(size=11, symbol="star-triangle-down-open", color='darkmagenta'),
                              name='My Pos Sell',
+                             customdata=df_table_sell[['optiontype', 'net_pos', 'expdate', 'ticker']],
+                             hovertemplate=
+                             "<b>%{customdata}</b><br>"
                              ))
 
     # Мои ордерра
