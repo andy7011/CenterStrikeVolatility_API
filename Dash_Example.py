@@ -299,8 +299,7 @@ def update_output_smile(value, n):
                                 marker=dict(size=11, symbol="star-triangle-up-open", color='darkgreen'),
                                 name='My Pos Buy',
                                 customdata=df_table_buy[['optiontype', 'net_pos', 'expdate', 'ticker']],
-                                hovertemplate=
-                                "<b>%{customdata}</b><br>"
+                                hovertemplate="<b>%{customdata}</b>"
                                 ))
 
     fig.update_traces(
@@ -315,16 +314,13 @@ def update_output_smile(value, n):
         selector=dict(mode="markers")
     )
 
-    # fig.update_traces(hoverinfo="all", hovertemplate=dff['expiration_date'])
-
     # Мои позиции SELL
     fig.add_trace(go.Scatter(x=df_table_sell['strike'], y=df_table_sell['OpenIV'],
                              mode='markers+text', text=df_table_sell['OpenIV'], textposition='middle left',
                              marker=dict(size=11, symbol="star-triangle-down-open", color='darkmagenta'),
                              name='My Pos Sell',
                              customdata=df_table_sell[['optiontype', 'net_pos', 'expdate', 'ticker']],
-                             hovertemplate=
-                             "<b>%{customdata}</b><br>"
+                             hovertemplate="<b>%{customdata}</b><br>"
                              ))
 
     # Мои ордерра
