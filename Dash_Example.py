@@ -130,15 +130,18 @@ df['expiration_date'] = df['_expiration_datetime'].dt.strftime('%d.%m.%Y')
 
 app.layout = html.Div(children=[
 
+    # Текущее время обновления данных
     html.H6(id='last_update_time', style={'textAlign': 'left'}),
 
     html.Div(children=[
+        # Селектор выбора базового актива
         dcc.Dropdown(df._base_asset_ticker.unique(), value=df._base_asset_ticker.unique()[0], id='dropdown-selection',  style={'width':'40%'}),
         html.Div(id='dd-output-container')]),
 
         html.Div(children=[
+            # График улыбки волатильности
             dcc.Graph(id='plot_smile', style={'display': 'inline-block'}),
-            # Спидометр
+            # Спидометр TrueVega
             # https://stackoverflow.com/questions/69275527/python-dash-gauge-how-can-i-use-strings-as-values-instead-of-numbers
             daq.Gauge(id="graph-gauge", style={'display': 'inline-block'},
                 units="TrueVega",
@@ -170,14 +173,31 @@ app.layout = html.Div(children=[
 
 
     html.Div(children=[
-        dcc.Graph(id='plot_history')]),
+        # График истории
+        dcc.Graph(id='plot_history'),
+        # Слайдер
+        dcc.Slider(0, 28,
+            id='my_slider',
+            step=None,
+            marks={
+                1: '0.5d',
+                2: '1d',
+                6: '3d',
+                14: '7d',
+                28: '14d'
+            },
+            value=1
+        ),
+        html.Div(id='slider-output-1')
+    ]),
 
+    # Интервал обновления данных
     dcc.Interval(
         id='interval-component',
         interval=1000 * 5,
         n_intervals=0),
 
-    # Таблица
+    # Таблица моих позиций
     html.Div(id='intermediate-value', style={'display': 'none'}),
         dash_table.DataTable(id='table', data=df_table.to_dict('records'), page_size=8, style_table={'max-width': '50px'},
         style_data_conditional = [
@@ -193,7 +213,7 @@ app.layout = html.Div(children=[
 
 ])
 
-# Callback to update the invisible intermediate-value element
+# Callback to update the table
 @app.callback(Output('intermediate-value', 'children'),
               [Input('interval-component', 'n_intervals')],
               [State('intermediate-value', 'children')])
@@ -211,7 +231,7 @@ def clean_data(value, dff):
     # print(dff)
     return dff.tail(420).to_json(date_format='iso', orient='split')
 
-# Callback to update the dropdown
+# Callback to update the dropdown (селектор базового актива)
 @app.callback(
     Output('dd-output-container', 'children'),
     Input('dropdown-selection', 'value')
@@ -225,7 +245,7 @@ def update_output(value):
 def update_time(n):
     return 'Last update time: {}'.format(datetime.datetime.now())
 
-#Callback to update the line-graph volatility smile
+#Callback to update the line-graph volatility smile (обновление улыбки волатильности)
 @app.callback(Output('plot_smile', 'figure', allow_duplicate=True),
               [Input('dropdown-selection', 'value'),
                Input('interval-component', 'n_intervals')],
@@ -272,7 +292,6 @@ def update_output_smile(value, n):
     file.close()
     # print('\n df_orders.columns:\n', df_orders.columns)
     print('\n df_orders:\n', df_orders)
-
 
     color_palette = len(set(dff['expiration_date']))
 
@@ -337,19 +356,24 @@ def update_output_smile(value, n):
     )
     return fig
 
-#Callback to update the line-graph history data
+#Callback to update the line-graph history data (обновление данных графика истории)
 @app.callback(Output('plot_history', 'figure', allow_duplicate=True),
                [Input('dropdown-selection', 'value'),
+                Input('my_slider', 'value'),
                 Input('interval-component', 'n_intervals')],
               prevent_initial_call=True)
-def update_output_history(value, n):
+def update_output_history(dropdown_value, slider_value, n):
+
+    limit = 440 * slider_value
+    drop_base_ticker = dropdown_value
+
     for base_asset_ticker in base_asset_ticker_list:
-        if value == base_asset_ticker:
+        if drop_base_ticker == base_asset_ticker:
             substitution_text = base_asset_ticker_list.get(base_asset_ticker)
             # Volatility history data
             with open(temp_obj.substitute(name_file=f'_TEST_CenterStrikeVola_{substitution_text}.csv'), 'r') as file:
                 df_volatility = pd.read_csv(file, sep=';')
-                df_volatility = df_volatility.tail(300)
+                df_volatility = df_volatility.tail(limit)
             # Close the file
             file.close()
     # Преобразуем DateTime в формат datetime
@@ -362,7 +386,6 @@ def update_output_history(value, n):
     df_volatility.index = pd.DatetimeIndex(df_volatility['DateTime'])
     del df_volatility['DateTime']
 
-
     # column_name_series = []
     # for col in df_volatility.columns:
     #     column_name_series.append(col)
@@ -373,13 +396,11 @@ def update_output_history(value, n):
     # Create figure with secondary y-axis
     fig = make_subplots(specs=[[{"secondary_y": True}]])
 
+    # Перебираем все столбцы
     for i in df_volatility.columns:
         # fig.add_trace(go.Line(x=df_volatility.index, y=df_volatility[i], name=i))
         fig.add_trace(go.Scatter(x=df_volatility.index, y=df_volatility[i], mode='lines+text',
                                  name=i), secondary_y=True)
-    # fig.add_trace(go.Line(x=df_volatility.index, y=dff['_volatility'], mode='lines+markers', name='Volatility'))
-    # fig = px.line(df_volatility, x=df_volatility.index, y=df_volatility.columns)
-    # fig = go.Figure(data=[go.Scatter(x=df_volatility.index, y=df_volatility[i])])
 
     # Убираем неторговое время
     fig.update_xaxes(
@@ -391,6 +412,7 @@ def update_output_history(value, n):
 
     # Добавляем к оси Х 10 минут
     fig.update_xaxes(range=[df_volatility.index.min(), df_volatility.index.max() + timedelta(minutes=10)])
+
     # # Добавляем аннотацию
     # fig.add_annotation(x=df_volatility.index[-1], y=df_volatility.columns[-1],
     #                    text="Text annotation with arrow",
@@ -400,13 +422,21 @@ def update_output_history(value, n):
     fig.update_layout(xaxis_title=None)
 
     fig.update_layout(
-        title_text=f'Volatility history of the option series {value}', uirevision="Don't change"
+        title_text=f'Volatility history of the option series {dropdown_value}', uirevision="Don't change"
     )
     fig.update_layout(
         margin=dict(l=0, r=0, t=30, b=0),
     )
 
     return fig
+
+# # Callback to update the slider
+# @callback(
+#     Output('slider-output-1', 'children'),
+#     Input('my_slider', 'value')
+# )
+# def update_output(value):
+#     return f'The slider is currently at {slider_value}.'
 
 #Callback to update the table
 @app.callback(
