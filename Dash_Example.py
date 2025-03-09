@@ -15,9 +15,8 @@ from supported_base_asset import MAP
 from string import Template
 import numpy as np
 
-temp_str = 'C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
-
 
 tz_msk = timezone('Europe/Moscow')  # Время UTC будем приводить к московскому времени
 
@@ -65,18 +64,6 @@ file.close()
 # print('\n df_orders.columns:\n', df_orders.columns)
 # print('\n df_orders:\n', df_orders)
 
-
-# # Volatility history data
-# # Open the file using the "with" statement
-# with open(temp_obj.substitute(name_file='_TEST_CenterStrikeVola_RTS.csv'), 'r') as file:
-#     df_volatility = pd.read_csv(file, sep=';')
-#     df_volatility = df_volatility.tail(300)
-#     df_volatility.set_index('DateTime', inplace=True)
-# # Close the file explicitly file.close()
-# file.close()
-# # print(df_volatility)
-
-
 def get_object_from_json_endpoint(url, method='GET', params={}):
     response = requests.request(method, url, params=params)
 
@@ -119,15 +106,15 @@ df['_expiration_datetime'] = pd.to_datetime(df['_expiration_datetime'])
 df['_expiration_datetime'].dt.date
 df['expiration_date'] = df['_expiration_datetime'].dt.strftime('%d.%m.%Y')
 
-# df['_last_price_timestamp'] = df['_last_price_timestamp'].apply(pd.to_datetime, utc=True)
-df['_last_price_timestamp'] = df['_last_price_timestamp'].astype('Int64') # форматирование float64 to UTC int seconds
-print(df['_last_price_timestamp'])
-print(df['_last_price_timestamp'][1587])
-print(utc_timestamp_to_msk_datetime(df['_last_price_timestamp'][1587]))
-print(utc_timestamp_to_msk_datetime(df['_last_price_timestamp'][1587]).strftime('%H:%M:%S'))
-
-now = int(datetime.datetime.timestamp(datetime.datetime.now()))  # Текущая дата и время в виде UNIX времени в секундах
-print(now)
+# # df['_last_price_timestamp'] = df['_last_price_timestamp'].apply(pd.to_datetime, utc=True)
+# df['_last_price_timestamp'] = df['_last_price_timestamp'].astype('Int64') # форматирование float64 to UTC int seconds
+# print(df['_last_price_timestamp'])
+# print(df['_last_price_timestamp'][1587])
+# print(utc_timestamp_to_msk_datetime(df['_last_price_timestamp'][1587]))
+# print(utc_timestamp_to_msk_datetime(df['_last_price_timestamp'][1587]).strftime('%H:%M:%S'))
+#
+# now = int(datetime.datetime.timestamp(datetime.datetime.now()))  # Текущая дата и время в виде UNIX времени в секундах
+# print(now)
 
 
 
@@ -258,7 +245,7 @@ def update_output_smile(value, n):
 
     for asset in base_asset_list:
         if asset['_ticker'] == value:
-            base_asset_last_price = asset['_last_price']
+            base_asset_last_price = asset['_last_price'] # получаем последнюю цену базового актива
     # print('base_asset_last_price:', base_asset_last_price)
 
     dff_call = dff[(dff._type == 'C')]  # оставим только коллы
@@ -339,15 +326,9 @@ def update_output_smile(value, n):
                              name='Last',
                              ))
 
-
-
     # Цена базового актива (вертикальная линия)
     fig.add_vline(x=base_asset_last_price, line_dash='dash', line_color='firebrick')
-    # strike = dff._strike.unique()
-    # last_price_iv = dff._last_price_iv
-    # fig.add_trace(go.Scatter(y='_last_price_iv'), row=2, col=1)
-    # fig.update_xaxes(range=[dff._strike.min(), dff._strike.max()])
-    # fig.update_layout(title_text="Volatility smile of the option series", uirevision="Don't change")
+
     fig.update_layout(
         title_text="Volatility smile of the option series", uirevision="Don't change"
     )
