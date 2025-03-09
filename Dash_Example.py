@@ -430,14 +430,6 @@ def update_output_history(dropdown_value, slider_value, n):
 
     return fig
 
-# # Callback to update the slider
-# @callback(
-#     Output('slider-output-1', 'children'),
-#     Input('my_slider', 'value')
-# )
-# def update_output(value):
-#     return f'The slider is currently at {slider_value}.'
-
 #Callback to update the table
 @app.callback(
     Output('table', 'data', allow_duplicate=True),
