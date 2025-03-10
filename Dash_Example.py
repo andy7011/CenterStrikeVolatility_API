@@ -104,13 +104,6 @@ df['_expiration_datetime'] = pd.to_datetime(df['_expiration_datetime'])
 df['_expiration_datetime'].dt.date
 df['expiration_date'] = df['_expiration_datetime'].dt.strftime('%d.%m.%Y')
 
-# # df['_last_price_timestamp'] = df['_last_price_timestamp'].apply(pd.to_datetime, utc=True)
-# df['_last_price_timestamp'] = df['_last_price_timestamp'].astype('Int64') # форматирование float64 to UTC int seconds
-# print(df['_last_price_timestamp'])
-# print(df['_last_price_timestamp'][1595])
-# print(utc_timestamp_to_msk_datetime(df['_last_price_timestamp'][1587]))
-# print(utc_timestamp_to_msk_datetime(df['_last_price_timestamp'][1595]).strftime('%H:%M:%S'))
-
 
 app.layout = html.Div(children=[
 
@@ -244,6 +237,7 @@ def update_output_smile(value, n):
     df['_expiration_datetime'] = pd.to_datetime(df['_expiration_datetime'])
     df['_expiration_datetime'].dt.date
     df['expiration_date'] = df['_expiration_datetime'].dt.strftime('%d.%m.%Y')
+    # print(df.columns)
 
     dff = df[(df._base_asset_ticker == value)] # оставим только опционы базового актива
 
@@ -275,7 +269,7 @@ def update_output_smile(value, n):
     # Close the file explicitly file.close()
     file.close()
     # print('\n df_orders.columns:\n', df_orders.columns)
-    print('\n df_orders:\n', df_orders)
+    # print('\n df_orders:\n', df_orders)
 
     color_palette = len(set(dff['expiration_date']))
 
