@@ -15,7 +15,7 @@ from supported_base_asset import MAP
 from string import Template
 import numpy as np
 
-temp_str = 'C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 tz_msk = timezone('Europe/Moscow')  # Время UTC будем приводить к московскому времени
@@ -28,9 +28,9 @@ def utc_to_msk_datetime(dt, tzinfo=False):
     :return: Московское время
     """
     dt_utc = utc.localize(dt)  # Задаем временнУю зону UTC
-    dt_msk = dt_utc.astimezone(tz_msk)  # Переводим в МСК
+    # dt_msk = dt_utc.astimezone(tz_msk)  # Переводим в МСК
+    dt_msk = dt_utc # Не требуется перевод в МСК
     return dt_msk if tzinfo else dt_msk.replace(tzinfo=None)
-
 
 def utc_timestamp_to_msk_datetime(seconds) -> datetime:
     """Перевод кол-ва секунд, прошедших с 01.01.1970 00:00 UTC в московское время
@@ -40,8 +40,6 @@ def utc_timestamp_to_msk_datetime(seconds) -> datetime:
     """
     dt_utc = datetime.datetime.fromtimestamp(seconds)  # Переводим кол-во секунд, прошедших с 01.01.1970 в UTC
     return utc_to_msk_datetime(dt_utc)  # Переводим время из UTC в московское
-
-
 
 # Create the app
 app = dash.Dash(__name__)
@@ -109,23 +107,9 @@ df['expiration_date'] = df['_expiration_datetime'].dt.strftime('%d.%m.%Y')
 # # df['_last_price_timestamp'] = df['_last_price_timestamp'].apply(pd.to_datetime, utc=True)
 # df['_last_price_timestamp'] = df['_last_price_timestamp'].astype('Int64') # форматирование float64 to UTC int seconds
 # print(df['_last_price_timestamp'])
-# print(df['_last_price_timestamp'][1587])
+# print(df['_last_price_timestamp'][1595])
 # print(utc_timestamp_to_msk_datetime(df['_last_price_timestamp'][1587]))
-# print(utc_timestamp_to_msk_datetime(df['_last_price_timestamp'][1587]).strftime('%H:%M:%S'))
-#
-# now = int(datetime.datetime.timestamp(datetime.datetime.now()))  # Текущая дата и время в виде UNIX времени в секундах
-# print(now)
-
-
-
-# now = int(datetime.datetime.timestamp(datetime.datetime.now()))  # Текущая дата и время в виде UNIX времени в секундах
-# print(now)
-# dt = now
-# dt_utc = utc.localize(dt)  # Задаем временнУю зону UTC
-# # dt_msk = utc_to_msk_datetime(1741274879, False)
-# print(dt_utc)
-
-
+# print(utc_timestamp_to_msk_datetime(df['_last_price_timestamp'][1595]).strftime('%H:%M:%S'))
 
 
 app.layout = html.Div(children=[
@@ -334,15 +318,28 @@ def update_output_smile(value, n):
                              mode='markers+text', text=df_orders['volatility'], textposition='middle left',
                              marker=dict(size=8, symbol="cross-thin", line=dict(width=1, color="DarkSlateGrey")),
                              name='My Orders',
+                             customdata=df_orders[['operation', 'optiontype', 'expdate', 'price', 'tiker']],
+                             hovertemplate="<b>%{customdata}</b><br>"
                              ))
 
-
     # LastPrice
-    dff_LastPrice_Call = df[(df._base_asset_ticker == value) & (df._ticker.isin(MyPos_ticker_list))]
-    fig.add_trace(go.Scatter(x=dff_LastPrice_Call['_strike'], y=dff_LastPrice_Call['_last_price_iv'],
-                             mode='markers', text=dff_LastPrice_Call['_last_price_iv'], textposition='top left',
+    dff_LastPrice = df[(df._base_asset_ticker == value) & (df._ticker.isin(MyPos_ticker_list))]
+    dff_LastPrice = dff_LastPrice.apply(lambda x: round(x, 2))
+    dff_LastPrice.loc[dff_LastPrice['_type'] == 'C', '_type'] = 'Call'
+    dff_LastPrice.loc[dff_LastPrice['_type'] == 'P', '_type'] = 'Put'
+    for i in dff_LastPrice['_last_price_timestamp']:
+        UTC_seconds = i
+        MSK_time = utc_timestamp_to_msk_datetime(UTC_seconds)
+        MSK_time = MSK_time.strftime('%H:%M:%S')
+        dff_LastPrice[str(int(i))] = dff_LastPrice.replace(int(i), MSK_time, inplace=True)
+    # print(dff_LastPrice.columns)
+
+    fig.add_trace(go.Scatter(x=dff_LastPrice['_strike'], y=dff_LastPrice['_last_price_iv'],
+                             mode='markers', text=dff_LastPrice['_last_price_iv'], textposition='top left',
                              marker=dict(size=8, color='goldenrod'),
                              name='Last',
+                             customdata=dff_LastPrice[['_type', '_last_price', '_last_price_iv', 'expiration_date', '_ticker', '_last_price_timestamp']],
+                             hovertemplate="<b>%{customdata}</b><br>"
                              ))
 
     # Цена базового актива (вертикальная линия)
