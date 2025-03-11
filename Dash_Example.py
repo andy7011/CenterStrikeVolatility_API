@@ -230,6 +230,23 @@ def update_time(n):
 def update_output_smile(value, n):
     model_from_api = get_object_from_json_endpoint('https://option-volatility-dashboard.ru/dump_model')
 
+    # Список базовых активов, вычисление и добавление в словарь центрального страйка
+    base_asset_list = model_from_api[0]
+    for asset in base_asset_list:
+        ticker = asset.get('_ticker')
+        last_price = asset.get('_last_price')
+        strike_step = MAP[ticker]['strike_step']
+        central_strike = _calculate_central_strike(last_price, strike_step)  # вычисление центрального страйка
+        asset.update({
+            'central_strike': central_strike
+        })
+    # print('base_asset_list:', base_asset_list) # вывод списка базовых активов
+    base_asset_ticker_list = {}
+    for i in range(len(base_asset_list)):
+        # print(base_asset_list[i]['_ticker'])
+        base_asset_ticker_list.update({base_asset_list[i]['_ticker']: base_asset_list[i]['_base_asset_code']})
+    # print(base_asset_ticker_list)
+
     # Список опционов
     option_list = model_from_api[1]
     df = pd.DataFrame.from_dict(option_list, orient='columns')
@@ -266,6 +283,10 @@ def update_output_smile(value, n):
     with open(temp_obj.substitute(name_file='MyOrders.csv'), 'r') as file:
         df_orders = pd.read_csv(file, sep=';')
         df_orders = df_orders[(df_orders.optionbase == value)]
+        MyOrders_ticker_list = []
+        for i in range(len(df_orders)):
+            MyOrders_ticker_list.append(df_orders['tiker'][i])
+        # print('MyOrders_ticker_list:', MyOrders_ticker_list)
     # Close the file explicitly file.close()
     file.close()
     # print('\n df_orders.columns:\n', df_orders.columns)
@@ -316,23 +337,47 @@ def update_output_smile(value, n):
                              hovertemplate="<b>%{customdata}</b><br>"
                              ))
 
-    # LastPrice
-    dff_LastPrice = df[(df._base_asset_ticker == value) & (df._ticker.isin(MyPos_ticker_list))]
-    dff_LastPrice = dff_LastPrice.apply(lambda x: round(x, 2))
-    dff_LastPrice.loc[dff_LastPrice['_type'] == 'C', '_type'] = 'Call'
-    dff_LastPrice.loc[dff_LastPrice['_type'] == 'P', '_type'] = 'Put'
-    for i in dff_LastPrice['_last_price_timestamp']:
+    # Last Bid Ask for MyPos
+    favorites_ticker_list = MyPos_ticker_list + MyOrders_ticker_list # слияние списков
+    favorites_ticker_list = list(set(favorites_ticker_list)) # удаление дубликатов
+    dff_MyPosOrders = df[(df._base_asset_ticker == value) & (df._ticker.isin(favorites_ticker_list))]
+    dff_MyPosOrders = dff_MyPosOrders.apply(lambda x: round(x, 2))
+    dff_MyPosOrders.loc[dff_MyPosOrders['_type'] == 'C', '_type'] = 'Call'
+    dff_MyPosOrders.loc[dff_MyPosOrders['_type'] == 'P', '_type'] = 'Put'
+    for i in dff_MyPosOrders['_last_price_timestamp']:
         UTC_seconds = i
         MSK_time = utc_timestamp_to_msk_datetime(UTC_seconds)
         MSK_time = MSK_time.strftime('%H:%M:%S')
-        dff_LastPrice[str(int(i))] = dff_LastPrice.replace(int(i), MSK_time, inplace=True)
-    # print(dff_LastPrice.columns)
+        dff_MyPosOrders[str(int(i))] = dff_MyPosOrders.replace(int(i), MSK_time, inplace=True)
+    # print(dff_MyPosOrders.columns)
 
-    fig.add_trace(go.Scatter(x=dff_LastPrice['_strike'], y=dff_LastPrice['_last_price_iv'],
-                             mode='markers', text=dff_LastPrice['_last_price_iv'], textposition='top left',
+    # BID
+    fig.add_trace(go.Scatter(x=dff_MyPosOrders['_strike'], y=dff_MyPosOrders['_bid_iv'],
+                             mode='markers', text=dff_MyPosOrders['_bid_iv'], textposition='top left',
+                             marker=dict(size=8, symbol="triangle-up", color='green'),
+                             name='Bid',
+                             customdata=dff_MyPosOrders[
+                                 ['_type', '_bid', '_bid_iv', 'expiration_date', '_ticker']],
+                             hovertemplate="<b>%{customdata}</b><br>"
+                             ))
+    # ASK
+    fig.add_trace(go.Scatter(x=dff_MyPosOrders['_strike'], y=dff_MyPosOrders['_ask_iv'],
+                             mode='markers', text=dff_MyPosOrders['_ask_iv'], textposition='top left',
+                             marker=dict(size=8, symbol="triangle-down", color='red'),
+                             name='Ask',
+                             customdata=dff_MyPosOrders[
+                                 ['_type', '_ask', '_ask_iv', 'expiration_date', '_ticker']],
+                             hovertemplate="<b>%{customdata}</b><br>"
+                             ))
+
+    # LAST
+    fig.add_trace(go.Scatter(x=dff_MyPosOrders['_strike'], y=dff_MyPosOrders['_last_price_iv'],
+                             mode='markers', text=dff_MyPosOrders['_last_price_iv'], textposition='top left',
                              marker=dict(size=8, color='goldenrod'),
                              name='Last',
-                             customdata=dff_LastPrice[['_type', '_last_price', '_last_price_iv', 'expiration_date', '_ticker', '_last_price_timestamp']],
+                             customdata=dff_MyPosOrders[
+                                 ['_type', '_last_price', '_last_price_iv', 'expiration_date', '_ticker',
+                                  '_last_price_timestamp']],
                              hovertemplate="<b>%{customdata}</b><br>"
                              ))
 
@@ -367,6 +412,7 @@ def update_output_history(dropdown_value, slider_value, n):
                 df_volatility = df_volatility.tail(limit)
             # Close the file
             file.close()
+
     # Преобразуем DateTime в формат datetime
     df_volatility['DateTime'] = pd.to_datetime(df_volatility['DateTime'], format='%d.%m.%Y %H:%M:%S', dayfirst=True)
     # Удаляем столбцы содержащие только нулевые значения
@@ -377,16 +423,23 @@ def update_output_history(dropdown_value, slider_value, n):
     df_volatility.index = pd.DatetimeIndex(df_volatility['DateTime'])
     del df_volatility['DateTime']
 
-    # column_name_series = []
-    # for col in df_volatility.columns:
-    #     column_name_series.append(col)
-    # print('column_name_series:', column_name_series)
+    # BaseAssetPrice history data
+    with open(temp_obj.substitute(name_file='BaseAssetPriceHistory.csv'), 'r') as file:
+        df_BaseAssetPrice = pd.read_csv(file, sep=';')
+        df_BaseAssetPrice = df_BaseAssetPrice[(df_BaseAssetPrice.ticker == dropdown_value)]
+        df_BaseAssetPrice = df_BaseAssetPrice.tail(limit)
+    # Close the file
+    file.close()
 
-    # График истории волатильности
     fig = go.Figure()
     # Create figure with secondary y-axis
     fig = make_subplots(specs=[[{"secondary_y": True}]])
 
+    # График истории цены базового актива
+    fig.add_trace(go.Scatter(x=df_BaseAssetPrice['DateTime'], y=df_BaseAssetPrice['last_price'], mode='lines+text',
+                             name=dropdown_value, line=dict(color='gray', width=1, dash='dashdot')), secondary_y=False)
+
+    # График истории волатильности
     # Перебираем все столбцы
     for i in df_volatility.columns:
         # fig.add_trace(go.Line(x=df_volatility.index, y=df_volatility[i], name=i))
