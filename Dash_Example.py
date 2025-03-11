@@ -15,7 +15,7 @@ from supported_base_asset import MAP
 from string import Template
 import numpy as np
 
-temp_str = 'C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 tz_msk = timezone('Europe/Moscow')  # Время UTC будем приводить к московскому времени
@@ -171,7 +171,7 @@ app.layout = html.Div(children=[
     # Интервал обновления данных
     dcc.Interval(
         id='interval-component',
-        interval=1000 * 5,
+        interval=1000 * 6,
         n_intervals=0),
 
     # Таблица моих позиций
@@ -467,7 +467,7 @@ def update_output_history(dropdown_value, slider_value, n):
     fig.update_layout(xaxis_title=None)
 
     fig.update_layout(
-        title_text=f'Volatility history of the option series {dropdown_value}', uirevision="Don't change"
+        title_text=f'The history of the volatility of the central strike of the option series {dropdown_value}', uirevision="Don't change"
     )
     fig.update_layout(
         margin=dict(l=0, r=0, t=30, b=0),

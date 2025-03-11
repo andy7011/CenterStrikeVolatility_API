@@ -8,7 +8,7 @@ from central_strike import _calculate_central_strike
 import csv
 from string import Template
 
-temp_str = 'C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 def get_object_from_json_endpoint(url, method='GET', params={}):
@@ -88,10 +88,12 @@ def run_scheduler() -> NoReturn:
 
         time.sleep(60)  # Проверяем каждую (минуту)
 
+def main():
+    run_scheduler()
 
 if __name__ == "__main__":
     # Устанавливаем задачу на выполнение каждую минуту
     schedule.every().minute.do(job)
 
     # Запускаем планировщик
-    run_scheduler()
+    main()
