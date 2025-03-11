@@ -435,16 +435,17 @@ def update_output_history(dropdown_value, slider_value, n):
     # Create figure with secondary y-axis
     fig = make_subplots(specs=[[{"secondary_y": True}]])
 
-    # График истории цены базового актива
-    fig.add_trace(go.Scatter(x=df_BaseAssetPrice['DateTime'], y=df_BaseAssetPrice['last_price'], mode='lines+text',
-                             name=dropdown_value, line=dict(color='gray', width=1, dash='dashdot')), secondary_y=False)
-
     # График истории волатильности
     # Перебираем все столбцы
     for i in df_volatility.columns:
         # fig.add_trace(go.Line(x=df_volatility.index, y=df_volatility[i], name=i))
         fig.add_trace(go.Scatter(x=df_volatility.index, y=df_volatility[i], mode='lines+text',
                                  name=i), secondary_y=True)
+
+    # График истории цены базового актива
+    fig.add_trace(go.Scatter(x=df_BaseAssetPrice['DateTime'], y=df_BaseAssetPrice['last_price'], mode='lines+text',
+                             name=dropdown_value, line=dict(color='gray', width=1, dash='dashdot')),
+                  secondary_y=False)
 
     # Убираем неторговое время
     fig.update_xaxes(
