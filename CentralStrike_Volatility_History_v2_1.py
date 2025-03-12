@@ -1,4 +1,3 @@
-import schedule
 import time
 from typing import NoReturn
 from datetime import datetime
@@ -7,6 +6,7 @@ from supported_base_asset import MAP
 from central_strike import _calculate_central_strike
 import csv
 from string import Template
+import threading
 
 temp_str = 'C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
@@ -40,7 +40,7 @@ def job() -> NoReturn:
             last_price = asset.get('_last_price')
             data_price = [DateTime, ticker, base_asset_code, last_price]
             writer.writerow(data_price)
-
+            # вычисление центрального страйка по каждому базовому активу и добавление в словарь
             strike_step = MAP[ticker]['strike_step']
             central_strike = _calculate_central_strike(last_price, strike_step)  # вычисление центрального страйка
             asset.update({
@@ -49,27 +49,40 @@ def job() -> NoReturn:
     # Close the file explicitly f.close()
     f.close()
 
+    # with open(temp_obj.substitute(name_file='BaseAssetPriceHistory.csv')) as f:
+    #     print(f.read())
+    # # Close the file explicitly f.close()
+    # f.close()
+
+    # print('base_asset_list:', base_asset_list) # вывод списка базовых активов
+    base_asset_ticker_list = {} # создаем пустой словарь
+    for i in range(len(base_asset_list)):
+        # print(base_asset_list[i]['_ticker'])
+        base_asset_ticker_list.update({base_asset_list[i]['_ticker']: base_asset_list[i]['_base_asset_code']})
+    # print(base_asset_ticker_list)
+
 def is_scheduled_time() -> bool:
     """Проверяет, соответствует ли текущее время расписанию"""
     current_hour = datetime.now().hour
     current_minute = datetime.now().minute
+
     # Проверяем рабочий день (понедельник = 0, воскресенье = 6)
     weekday = datetime.now().weekday()
     if weekday >= 5:  # 5 и 6 - это суббота и воскресенье
         return False
+
     # Проверяем время (9:00 до 23:50)
     return (9 <= current_hour < 23) or (current_hour == 23 and current_minute <= 50)
 
+
 def run_scheduler() -> NoReturn:
     """Функция для запуска планировщика"""
-    while True:
-        if is_scheduled_time():
-            schedule.run_pending()
-        time.sleep(60)  # Проверяем каждую (минуту)
+    # if is_scheduled_time():
+    thread = threading.Timer(60.0, run_scheduler)  # 60 seconds = 1 minute
+    thread.start()
+    job()
 
 def main():
-    # Устанавливаем задачу на выполнение каждую минуту
-    schedule.every().minute.do(job)
     # Запускаем планировщик
     run_scheduler()
 
