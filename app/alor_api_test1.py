@@ -16,9 +16,9 @@ class AlorApiTest:
 
     def _test_subscribe_to_quotes(self):
         print('_test_subscribe_to_quotes')
-        # self._alorApi.subscribe_to_quotes('RIH5', self._handle_quotes_event)
-        self._alorApi.subscribe_to_quotes('RI95000BB5B', self._handle_quotes_event)
-        self._alorApi.subscribe_to_instrument('RI95000BB5B', self._handle_option_instrument_event)
+        self._alorApi.subscribe_to_quotes('RIM5', self._handle_quotes_event)
+        # self._alorApi.subscribe_to_quotes('RI95000BB5B', self._handle_quotes_event)
+        # self._alorApi.subscribe_to_instrument('RI95000BB5B', self._handle_option_instrument_event)
 
     def _handle_quotes_event(self, ticker, data):
         print(ticker, data)
