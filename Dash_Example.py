@@ -14,11 +14,13 @@ from central_strike import _calculate_central_strike
 from supported_base_asset import MAP
 from string import Template
 import numpy as np
+import schedule
+import time
+import csv
+from typing import NoReturn
 
 temp_str = 'C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
-
-tz_msk = timezone('Europe/Moscow')  # Время UTC будем приводить к московскому времени
 
 def utc_to_msk_datetime(dt, tzinfo=False):
     """Перевод времени из UTC в московское
@@ -80,6 +82,7 @@ model_from_api = get_object_from_json_endpoint('https://option-volatility-dashbo
 
 # Список базовых активов, вычисление и добавление в словарь центрального страйка
 base_asset_list = model_from_api[0]
+print('base_asset_list:', base_asset_list)
 for asset in base_asset_list:
     ticker = asset.get('_ticker')
     last_price = asset.get('_last_price')
@@ -103,7 +106,6 @@ df = df.loc[df['_volatility'] > 0]
 df['_expiration_datetime'] = pd.to_datetime(df['_expiration_datetime'])
 df['_expiration_datetime'].dt.date
 df['expiration_date'] = df['_expiration_datetime'].dt.strftime('%d.%m.%Y')
-
 
 app.layout = html.Div(children=[
 
@@ -510,7 +512,6 @@ def updateGauge(n, value):
     else:
         value = (abs(tv_sum_positive) / (abs(tv_sum_positive) + abs(tv_sum_negative))) * 10
     return value
-
 
 if __name__ == '__main__':
 
