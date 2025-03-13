@@ -1,3 +1,5 @@
+from math import isnan
+
 import dash
 from dash import dcc, Input, Output, callback, dash_table, State
 from dash import html
@@ -347,11 +349,12 @@ def update_output_smile(value, n):
     dff_MyPosOrders.loc[dff_MyPosOrders['_type'] == 'C', '_type'] = 'Call'
     dff_MyPosOrders.loc[dff_MyPosOrders['_type'] == 'P', '_type'] = 'Put'
     for i in dff_MyPosOrders['_last_price_timestamp']:
-        UTC_seconds = i
-        MSK_time = utc_timestamp_to_msk_datetime(UTC_seconds)
-        MSK_time = MSK_time.strftime('%H:%M:%S')
-        dff_MyPosOrders[str(int(i))] = dff_MyPosOrders.replace(int(i), MSK_time, inplace=True)
-    # print(dff_MyPosOrders.columns)
+        if isnan(i) != True:
+            UTC_seconds = i
+            MSK_time = utc_timestamp_to_msk_datetime(UTC_seconds)
+            MSK_time = MSK_time.strftime('%H:%M:%S')
+            dff_MyPosOrders[str(int(i))] = dff_MyPosOrders.replace(int(i), MSK_time, inplace=True)
+    # print(dff_MyPosOrders['_last_price_timestamp'])
 
     # BID
     fig.add_trace(go.Scatter(x=dff_MyPosOrders['_strike'], y=dff_MyPosOrders['_bid_iv'],
