@@ -1,3 +1,5 @@
+from http.client import responses
+
 import option_repository
 from infrastructure import env_utils
 from infrastructure.alor_api import AlorApi
@@ -18,10 +20,13 @@ class AlorApiTest:
 
     def __init__(self):
         print('AlorApiTest')
-        alor_client_token = env_utils.get_env_or_exit('ALOR_CLIENT_TOKEN')
+        # alor_client_token = env_utils.get_env_or_exit('ALOR_CLIENT_TOKEN')
+        alor_client_token = '189fcd95-131e-490b-a8b6-48bfb5cfadb1'
+        print(alor_client_token)
         self._alorApi = AlorApi(alor_client_token)
 
     def run(self):
+        print('RUN')
         self._test_subscribe_to_quotes()
         self._alorApi.run_async_connection(False)
 
@@ -35,29 +40,29 @@ class AlorApiTest:
 
     def _handle_quotes_event(self, ticker, data):
         print(datetime.now(), ticker, 'last_price:', data['last_price'], 'last_price_timestamp:', data['last_price_timestamp'], 'bid:', data['bid'], 'ask:', data['ask'])
-        if ticker in MAP.keys():
-            base_asset_last_price = data['last_price']
-            last_price_futures[ticker] = base_asset_last_price
-        print(last_price_futures)
+        # if ticker in MAP.keys():
+        #     base_asset_last_price = data['last_price']
+        #     last_price_futures[ticker] = base_asset_last_price
+        # print(last_price_futures)
 
-        if ticker in secid_list:
-            ask = data['ask']
-            bid = data['bid']
-            option = ticker
-            # base_asset_last_price = last_price_futures['RIH5']
-            # if ask:
-            #     ask_iv = get_iv_for_option_price(base_asset_last_price, option, ask)
-            # if bid:
-            #     bid_iv = get_iv_for_option_price(base_asset_last_price, option, bid)
-            # print(ticker, 'last_price:', data['last_price'], 'last_price_timestamp:', data['last_price_timestamp'], 'bid:',
-            #     data['bid'], 'bid_iv:', bid_iv, 'ask:', data['ask'], 'ask_iv:', ask_iv)
-
-            # print(datetime.now(), ticker, 'last_price:', data['last_price'], 'last_price_timestamp:', data['last_price_timestamp'],
-            #       'bid:', data['bid'], 'ask:', data['ask'])
-            secid_list_dict = {'DateTime': datetime.now(), 'Ticker': ticker, 'LastPrice': data['last_price'],
-                               'LastPriceTimestamp': data['last_price_timestamp'], 'Bid': data['bid'],
-                               'Ask': data['ask']}
-            print(secid_list_dict)
+        # if ticker in secid_list:
+        #     ask = data['ask']
+        #     bid = data['bid']
+        #     option = ticker
+        #     # base_asset_last_price = last_price_futures['RIH5']
+        #     # if ask:
+        #     #     ask_iv = get_iv_for_option_price(base_asset_last_price, option, ask)
+        #     # if bid:
+        #     #     bid_iv = get_iv_for_option_price(base_asset_last_price, option, bid)
+        #     # print(ticker, 'last_price:', data['last_price'], 'last_price_timestamp:', data['last_price_timestamp'], 'bid:',
+        #     #     data['bid'], 'bid_iv:', bid_iv, 'ask:', data['ask'], 'ask_iv:', ask_iv)
+        #
+        #     # print(datetime.now(), ticker, 'last_price:', data['last_price'], 'last_price_timestamp:', data['last_price_timestamp'],
+        #     #       'bid:', data['bid'], 'ask:', data['ask'])
+        #     secid_list_dict = {'DateTime': datetime.now(), 'Ticker': ticker, 'LastPrice': data['last_price'],
+        #                        'LastPriceTimestamp': data['last_price_timestamp'], 'Bid': data['bid'],
+        #                        'Ask': data['ask']}
+        #     print(secid_list_dict)
 
     def _handle_option_instrument_event(self, ticker, data):
         if ticker in secid_list:
@@ -111,8 +116,8 @@ class AlorApiTest:
 #
 # print("\n Тикеры необходимых опционных серий secid_list:", '\n', secid_list)
 # print('\n Количество тикеров опционов:', len(secid_list))
-#
-#
+
+
 # time.sleep(7)
 #
 # def job():

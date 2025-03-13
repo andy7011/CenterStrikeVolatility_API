@@ -32,12 +32,17 @@ def _get_guid(api_method: str, ticker: str):
     return sha256_hash.hexdigest()
 
 def _get_authorization_token(client_token):
+    print('token:', client_token)
     params = {'token': client_token}
+    print('params: ', params)
+    print(_REFRESH_TOKEN_URL)
 
     response = get_object_from_json_endpoint(_REFRESH_TOKEN_URL, 'POST', params)
+    print('response: ', response)
     authorization_token = None
     if response and 'AccessToken' in response:
         authorization_token = response['AccessToken']
+        print(authorization_token)
     return authorization_token
 
 
@@ -45,6 +50,7 @@ class AlorApi:
     def __init__(self, client_token):
         self._async_queue = asyncio.Queue()
         self._api_events = {}
+        print(client_token)
         self._auth_token = _get_authorization_token(client_token)
 
     def run_async_connection(self, is_debug: bool):

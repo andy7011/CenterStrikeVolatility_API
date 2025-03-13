@@ -2,6 +2,7 @@ from infrastructure import env_utils
 from infrastructure.alor_api import AlorApi
 from supported_base_asset import MAP
 from infrastructure import env_utils
+from model import option_repository
 
 
 class AlorApiTest:

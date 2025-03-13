@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charSet="utf-8"/>
+    <link type="text/css" rel="stylesheet" href="/static/style.css" >
+  </head>
+  <body>
+    <h2>Option Volatility Dashboard</h2>
+    {% if error_message %}
+      <p class="error_message">{{ error_message }}</p>
+    {% endif %}
+    <ul class="asset_list">
+      {% for ticker in tickers %}
+        <li>
+          <a href="{{ url_for('get_chart_html', base_asset_ticker=ticker) }}" target="_blank" title="{{ ticker }}">{{ ticker }}</a>
+        </li>
+      {% endfor %}
+    </ul>
+  </body>
+</html>

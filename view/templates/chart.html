@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charSet="utf-8"/>
+    <link type="text/css" rel="stylesheet" href="/static/style.css" >
+  </head>
+  <body style="background: black;">
+    <h2>{{ base_asset_ticker }}</h2>
+    <div class="legend_container" id="legend-container"></div>
+    <div>
+      <canvas id="volatilityChart"></canvas>
+    </div>
+
+    <input type="hidden" id="requestDataUrl" value="{{ url_for('get_chart_json', base_asset_ticker=base_asset_ticker) }}" />
+    <script src="/static/chart.js"></script>
+    <script src="/static/volatility_chart.js"></script>
+  </body>
+</html>
