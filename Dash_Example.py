@@ -82,6 +82,7 @@ model_from_api = get_object_from_json_endpoint('https://option-volatility-dashbo
 
 # Список базовых активов, вычисление и добавление в словарь центрального страйка
 base_asset_list = model_from_api[0]
+print('base_asset_list:', base_asset_list)
 for asset in base_asset_list:
     ticker = asset.get('_ticker')
     last_price = asset.get('_last_price')
