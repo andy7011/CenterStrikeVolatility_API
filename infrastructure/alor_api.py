@@ -20,6 +20,7 @@ _EXCHANGE_MOEX = "MOEX"
 
 _API_METHOD_QUOTES_SUBSCRIBE = "QuotesSubscribe"
 _API_METHOD_INSTRUMENTS_GET_AND_SUBSCRIBE = "InstrumentsGetAndSubscribeV2"
+_API_METHOD_BARS_GET_AND_SUBSCRIBE = 'BarsGetAndSubscribe'
 
 
 # Generate guid string for given api_method and ticker
@@ -32,17 +33,12 @@ def _get_guid(api_method: str, ticker: str):
     return sha256_hash.hexdigest()
 
 def _get_authorization_token(client_token):
-    print('token:', client_token)
     params = {'token': client_token}
-    print('params: ', params)
-    print(_REFRESH_TOKEN_URL)
 
     response = get_object_from_json_endpoint(_REFRESH_TOKEN_URL, 'POST', params)
-    print('response: ', response)
     authorization_token = None
     if response and 'AccessToken' in response:
         authorization_token = response['AccessToken']
-        print(authorization_token)
     return authorization_token
 
 
@@ -50,7 +46,6 @@ class AlorApi:
     def __init__(self, client_token):
         self._async_queue = asyncio.Queue()
         self._api_events = {}
-        print(client_token)
         self._auth_token = _get_authorization_token(client_token)
 
     def run_async_connection(self, is_debug: bool):
@@ -58,6 +53,9 @@ class AlorApi:
 
     def subscribe_to_instrument(self, ticker, callback):
         self._subscribe_to_event(_API_METHOD_INSTRUMENTS_GET_AND_SUBSCRIBE, ticker, callback)
+
+    def subscribe_to_bars(self, ticker, callback):
+        self._subscribe_to_event(_API_METHOD_BARS_GET_AND_SUBSCRIBE, ticker, callback)
 
     def subscribe_to_quotes(self, ticker: str, callback: callable):
         self._subscribe_to_event(_API_METHOD_QUOTES_SUBSCRIBE, ticker, callback)
@@ -71,6 +69,14 @@ class AlorApi:
     def get_securities_quotes(self, symbols):
         # Котировки для выбранных инструментов symbols
         url = f'{_REST_API_URL}/md/v2/securities/{symbols}/quotes'
+        return self._send_rest_request(url)
+
+    # def get_securities_history(self, symbols):
+    def get_securities_history(self, exchange, symbol, tf, seconds_from=1, seconds_to=32536799999, untraded=False, format='Simple'):
+        # Запрос возвращает исторические данные о состоянии рынка для выбранных биржи и финансового инструмента symbols
+        url = f'{_REST_API_URL}/md/v2/history/{symbol}'
+        url = "https://apidev.alor.ru/md/v2/history?symbol=RIM5&exchange=MOEX&tf=60&from=1741929520&to=1741941840"
+        print(url)
         return self._send_rest_request(url)
 
     def _send_rest_request(self, url):

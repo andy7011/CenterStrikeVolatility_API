@@ -1,5 +1,4 @@
-from http.client import responses
-
+import pandas as pd
 import option_repository
 from infrastructure import env_utils
 from infrastructure.alor_api import AlorApi
@@ -16,18 +15,50 @@ import time
 import schedule
 from option_repository import OptionRepository
 
+def utc_to_msk_datetime(dt, tzinfo=False):
+    """Перевод времени из UTC в московское
+
+    :param datetime dt: Время UTC
+    :param bool tzinfo: Отображать временнУю зону
+    :return: Московское время
+    """
+    dt_utc = utc.localize(dt)  # Задаем временнУю зону UTC
+    # dt_msk = dt_utc.astimezone(tz_msk)  # Переводим в МСК
+    dt_msk = dt_utc # Не требуется перевод в МСК
+    return dt_msk if tzinfo else dt_msk.replace(tzinfo=None)
+
+def utc_timestamp_to_msk_datetime(seconds) -> datetime:
+    """Перевод кол-ва секунд, прошедших с 01.01.1970 00:00 UTC в московское время
+
+    :param int seconds: Кол-во секунд, прошедших с 01.01.1970 00:00 UTC
+    :return: Московское время без временнОй зоны
+    """
+    dt_utc = datetime.fromtimestamp(seconds)  # Переводим кол-во секунд, прошедших с 01.01.1970 в UTC
+    return utc_to_msk_datetime(dt_utc)  # Переводим время из UTC в московское
+
 class AlorApiTest:
 
     def __init__(self):
-        print('AlorApiTest')
-        # alor_client_token = env_utils.get_env_or_exit('ALOR_CLIENT_TOKEN')
-        alor_client_token = '189fcd95-131e-490b-a8b6-48bfb5cfadb1'
-        print(alor_client_token)
+        alor_client_token = env_utils.get_env_or_exit('ALOR_CLIENT_TOKEN')
         self._alorApi = AlorApi(alor_client_token)
 
     def run(self):
         print('RUN')
-        self._test_subscribe_to_quotes()
+        # # Пример запроса: url = "https://apidev.alor.ru/md/v2/history?symbol=RIM5&exchange=MOEX&tf=60&from=1741929520&to=1741941840"
+        # # history = ap_provider.get_history(exchange, security_code, time_frame, seconds_from)  # Запрос истории рынка
+        # # История для выбранных инструментов symbols
+        # symbol = "RIM5"
+        # params = {'exchange': 'MOEX', 'symbol': 'RIM5', 'tf': 60, 'from': 1741929520, 'to': 1741941840,
+        #           'untraded': False, 'format': format}
+        # exchange = 'MOEX'
+        # time_frame = 60
+        # seconds_from = 1741929520
+        # history = self._alorApi.get_securities_history(self, exchange, symbol, time_frame, seconds_from)  # Запрос истории рынка
+        # print(history)
+        # print(response.text)
+
+        # self._test_subscribe_to_quotes()
+        self._test_subscribe_to_bars()
         self._alorApi.run_async_connection(False)
 
     def _test_subscribe_to_quotes(self):
@@ -38,8 +69,31 @@ class AlorApiTest:
         #     self._alorApi.subscribe_to_quotes(ticker, self._handle_quotes_event)
         #     self._alorApi.subscribe_to_instrument(ticker, self._handle_option_instrument_event)
 
+    def _test_subscribe_to_bars(self):
+        print('\n _test_subscribe_to_bars')
+        for ticker in MAP.keys():
+            self._alorApi.subscribe_to_bars(ticker, self._handle_quotes_event)
+
     def _handle_quotes_event(self, ticker, data):
-        print(datetime.now(), ticker, 'last_price:', data['last_price'], 'last_price_timestamp:', data['last_price_timestamp'], 'bid:', data['bid'], 'ask:', data['ask'])
+        # print(data)
+
+        MSK_time = utc_timestamp_to_msk_datetime(data['time'])
+        # # print(MSK_time, ticker, data['close'], data['open'], data['high'], data['low'], data['volume'])
+
+        # output = pd.DataFrame(columns=['DateTime', 'ticker', 'close'])
+        # pd_bars = {'DateTime': MSK_time.strftime('%Y-%m-%d %H:%M:%S'), 'ticker': ticker, 'close': data['close']}
+        # output = output._append(pd_bars, ignore_index=True)
+        # print(output)
+
+        # df_bars = pd.DataFrame(pd_bars)
+        # # pd_bars.index = pd_bars['DateTime']  # В индекс ставим дату/время
+        # # # print(pd_bars)
+        # # # output = pd.concat(output, df1)
+        # # # print(df_bars)
+
+
+
+
         # if ticker in MAP.keys():
         #     base_asset_last_price = data['last_price']
         #     last_price_futures[ticker] = base_asset_last_price
@@ -123,7 +177,8 @@ class AlorApiTest:
 # def job():
 #     print(datetime.now(), "I'm working...")
 #
-#     print(OptionRepository)
+#
+#     # print(MSK_time, ticker, data['close'], data['open'], data['high'], data['low'], data['volume'])
 #
 #     # print(OptionRepository.get_option_list())
 #

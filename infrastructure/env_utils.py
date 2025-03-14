@@ -9,10 +9,8 @@ def get_bool(var_name) -> bool:
 
 def get_env_or_exit(var_name):
     value = _get_env(var_name)
-
     if value is None:
         _print_error_message_and_exit(f'{var_name} environment variable is not set.')
-
     return value
 
 
