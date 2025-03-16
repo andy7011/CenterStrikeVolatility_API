@@ -44,56 +44,47 @@ class AlorApiTest:
 
     def run(self):
         print('RUN')
-        # # Пример запроса: url = "https://apidev.alor.ru/md/v2/history?symbol=RIM5&exchange=MOEX&tf=60&from=1741929520&to=1741941840"
-        # # history = ap_provider.get_history(exchange, security_code, time_frame, seconds_from)  # Запрос истории рынка
-        # # История для выбранных инструментов symbols
-        # symbol = "RIM5"
-        # params = {'exchange': 'MOEX', 'symbol': 'RIM5', 'tf': 60, 'from': 1741929520, 'to': 1741941840,
-        #           'untraded': False, 'format': format}
-        # exchange = 'MOEX'
-        # time_frame = 60
-        # seconds_from = 1741929520
-        # history = self._alorApi.get_securities_history(self, exchange, symbol, time_frame, seconds_from)  # Запрос истории рынка
-        # print(history)
-        # print(response.text)
 
         # self._test_subscribe_to_quotes()
-        self._test_subscribe_to_bars()
+        self._df_candles = pd.DataFrame(columns=['time', 'open', 'high', 'low', 'close', 'volume', 'ticker'])
+
+        self._test_subscribe_to_candle()
         self._alorApi.run_async_connection(False)
 
     def _test_subscribe_to_quotes(self):
         print('\n _test_subscribe_to_quotes')
         for ticker in MAP.keys():
             self._alorApi.subscribe_to_quotes(ticker, self._handle_quotes_event)
-        # for ticker in secid_list:
-        #     self._alorApi.subscribe_to_quotes(ticker, self._handle_quotes_event)
-        #     self._alorApi.subscribe_to_instrument(ticker, self._handle_option_instrument_event)
+        for ticker in secid_list:
+            self._alorApi.subscribe_to_quotes(ticker, self._handle_quotes_event)
+            self._alorApi.subscribe_to_instrument(ticker, self._handle_option_instrument_event)
 
-    def _test_subscribe_to_bars(self):
-        print('\n _test_subscribe_to_bars')
+    def _test_subscribe_to_candle(self):
+        print('\n _test_subscribe_to_candle')
+        current_DateTime = datetime.now()
+        currentTimestamp = int(datetime.timestamp(current_DateTime)) # текущее время в секундах UTC
+        time_from = currentTimestamp - (24 * 60 * 14 * 60) # минус две недели в секундах
+        tf = 60  # Длительность таймфрейма 60 секунд (1 минута)
+
+        time.sleep(5)
+
         for ticker in MAP.keys():
-            self._alorApi.subscribe_to_bars(ticker, self._handle_quotes_event)
+            self._alorApi.subscribe_to_bars(ticker, self._handle_quotes_event_bars)
+
+    def _handle_quotes_event_bars(self, ticker, data):
+        MSK_time = utc_timestamp_to_msk_datetime(data['time'])
+        data['time'] = MSK_time.strftime('%Y-%m-%d %H:%M:%S')
+        data['ticker'] = ticker
+        print(data)
+
+        df_candle = pd.DataFrame.from_dict([data])
+        # self._df_candles = pd.concat([self._df_candles, df_candle], ignore_index=True)
+        self._df_candles = self._df_candles._append(df_candle, ignore_index=True)
+        # self._df_candles = pd.DataFrame.from_dict([data])
+        # print(self._df_candles)
 
     def _handle_quotes_event(self, ticker, data):
-        # print(data)
-
-        MSK_time = utc_timestamp_to_msk_datetime(data['time'])
-        # # print(MSK_time, ticker, data['close'], data['open'], data['high'], data['low'], data['volume'])
-
-        # output = pd.DataFrame(columns=['DateTime', 'ticker', 'close'])
-        # pd_bars = {'DateTime': MSK_time.strftime('%Y-%m-%d %H:%M:%S'), 'ticker': ticker, 'close': data['close']}
-        # output = output._append(pd_bars, ignore_index=True)
-        # print(output)
-
-        # df_bars = pd.DataFrame(pd_bars)
-        # # pd_bars.index = pd_bars['DateTime']  # В индекс ставим дату/время
-        # # # print(pd_bars)
-        # # # output = pd.concat(output, df1)
-        # # # print(df_bars)
-
-
-
-
+        print(data)
         # if ticker in MAP.keys():
         #     base_asset_last_price = data['last_price']
         #     last_price_futures[ticker] = base_asset_last_price

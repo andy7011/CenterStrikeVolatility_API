@@ -21,7 +21,7 @@ import time
 import csv
 from typing import NoReturn
 
-temp_str = 'C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 def utc_to_msk_datetime(dt, tzinfo=False):
@@ -404,7 +404,7 @@ def update_output_smile(value, n):
                 Input('interval-component', 'n_intervals')],
               prevent_initial_call=True)
 def update_output_history(dropdown_value, slider_value, n):
-
+    # print(self._df_candles)
     limit = 440 * slider_value
     drop_base_ticker = dropdown_value
 

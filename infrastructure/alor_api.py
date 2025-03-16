@@ -3,6 +3,7 @@ import json
 import hashlib
 import websockets
 import requests
+from datetime import datetime
 
 from infrastructure.alor_api_event import AlorApiEvent
 from infrastructure.api_utils import get_object_from_json_endpoint
@@ -55,7 +56,7 @@ class AlorApi:
         self._subscribe_to_event(_API_METHOD_INSTRUMENTS_GET_AND_SUBSCRIBE, ticker, callback)
 
     def subscribe_to_bars(self, ticker, callback):
-        self._subscribe_to_event(_API_METHOD_BARS_GET_AND_SUBSCRIBE, ticker, callback)
+        self._subscribe_to_event_bars(_API_METHOD_BARS_GET_AND_SUBSCRIBE, ticker, callback)
 
     def subscribe_to_quotes(self, ticker: str, callback: callable):
         self._subscribe_to_event(_API_METHOD_QUOTES_SUBSCRIBE, ticker, callback)
@@ -135,6 +136,27 @@ class AlorApi:
         return json.dumps({
             "opcode": api_method,
             "code": ticker,
+            "exchange": _EXCHANGE_MOEX,
+            "guid": guid,
+            "token": self._auth_token
+        })
+
+    def _subscribe_to_event_bars(self, api_method: str, ticker: str, callback: callable):
+        guid = _get_guid(api_method, ticker)
+        event = AlorApiEvent(ticker, callback)
+        self._add_api_event(guid, event)
+        subscribe_json = self._get_json_to_subscribe_bars(api_method, ticker, guid)
+        self._async_queue.put_nowait(subscribe_json)
+
+    def _get_json_to_subscribe_bars(self, api_method: str, ticker: str, guid: str):
+        current_DateTime = datetime.now()
+        currentTimestamp = int(datetime.timestamp(current_DateTime))  # текущее время в секундах UTC
+        time_from = currentTimestamp - (24 * 60 * 7 * 60)  # минус две недели в секундах
+        return json.dumps({
+            "opcode": api_method,
+            "code": ticker,
+            "tf": '60',
+            "from": time_from,
             "exchange": _EXCHANGE_MOEX,
             "guid": guid,
             "token": self._auth_token
