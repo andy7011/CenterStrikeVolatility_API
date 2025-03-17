@@ -1,3 +1,4 @@
+# from alor_api_test import AlorApiTest
 from infrastructure import env_utils
 from infrastructure.alor_api import AlorApi
 from supported_base_asset import MAP
@@ -23,8 +24,9 @@ import schedule
 import time
 import csv
 from typing import NoReturn
+import threading
 
-temp_str = 'C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 def utc_to_msk_datetime(dt, tzinfo=False):
@@ -48,23 +50,35 @@ def utc_timestamp_to_msk_datetime(seconds) -> datetime:
     dt_utc = datetime.datetime.fromtimestamp(seconds)  # Переводим кол-во секунд, прошедших с 01.01.1970 в UTC
     return utc_to_msk_datetime(dt_utc)  # Переводим время из UTC в московское
 
-class AlorApiTest:
+class DashApp:
+    # def run(self):
+    #     print('RUN AlorApiTest')
+    #     app.run_server(debug=True)
+    #     print('Subscribe API')
+    #     # self.run_server()
 
     def __init__(self):
-        alor_client_token = env_utils.get_env_or_exit('ALOR_CLIENT_TOKEN')
-        self._alorApi = AlorApi(alor_client_token)
-        self._df_candles = pd.DataFrame(columns=['time', 'open', 'high', 'low', 'close', 'volume', 'ticker'])
+        self._alor_api_test = None
+        # self._alor_api_test = AlorApiTest
 
-    def run(self):
-        print('RUN AlorApiTest')
+    def set_option_app(self, AlorApi):
+        self._alor_api_test = AlorApi
+
+    def start_app_in_thread(self):
+        # Start Dash app in a separate thread
+        dash_thread = threading.Thread(target=self._run_dash_app)
+        dash_thread.daemon = True
+        dash_thread.start()
+
+    def _run_dash_app(self):
+        port = int(env_utils.get_env_or_exit('BACKEND_PORT'))
+        app.run(host='127.0.0.10', port='8050')
+
+    def base_asset_history(self):
+        return self._alor_api_test._df_candles()
+
+    def run_server(self):
         app.run_server(debug=True)
-        print('Subscribe API')
-        self._test_subscribe_to_candle()
-        self._alorApi.run_async_connection(False)
-        # self.run_server()
-
-    # def run_server(self):
-    #     app.run_server(debug=True)
 
     def _test_subscribe_to_candle(self):
         print('\n _test_subscribe_to_candle')
@@ -452,7 +466,10 @@ def update_output_history(dropdown_value, slider_value, n):
     print('RUN History')
 
 
-    # print(self._df_candles)
+    # print(AlorApiTest._df_candles)
+    test = self._df_candles
+    print(test)
+
     limit = 440 * slider_value
     drop_base_ticker = dropdown_value
 
@@ -563,6 +580,14 @@ def updateGauge(n, value):
     else:
         value = (abs(tv_sum_positive) / (abs(tv_sum_positive) + abs(tv_sum_negative))) * 10
     return value
+
+_dash_app = DashApp()
+
+def get_dash_app():
+    # return app.run_server(debug=True)  # Run the Dash app
+    return _dash_app
+
+
 
 # if __name__ == '__main__':
 #

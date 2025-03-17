@@ -12,8 +12,7 @@ from central_strike import get_list_of_strikes
 from datetime import datetime, timedelta  # Дата и время, временной интервал
 from pytz import timezone, utc  # Работаем с временнОй зоной и UTC
 import time
-import schedule
-from option_repository import OptionRepository
+from DashBoard_volatility import get_dash_app
 
 def utc_to_msk_datetime(dt, tzinfo=False):
     """Перевод времени из UTC в московское
@@ -46,9 +45,16 @@ class AlorApiTest:
     def run(self):
         print('RUN')
         # self._test_subscribe_to_quotes()
-
+        self._start_dash_app()
         self._test_subscribe_to_candle()
         self._alorApi.run_async_connection(False)
+
+    def _start_dash_app(self):
+        dash_app = get_dash_app()
+        dash_app.set_option_app(self)
+        print('thread')
+        dash_app.start_app_in_thread()
+
 
     def _test_subscribe_to_quotes(self):
         print('\n _test_subscribe_to_quotes')

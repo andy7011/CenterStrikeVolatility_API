@@ -77,7 +77,6 @@ class AlorApi:
         # Запрос возвращает исторические данные о состоянии рынка для выбранных биржи и финансового инструмента symbols
         url = f'{_REST_API_URL}/md/v2/history/{symbol}'
         url = "https://apidev.alor.ru/md/v2/history?symbol=RIM5&exchange=MOEX&tf=60&from=1741929520&to=1741941840"
-        print(url)
         return self._send_rest_request(url)
 
     def _send_rest_request(self, url):
