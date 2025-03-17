@@ -151,7 +151,7 @@ class AlorApi:
     def _get_json_to_subscribe_bars(self, api_method: str, ticker: str, guid: str):
         current_DateTime = datetime.now()
         currentTimestamp = int(datetime.timestamp(current_DateTime))  # текущее время в секундах UTC
-        time_from = currentTimestamp - (24 * 60 * 7 * 60)  # минус две недели в секундах
+        time_from = currentTimestamp - (24 * 60 * 7 * 60)  # минус одна неделя в секундах UTC
         return json.dumps({
             "opcode": api_method,
             "code": ticker,

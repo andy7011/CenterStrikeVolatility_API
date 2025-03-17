@@ -1,5 +1,5 @@
 from math import isnan
-
+from alor_api_test import AlorApiTest
 import dash
 from dash import dcc, Input, Output, callback, dash_table, State
 from dash import html
@@ -21,7 +21,7 @@ import time
 import csv
 from typing import NoReturn
 
-temp_str = 'C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 def utc_to_msk_datetime(dt, tzinfo=False):
@@ -435,6 +435,7 @@ def update_output_history(dropdown_value, slider_value, n):
         df_BaseAssetPrice = df_BaseAssetPrice.tail(limit)
     # Close the file
     file.close()
+
 
     fig = go.Figure()
     # Create figure with secondary y-axis

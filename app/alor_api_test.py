@@ -41,12 +41,11 @@ class AlorApiTest:
     def __init__(self):
         alor_client_token = env_utils.get_env_or_exit('ALOR_CLIENT_TOKEN')
         self._alorApi = AlorApi(alor_client_token)
+        self._df_candles = pd.DataFrame(columns=['time', 'open', 'high', 'low', 'close', 'volume', 'ticker'])
 
     def run(self):
         print('RUN')
-
         # self._test_subscribe_to_quotes()
-        self._df_candles = pd.DataFrame(columns=['time', 'open', 'high', 'low', 'close', 'volume', 'ticker'])
 
         self._test_subscribe_to_candle()
         self._alorApi.run_async_connection(False)
@@ -61,27 +60,34 @@ class AlorApiTest:
 
     def _test_subscribe_to_candle(self):
         print('\n _test_subscribe_to_candle')
-        current_DateTime = datetime.now()
-        currentTimestamp = int(datetime.timestamp(current_DateTime)) # текущее время в секундах UTC
-        time_from = currentTimestamp - (24 * 60 * 14 * 60) # минус две недели в секундах
-        tf = 60  # Длительность таймфрейма 60 секунд (1 минута)
-
-        time.sleep(5)
-
         for ticker in MAP.keys():
             self._alorApi.subscribe_to_bars(ticker, self._handle_quotes_event_bars)
+            time.sleep(1)
 
     def _handle_quotes_event_bars(self, ticker, data):
-        MSK_time = utc_timestamp_to_msk_datetime(data['time'])
-        data['time'] = MSK_time.strftime('%Y-%m-%d %H:%M:%S')
         data['ticker'] = ticker
-        print(data)
+        # print(data)
+        current_DateTime = datetime.now()
+        currentTimestamp = int(datetime.timestamp(current_DateTime))  # текущее время в секундах UTC
+        time_from = currentTimestamp - (24 * 60 * 7 * 60)  # минус одна неделя в секундах UTC
+        if data['time'] > time_from:
+            # MSK_time = utc_timestamp_to_msk_datetime(data['time'])
+            # time_from_MSK = utc_timestamp_to_msk_datetime(time_from)
+            # data['time'] = MSK_time.strftime('%Y-%m-%d %H:%M:%S')
+            # time_from_MSK = time_from_MSK.strftime('%Y-%m-%d %H:%M:%S')
 
-        df_candle = pd.DataFrame.from_dict([data])
-        # self._df_candles = pd.concat([self._df_candles, df_candle], ignore_index=True)
-        self._df_candles = self._df_candles._append(df_candle, ignore_index=True)
-        # self._df_candles = pd.DataFrame.from_dict([data])
-        # print(self._df_candles)
+            df_candle = pd.DataFrame.from_dict([data])
+            # print('df_candle', df_candle)
+            self._df_candles = self._df_candles._append(df_candle, ignore_index=True)
+            self._df_candles = self._df_candles.drop(self._df_candles[self._df_candles['time'] < time_from].index)  # Удаляем строки с временем старше одной недели (time_from)
+        print(len(self._df_candles))
+        #
+        # # # df_candle = df_candle.drop(df_candle[df_candle['time'] < time_from].index) # Удаляем строки с временем старше одной недели (time_from)
+        # #
+        # # # df_candle['time'] = df_candle['time'].replace(MSK_time.strftime('%Y-%m-%d %H:%M:%S'))
+        # # # df_candle['time'] = pd.to_datetime(df_candle['time'])
+        # # self._df_candles = self._df_candles._append(df_candle, ignore_index=True)
+        # # print(self._df_candles)
 
     def _handle_quotes_event(self, ticker, data):
         print(data)

@@ -1,3 +1,8 @@
+from infrastructure import env_utils
+from infrastructure.alor_api import AlorApi
+from supported_base_asset import MAP
+import time
+from math import isnan
 import dash
 from dash import dcc, Input, Output, callback, dash_table, State
 from dash import html
@@ -43,6 +48,48 @@ def utc_timestamp_to_msk_datetime(seconds) -> datetime:
     dt_utc = datetime.datetime.fromtimestamp(seconds)  # Переводим кол-во секунд, прошедших с 01.01.1970 в UTC
     return utc_to_msk_datetime(dt_utc)  # Переводим время из UTC в московское
 
+class AlorApiTest:
+
+    def __init__(self):
+        alor_client_token = env_utils.get_env_or_exit('ALOR_CLIENT_TOKEN')
+        self._alorApi = AlorApi(alor_client_token)
+        self._df_candles = pd.DataFrame(columns=['time', 'open', 'high', 'low', 'close', 'volume', 'ticker'])
+
+    def run(self):
+        print('RUN AlorApiTest')
+        app.run_server(debug=True)
+        print('Subscribe API')
+        self._test_subscribe_to_candle()
+        self._alorApi.run_async_connection(False)
+        # self.run_server()
+
+    # def run_server(self):
+    #     app.run_server(debug=True)
+
+    def _test_subscribe_to_candle(self):
+        print('\n _test_subscribe_to_candle')
+        for ticker in MAP.keys():
+            self._alorApi.subscribe_to_bars(ticker, self._handle_quotes_event_bars)
+            time.sleep(1)
+
+    def _handle_quotes_event_bars(self, ticker, data):
+        data['ticker'] = ticker
+        # print(data)
+        current_DateTime = datetime.datetime.now()
+        currentTimestamp = int(datetime.datetime.timestamp(current_DateTime))  # текущее время в секундах UTC
+        time_from = currentTimestamp - (24 * 60 * 7 * 60)  # минус одна неделя в секундах UTC
+        if data['time'] > time_from:
+            # MSK_time = utc_timestamp_to_msk_datetime(data['time'])
+            # time_from_MSK = utc_timestamp_to_msk_datetime(time_from)
+            # data['time'] = MSK_time.strftime('%Y-%m-%d %H:%M:%S')
+            # time_from_MSK = time_from_MSK.strftime('%Y-%m-%d %H:%M:%S')
+
+            df_candle = pd.DataFrame.from_dict([data])
+            # print('df_candle', df_candle)
+            self._df_candles = self._df_candles._append(df_candle, ignore_index=True)
+            self._df_candles = self._df_candles.drop(self._df_candles[self._df_candles['time'] < time_from].index)  # Удаляем строки с временем старше одной недели (time_from)
+        print(len(self._df_candles))
+
 # Create the app
 app = dash.Dash(__name__)
 
@@ -82,6 +129,7 @@ model_from_api = get_object_from_json_endpoint('https://option-volatility-dashbo
 
 # Список базовых активов, вычисление и добавление в словарь центрального страйка
 base_asset_list = model_from_api[0]
+# print('base_asset_list:', base_asset_list)
 for asset in base_asset_list:
     ticker = asset.get('_ticker')
     last_price = asset.get('_last_price')
@@ -172,7 +220,7 @@ app.layout = html.Div(children=[
     # Интервал обновления данных
     dcc.Interval(
         id='interval-component',
-        interval=1000 * 5,
+        interval=1000 * 6,
         n_intervals=0),
 
     # Таблица моих позиций
@@ -346,11 +394,12 @@ def update_output_smile(value, n):
     dff_MyPosOrders.loc[dff_MyPosOrders['_type'] == 'C', '_type'] = 'Call'
     dff_MyPosOrders.loc[dff_MyPosOrders['_type'] == 'P', '_type'] = 'Put'
     for i in dff_MyPosOrders['_last_price_timestamp']:
-        UTC_seconds = i
-        MSK_time = utc_timestamp_to_msk_datetime(UTC_seconds)
-        MSK_time = MSK_time.strftime('%H:%M:%S')
-        dff_MyPosOrders[str(int(i))] = dff_MyPosOrders.replace(int(i), MSK_time, inplace=True)
-    # print(dff_MyPosOrders.columns)
+        if isnan(i) != True:
+            UTC_seconds = i
+            MSK_time = utc_timestamp_to_msk_datetime(UTC_seconds)
+            MSK_time = MSK_time.strftime('%H:%M:%S')
+            dff_MyPosOrders[str(int(i))] = dff_MyPosOrders.replace(int(i), MSK_time, inplace=True)
+    # print(dff_MyPosOrders['_last_price_timestamp'])
 
     # BID
     fig.add_trace(go.Scatter(x=dff_MyPosOrders['_strike'], y=dff_MyPosOrders['_bid_iv'],
@@ -400,7 +449,10 @@ def update_output_smile(value, n):
                 Input('interval-component', 'n_intervals')],
               prevent_initial_call=True)
 def update_output_history(dropdown_value, slider_value, n):
+    print('RUN History')
 
+
+    # print(self._df_candles)
     limit = 440 * slider_value
     drop_base_ticker = dropdown_value
 
@@ -431,6 +483,7 @@ def update_output_history(dropdown_value, slider_value, n):
         df_BaseAssetPrice = df_BaseAssetPrice.tail(limit)
     # Close the file
     file.close()
+
 
     fig = go.Figure()
     # Create figure with secondary y-axis
@@ -468,7 +521,7 @@ def update_output_history(dropdown_value, slider_value, n):
     fig.update_layout(xaxis_title=None)
 
     fig.update_layout(
-        title_text=f'Volatility history of the option series {dropdown_value}', uirevision="Don't change"
+        title_text=f'The history of the volatility of the central strike of the option series {dropdown_value}', uirevision="Don't change"
     )
     fig.update_layout(
         margin=dict(l=0, r=0, t=30, b=0),
@@ -487,7 +540,6 @@ def updateTable(n, value):
     df_pos = pd.read_csv(temp_obj.substitute(name_file='MyPos.csv'), sep=';')
     # Фильтрация строк по базовому активу
     df_pos = df_pos[df_pos['optionbase'] == value]
-
     return df_pos.to_dict('records')
 
 # Callback to update the graph-gauge
@@ -512,6 +564,7 @@ def updateGauge(n, value):
         value = (abs(tv_sum_positive) / (abs(tv_sum_positive) + abs(tv_sum_negative))) * 10
     return value
 
-if __name__ == '__main__':
+# if __name__ == '__main__':
+#
+#     app.run_server(debug=True) # Run the Dash app
 
-    app.run_server(debug=True) # Run the Dash app
