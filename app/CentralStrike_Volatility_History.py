@@ -8,7 +8,7 @@ from central_strike import _calculate_central_strike
 import csv
 from string import Template
 
-temp_str = 'C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 def get_object_from_json_endpoint(url, method='GET', params={}):

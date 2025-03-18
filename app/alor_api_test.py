@@ -1,3 +1,6 @@
+import asyncio
+from queue import Queue
+import threading
 import pandas as pd
 import option_repository
 from infrastructure import env_utils
@@ -13,6 +16,11 @@ from datetime import datetime, timedelta  # Дата и время, времен
 from pytz import timezone, utc  # Работаем с временнОй зоной и UTC
 import time
 from DashBoard_volatility import get_dash_app
+from string import Template
+import schedule
+
+temp_str = 'C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_obj = Template(temp_str)
 
 def utc_to_msk_datetime(dt, tzinfo=False):
     """Перевод времени из UTC в московское
@@ -38,14 +46,17 @@ def utc_timestamp_to_msk_datetime(seconds) -> datetime:
 class AlorApiTest:
 
     def __init__(self):
+        self._async_queue = asyncio.Queue()
         alor_client_token = env_utils.get_env_or_exit('ALOR_CLIENT_TOKEN')
         self._alorApi = AlorApi(alor_client_token)
         self._df_candles = pd.DataFrame(columns=['time', 'open', 'high', 'low', 'close', 'volume', 'ticker'])
+        self._data_queue = Queue()  # Очередь для обмена данными между потоками
+        self._stop_event = threading.Event()  # Событие для остановки потоков
 
     def run(self):
         print('RUN')
         # self._test_subscribe_to_quotes()
-        self._start_dash_app()
+        # self._start_dash_app()
         self._test_subscribe_to_candle()
         self._alorApi.run_async_connection(False)
 
@@ -66,13 +77,14 @@ class AlorApiTest:
 
     def _test_subscribe_to_candle(self):
         print('\n _test_subscribe_to_candle')
+        """Поток сбора данных с API"""
         for ticker in MAP.keys():
             self._alorApi.subscribe_to_bars(ticker, self._handle_quotes_event_bars)
-            time.sleep(1)
+            time.sleep(1)  # Пауза между запросами
 
     def _handle_quotes_event_bars(self, ticker, data):
         data['ticker'] = ticker
-        # print(data)
+        print(data)
         current_DateTime = datetime.now()
         currentTimestamp = int(datetime.timestamp(current_DateTime))  # текущее время в секундах UTC
         time_from = currentTimestamp - (24 * 60 * 7 * 60)  # минус одна неделя в секундах UTC
@@ -87,6 +99,8 @@ class AlorApiTest:
             self._df_candles = self._df_candles._append(df_candle, ignore_index=True)
             self._df_candles = self._df_candles.drop(self._df_candles[self._df_candles['time'] < time_from].index)  # Удаляем строки с временем старше одной недели (time_from)
         print(len(self._df_candles))
+
+
         #
         # # # df_candle = df_candle.drop(df_candle[df_candle['time'] < time_from].index) # Удаляем строки с временем старше одной недели (time_from)
         # #
@@ -177,15 +191,16 @@ class AlorApiTest:
 
 # time.sleep(7)
 #
-# def job():
+
+# def job(data):
 #     print(datetime.now(), "I'm working...")
 #
 #
 #     # print(MSK_time, ticker, data['close'], data['open'], data['high'], data['low'], data['volume'])
 #
-#     # print(OptionRepository.get_option_list())
+#     print(data)
 #
-# schedule.every().minute.do(job)
+# schedule.every(10).seconds.do(job)
 #
 # while True:
 #     schedule.run_pending()

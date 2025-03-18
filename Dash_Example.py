@@ -21,7 +21,7 @@ import time
 import csv
 from typing import NoReturn
 
-temp_str = 'C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 def utc_to_msk_datetime(dt, tzinfo=False):
@@ -452,6 +452,14 @@ def update_output_history(dropdown_value, slider_value, n):
     fig.add_trace(go.Scatter(x=df_BaseAssetPrice['DateTime'], y=df_BaseAssetPrice['last_price'], mode='lines+text',
                              name=dropdown_value, line=dict(color='gray', width=1, dash='dashdot')),
                   secondary_y=False)
+    # # Создаем свечной график
+    # fig.add_trace(go.Candlestick(
+    #     x=df_candles['time'],
+    #     open=df_candles['Open'],
+    #     high=df_candles['High'],
+    #     low=df_candles['Low'],
+    #     close=df_candles['Close']
+    # ), secondary_y=False)
 
     # Убираем неторговое время
     fig.update_xaxes(
