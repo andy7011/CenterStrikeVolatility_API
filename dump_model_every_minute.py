@@ -1,4 +1,6 @@
 import threading
+import schedule
+import time
 import requests
 import datetime
 import pandas as pd
@@ -29,7 +31,9 @@ def my_function():
         asset.update({
             'central_strike': central_strike
         })
-    print('base_asset_list:', base_asset_list) # вывод списка базовых активов
+    # Вывод тикера и последней цены
+    for asset in base_asset_list:
+        print(asset['_ticker'], asset['_last_price'])
 
     # Список опционов
     option_list = model_from_api[1]
@@ -44,14 +48,23 @@ def my_function():
 
 
 
-def run_function():
-    thread = threading.Timer(60.0, run_function)  # 60 seconds = 1 minute
-    thread.start()
-    my_function()
+# def run_function():
+#     thread = threading.Timer(60.0, run_function)  # 60 seconds = 1 minute
+#     thread.start()
+#     my_function()
+#
+#
+# def main():
+#     run_function()
+#
+# if __name__ == '__main__':
+#     main()
 
+# def job():
+#     print(datetime.datetime.now(), "I'm working...")
 
-def main():
-    run_function()
+schedule.every(10).seconds.do(my_function)
 
-if __name__ == '__main__':
-    main()
+while True:
+    schedule.run_pending()
+    time.sleep(1)
