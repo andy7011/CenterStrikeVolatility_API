@@ -493,8 +493,7 @@ def update_output_history(dropdown_value, slider_value, n):
     Output('table', 'data', allow_duplicate=True),
     [Input('interval-component', 'n_intervals'),
     Input('dropdown-selection', 'value')],
-    prevent_initial_call=True
-)
+    prevent_initial_call=True)
 def updateTable(n, value):
     df_pos = pd.read_csv(temp_obj.substitute(name_file='MyPos.csv'), sep=';')
     # Фильтрация строк по базовому активу
