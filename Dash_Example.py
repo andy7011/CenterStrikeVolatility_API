@@ -49,7 +49,6 @@ def utc_timestamp_to_msk_datetime(seconds) -> datetime:
 app = dash.Dash(__name__)
 
 # My positions data
-# Open the file using the "with" statement
 with open(temp_obj.substitute(name_file='MyPos.csv'), 'r') as file:
     df_table = pd.read_csv(file, sep=';')
 # Close the file explicitly file.close()
@@ -58,7 +57,6 @@ file.close()
 # print('df_table:\n', df_table)
 
 # My orders data
-# Open the file using the "with" statement
 with open(temp_obj.substitute(name_file='MyOrders.csv'), 'r') as file:
     df_orders = pd.read_csv(file, sep=';')
 # Close the file explicitly file.close()
@@ -210,7 +208,7 @@ def clean_data(value, dff):
     df['expiration_date'] = df['_expiration_datetime'].dt.strftime('%d.%m.%Y')
     dff = df[(df._base_asset_ticker == value) & (df._type == 'C')]
     # print(dff)
-    return dff.tail(420).to_json(date_format='iso', orient='split')
+    return dff.tail(450).to_json(date_format='iso', orient='split')
 
 # Callback to update the dropdown (селектор базового актива)
 @app.callback(
@@ -356,22 +354,23 @@ def update_output_smile(value, n):
             dff_MyPosOrders[str(int(i))] = dff_MyPosOrders.replace(int(i), MSK_time, inplace=True)
     # print(dff_MyPosOrders['_last_price_timestamp'])
 
-    # BID
-    fig.add_trace(go.Scatter(x=dff_MyPosOrders['_strike'], y=dff_MyPosOrders['_bid_iv'],
-                             mode='markers', text=dff_MyPosOrders['_bid_iv'], textposition='top left',
-                             marker=dict(size=8, symbol="triangle-up", color='green'),
-                             name='Bid',
-                             customdata=dff_MyPosOrders[
-                                 ['_type', '_bid', '_bid_iv', 'expiration_date', '_ticker']],
-                             hovertemplate="<b>%{customdata}</b><br>"
-                             ))
     # ASK
-    fig.add_trace(go.Scatter(x=dff_MyPosOrders['_strike'], y=dff_MyPosOrders['_ask_iv'],
+    fig.add_trace(go.Scatter(x=dff_MyPosOrders['_strike'], y=dff_MyPosOrders['_ask_iv'], visible='legendonly',
                              mode='markers', text=dff_MyPosOrders['_ask_iv'], textposition='top left',
                              marker=dict(size=8, symbol="triangle-down", color='red'),
                              name='Ask',
                              customdata=dff_MyPosOrders[
                                  ['_type', '_ask', '_ask_iv', 'expiration_date', '_ticker']],
+                             hovertemplate="<b>%{customdata}</b><br>"
+                             ))
+
+    # BID
+    fig.add_trace(go.Scatter(x=dff_MyPosOrders['_strike'], y=dff_MyPosOrders['_bid_iv'], visible='legendonly',
+                             mode='markers', text=dff_MyPosOrders['_bid_iv'], textposition='top left',
+                             marker=dict(size=8, symbol="triangle-up", color='green'),
+                             name='Bid',
+                             customdata=dff_MyPosOrders[
+                                 ['_type', '_bid', '_bid_iv', 'expiration_date', '_ticker']],
                              hovertemplate="<b>%{customdata}</b><br>"
                              ))
 
@@ -429,7 +428,7 @@ def update_output_history(dropdown_value, slider_value, n):
     del df_volatility['DateTime']
 
     # BaseAssetPrice history data
-    with open(temp_obj.substitute(name_file='BaseAssetPriceHistory.csv'), 'r') as file:
+    with open(temp_obj.substitute(name_file='BaseAssetPriceHistoryDamp.csv'), 'r') as file:
         df_BaseAssetPrice = pd.read_csv(file, sep=';')
         df_BaseAssetPrice = df_BaseAssetPrice[(df_BaseAssetPrice.ticker == dropdown_value)]
         df_BaseAssetPrice = df_BaseAssetPrice.tail(limit)

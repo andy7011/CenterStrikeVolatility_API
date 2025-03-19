@@ -3,42 +3,38 @@ import time
 import requests
 from datetime import datetime
 import pandas as pd
+
+from Dash_Example import last_price
 from central_strike import _calculate_central_strike
 from supported_base_asset import MAP
 import csv
 import random
-
-# #
-# Максимальное количество попыток: 5
-# Базовая задержка: 1 секунда
-# Максимальная задержка: 180 секунд
-# Случайный джиттер для предотвращения синхронизации запросов
-# Отдельная обработка ошибки 502
-# Обработка общих ошибок запросов
-# Информативные сообщения о повторных попытках
-# Таймаут для каждого запроса
-# Ограничение максимального времени ожидания
-# Экспоненциальное увеличение задержки между попытками
-# #
-
 from string import Template
 
+# Конфигурация для работы с файлами
 temp_str = 'C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
-def delay(base_delay, retry_count, max_delay, jitter=True):
+last_price_lifetime = 60 * 10 # время жизни последней цены last_price для расчетов 10 минут в секундах
+
+
+def delay(base_delay=1, retry_count=None, max_delay=180, jitter=True):
     """Вычисляет время задержки перед повторным запросом."""
-    delay_time = base_delay * (2 ** retry_count)
+    if retry_count is None:
+        retry_count = float('inf')
+
+    delay_time = min(base_delay * (2 ** retry_count), max_delay)
 
     if jitter:
         delay_time *= random.uniform(1, 1.5)
 
-    return min(delay_time, max_delay)
+    return delay_time
 
 
-def get_object_from_json_endpoint(url, method='GET', params={}, max_retries=5, base_delay=1, max_delay=180):
+def get_object_from_json_endpoint(url, method='GET', params={}, max_delay=180):
     """Получает объект из JSON endpoint с поддержкой повторных попыток."""
-    for retry in range(max_retries):
+    retry_count = 0
+    while True:
         try:
             response = requests.request(method, url, params=params, timeout=max_delay)
 
@@ -46,21 +42,19 @@ def get_object_from_json_endpoint(url, method='GET', params={}, max_retries=5, b
                 return response.json()
 
             if response.status_code == 502:
-                if retry < max_retries - 1:
-                    wait_time = delay(base_delay, retry, max_delay)
-                    print(f"Получена ошибка 502. Повторная попытка через {wait_time:.1f} секунд...")
-                    time.sleep(wait_time)
-                    continue
+                wait_time = delay(max_delay=max_delay, retry_count=retry_count)
+                print(f"Получена ошибка 502. Повторная попытка через {wait_time:.1f} секунд...")
+                time.sleep(wait_time)
+                retry_count += 1
+                continue
 
             raise Exception(f"Error: {response.status_code}")
 
         except requests.exceptions.RequestException as e:
-            if retry < max_retries - 1:
-                wait_time = delay(base_delay, retry, max_delay)
-                print(f"Ошибка запроса: {str(e)}. Повторная попытка через {wait_time:.1f} секунд...")
-                time.sleep(wait_time)
-                continue
-            raise
+            wait_time = delay(max_delay=max_delay, retry_count=retry_count)
+            print(f"Ошибка запроса: {str(e)}. Повторная попытка через {wait_time:.1f} секунд...")
+            time.sleep(wait_time)
+            retry_count += 1
 
 
 def my_function():
@@ -69,7 +63,7 @@ def my_function():
 
         # Список базовых активов, вычисление и добавление в словарь центрального страйка
         base_asset_list = model_from_api[0]
-        with open(temp_obj.substitute(name_file='BaseAssetPriceHistoryDamp.csv'), 'a') as f:
+        with open(temp_obj.substitute(name_file='BaseAssetPriceHistoryDamp.csv'), 'a', newline='') as f:
             writer = csv.writer(f, delimiter=";", lineterminator="\r")
             for asset in base_asset_list:
                 DateTime = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -82,13 +76,13 @@ def my_function():
                 asset.update({
                     'central_strike': central_strike
                 })
-        # Close the file explicitly f.close()
         f.close()
-
-
 
         # Список опционов
         option_list = model_from_api[1]
+        print(option_list)
+        # for base_asset_ticker in option_list['_base_asset_ticker']:
+        #     return
         current_datetime = datetime.now()
         for option in option_list:
             option['datetime'] = current_datetime
