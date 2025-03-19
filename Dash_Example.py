@@ -21,7 +21,7 @@ import time
 import csv
 from typing import NoReturn
 
-temp_str = 'C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 def utc_to_msk_datetime(dt, tzinfo=False):
@@ -287,7 +287,7 @@ def update_output_smile(value, n):
         df_orders = df_orders[(df_orders.optionbase == value)]
         MyOrders_ticker_list = []
         for i in range(len(df_orders)):
-            MyOrders_ticker_list.append(df_orders['tiker'][i])
+            MyOrders_ticker_list.append(df_orders['tiker'])
         # print('MyOrders_ticker_list:', MyOrders_ticker_list)
     # Close the file explicitly file.close()
     file.close()
@@ -341,7 +341,7 @@ def update_output_smile(value, n):
 
     # Last Bid Ask for MyPos
     favorites_ticker_list = MyPos_ticker_list + MyOrders_ticker_list # слияние списков
-    favorites_ticker_list = list(set(favorites_ticker_list)) # удаление дубликатов
+    # favorites_ticker_list = list(set(favorites_ticker_list)) # удаление дубликатов
     dff_MyPosOrders = df[(df._base_asset_ticker == value) & (df._ticker.isin(favorites_ticker_list))]
     dff_MyPosOrders = dff_MyPosOrders.apply(lambda x: round(x, 2))
     dff_MyPosOrders.loc[dff_MyPosOrders['_type'] == 'C', '_type'] = 'Call'

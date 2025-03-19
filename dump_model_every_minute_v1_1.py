@@ -12,7 +12,7 @@ import random
 from string import Template
 
 # Конфигурация для работы с файлами
-temp_str = 'C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 last_price_lifetime = 60 * 10 # время жизни последней цены last_price для расчетов 10 минут в секундах
