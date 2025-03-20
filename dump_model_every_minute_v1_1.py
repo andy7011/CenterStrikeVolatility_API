@@ -12,7 +12,7 @@ import random
 from string import Template
 
 # Конфигурация для работы с файлами
-temp_str = 'C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 last_price_lifetime = 60 * 10 # время жизни последней цены last_price для расчетов 10 минут в секундах
@@ -63,6 +63,7 @@ def my_function():
 
         # Список базовых активов, вычисление и добавление в словарь центрального страйка
         base_asset_list = model_from_api[0]
+        central_strikes_map = {}
         with open(temp_obj.substitute(name_file='BaseAssetPriceHistoryDamp.csv'), 'a', newline='') as f:
             writer = csv.writer(f, delimiter=";", lineterminator="\r")
             for asset in base_asset_list:
@@ -73,18 +74,24 @@ def my_function():
                 writer.writerow(data_price)
                 strike_step = MAP[ticker]['strike_step']
                 central_strike = _calculate_central_strike(base_asset_last_price, strike_step)  # вычисление центрального страйка
+                central_strikes_map[ticker] = central_strike
                 asset.update({
                     'central_strike': central_strike
                 })
         f.close()
 
+        current_datetime = datetime.now()
         # Список опционов
         option_list = model_from_api[1]
-        # print(option_list)
-        current_datetime = datetime.now()
+        filtered_option_list = []
         for option in option_list:
-            option['datetime'] = current_datetime
-        df = pd.DataFrame.from_dict(option_list, orient='columns')
+            base_asset_ticker = option['_base_asset_ticker']
+            if option['_strike'] == central_strikes_map[base_asset_ticker]:
+                option['datetime'] = current_datetime
+                filtered_option_list.append(option)
+
+        print(filtered_option_list)
+        df = pd.DataFrame.from_dict(filtered_option_list, orient='columns')
         df.set_index('datetime', inplace=True)
         df.index = df.index.strftime('%d.%m.%Y %H:%M:%S')  # Reformat the date index using strftime()
         print(df.columns)
