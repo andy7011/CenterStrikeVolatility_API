@@ -1,5 +1,4 @@
 from math import isnan
-from alor_api_test import AlorApiTest
 import dash
 from dash import dcc, Input, Output, callback, dash_table, State
 from dash import html
@@ -21,7 +20,7 @@ import time
 import csv
 from typing import NoReturn
 
-temp_str = 'C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 def utc_to_msk_datetime(dt, tzinfo=False):
@@ -403,7 +402,6 @@ def update_output_smile(value, n):
                 Input('interval-component', 'n_intervals')],
               prevent_initial_call=True)
 def update_output_history(dropdown_value, slider_value, n):
-    # print(self._df_candles)
     limit = 440 * slider_value
     drop_base_ticker = dropdown_value
 
@@ -417,7 +415,7 @@ def update_output_history(dropdown_value, slider_value, n):
             # Close the file
             file.close()
 
-    # Преобразуем DateTime в формат datetime
+    # Преобразуем столбец DateTime в формат datetime
     df_volatility['DateTime'] = pd.to_datetime(df_volatility['DateTime'], format='%d.%m.%Y %H:%M:%S', dayfirst=True)
     # Удаляем столбцы содержащие только нулевые значения
     df_volatility = df_volatility.loc[:, (df_volatility != 0).any(axis=0)]

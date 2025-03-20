@@ -12,7 +12,7 @@ import random
 from string import Template
 
 # Конфигурация для работы с файлами
-temp_str = 'C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 last_price_lifetime = 60 * 10 # время жизни последней цены last_price для расчетов 10 минут в секундах
@@ -68,11 +68,11 @@ def my_function():
             for asset in base_asset_list:
                 DateTime = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 ticker = asset.get('_ticker')
-                last_price = asset.get('_last_price')
-                data_price = [DateTime, ticker, last_price]
+                base_asset_last_price = asset.get('_last_price')
+                data_price = [DateTime, ticker, base_asset_last_price]
                 writer.writerow(data_price)
                 strike_step = MAP[ticker]['strike_step']
-                central_strike = _calculate_central_strike(last_price, strike_step)  # вычисление центрального страйка
+                central_strike = _calculate_central_strike(base_asset_last_price, strike_step)  # вычисление центрального страйка
                 asset.update({
                     'central_strike': central_strike
                 })
@@ -80,9 +80,7 @@ def my_function():
 
         # Список опционов
         option_list = model_from_api[1]
-        print(option_list)
-        # for base_asset_ticker in option_list['_base_asset_ticker']:
-        #     return
+        # print(option_list)
         current_datetime = datetime.now()
         for option in option_list:
             option['datetime'] = current_datetime
