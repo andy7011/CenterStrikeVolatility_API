@@ -92,38 +92,50 @@ def my_function():
                 option['_expiration_datetime'] = date_object.strftime('%d.%m.%Y')
                 filtered_option_list.append(option)
 
-        for option in filtered_option_list:
-            current_DateTimestamp = datetime.now()
-            currentTimestamp = int(datetime.timestamp(current_DateTimestamp))  # текущее время в секундах UTC
-            if option['_last_price_timestamp'] is not None and currentTimestamp - option['_last_price_timestamp'] < last_price_lifetime: # если есть LastPrice и время жизни его не истекло
-                Real_vol = option['_last_price_iv']
-                # print('Last Vola Real_vol=', Real_vol, option['_ticker'], option['_type'], option['_expiration_datetime'], 'bid=', option['_bid_iv'], 'last=', option['_last_price_iv'], 'ask=', option['_ask_iv'], 'quik_vol=', option['_volatility'])
-            else:
-                if option['_ask_iv'] is None or option['_bid_iv'] is None: # нет бида или нет аска
-                    Real_vol = option['_volatility']
-                    # print('QUIK Vola (нет бида или аска) Real_vol=', Real_vol, option['_ticker'], option['_type'], option['_expiration_datetime'], 'bid=', option['_bid_iv'], 'last=', option['_last_price_iv'], 'ask=', option['_ask_iv'], 'quik_vol=', option['_volatility'])
+        # print(filtered_option_list)
+        with open(temp_obj.substitute(name_file='OptionsVolaHistoryDamp.csv'), 'a', newline='') as f:
+            writer = csv.writer(f, delimiter=";", lineterminator="\r")
+            for option in filtered_option_list:
+                current_DateTimestamp = datetime.now()
+                currentTimestamp = int(datetime.timestamp(current_DateTimestamp))  # текущее время в секундах UTC
+                if option['_last_price_timestamp'] is not None and currentTimestamp - option['_last_price_timestamp'] < last_price_lifetime: # если есть LastPrice и время жизни его не истекло
+                    Real_vol = option['_last_price_iv']
+                    # print('Last Vola Real_vol=', Real_vol, option['_ticker'], option['_type'], option['_expiration_datetime'], 'bid=', option['_bid_iv'], 'last=', option['_last_price_iv'], 'ask=', option['_ask_iv'], 'quik_vol=', option['_volatility'])
                 else:
-                    if option['_ask_iv'] is not None and option['_bid_iv'] is not None and option['_ask_iv'] > option['_volatility'] > option['_bid_iv']: # в пределах спреда bid-ask
+                    if option['_ask_iv'] is None or option['_bid_iv'] is None: # нет бида или нет аска
                         Real_vol = option['_volatility']
-                        # print('QUIK Vola в пределах спреда Real_vol=', Real_vol, option['_ticker'], option['_type'], option['_expiration_datetime'], 'bid=', option['_bid_iv'], 'last=', option['_last_price_iv'], 'ask=', option['_ask_iv'], 'quik_vol=', option['_volatility'])
+                        # print('QUIK Vola (нет бида или аска) Real_vol=', Real_vol, option['_ticker'], option['_type'], option['_expiration_datetime'], 'bid=', option['_bid_iv'], 'last=', option['_last_price_iv'], 'ask=', option['_ask_iv'], 'quik_vol=', option['_volatility'])
                     else:
-                        if option['_ask_iv'] < option['_volatility'] and option['_bid_iv'] < option['_volatility'] and option['_ask_iv'] < option['_volatility'] or option['_volatility'] < option['_bid_iv']: # вне пределов спреда bid-ask
-                            Real_vol = (option['_ask_iv'] + option['_bid_iv']) / 2
-                            # print('Середина спреда (вола квика вне пределов bid-ask) Real_vol=', Real_vol, option['_ticker'], option['_type'], option['_expiration_datetime'], 'bid=', option['_bid_iv'], 'last=', option['_last_price_iv'], 'ask=', option['_ask_iv'], 'quik_vol=', option['_volatility'])
+                        if option['_ask_iv'] is not None and option['_bid_iv'] is not None and option['_ask_iv'] > option['_volatility'] > option['_bid_iv']: # в пределах спреда bid-ask
+                            Real_vol = option['_volatility']
+                            # print('QUIK Vola в пределах спреда Real_vol=', Real_vol, option['_ticker'], option['_type'], option['_expiration_datetime'], 'bid=', option['_bid_iv'], 'last=', option['_last_price_iv'], 'ask=', option['_ask_iv'], 'quik_vol=', option['_volatility'])
                         else:
-                            # Real_vol = option['_volatility']
-                            print('None', option['_ticker'], option['_type'], option['_expiration_datetime'], 'bid=', option['_bid_iv'], 'last=', option['_last_price_iv'], 'ask=', option['_ask_iv'], 'quik_vol=', option['_volatility'])
-            option['_real_vol'] = Real_vol
-            if option['_type'] == 'C':
-                option['_type'] = 'Call'
-            elif option['_type'] == 'P':
-                option['_type'] = 'Put'
+                            if option['_ask_iv'] < option['_volatility'] and option['_bid_iv'] < option['_volatility'] and option['_ask_iv'] < option['_volatility'] or option['_volatility'] < option['_bid_iv']: # вне пределов спреда bid-ask
+                                Real_vol = (option['_ask_iv'] + option['_bid_iv']) / 2
+                                # print('Середина спреда (вола квика вне пределов bid-ask) Real_vol=', Real_vol, option['_ticker'], option['_type'], option['_expiration_datetime'], 'bid=', option['_bid_iv'], 'last=', option['_last_price_iv'], 'ask=', option['_ask_iv'], 'quik_vol=', option['_volatility'])
+                            else:
+                                # Real_vol = option['_volatility']
+                                print('None', option['_ticker'], option['_type'], option['_expiration_datetime'], 'bid=', option['_bid_iv'], 'last=', option['_last_price_iv'], 'ask=', option['_ask_iv'], 'quik_vol=', option['_volatility'])
+                option['_real_vol'] = Real_vol
+                if option['_type'] == 'C':
+                    option['_type'] = 'Call'
+                elif option['_type'] == 'P':
+                    option['_type'] = 'Put'
+
+                print([option['datetime'], option['_ticker'], option['_type'], option['_strike'],
+                                     option['_expiration_datetime'], option['_base_asset_ticker'], option['_ask'],
+                                     option['_ask_iv'], option['_bid'], option['_bid_iv'], option['_last_price'],
+                                     option['_last_price_iv'], option['_last_price_timestamp'], Real_vol])
+                data_options_vola = [option['datetime'], option['_ticker'], option['_type'], option['_strike'],
+                                     option['_expiration_datetime'], option['_base_asset_ticker'], option['_ask'],
+                                     option['_ask_iv'], option['_bid'], option['_bid_iv'], option['_last_price'],
+                                     option['_last_price_iv'], option['_last_price_timestamp'], Real_vol]
+                writer.writerow(data_options_vola)
+        f.close()
 
         df_vol_history = pd.DataFrame.from_dict(filtered_option_list, orient='columns')
         df_vol_history.set_index('datetime', inplace=True)
         df_vol_history.index = df_vol_history.index.strftime('%d.%m.%Y %H:%M:%S')  # Reformat the date index using strftime()
-        # df_vol_history.loc[df_vol_history['_type'] == 'C', '_type'] = 'Call'
-        # df_vol_history.loc[df_vol_history['_type'] == 'P', '_type'] = 'Put'
         print(df_vol_history[['_ticker', '_type', '_expiration_datetime', '_real_vol']])
 
     except Exception as e:
