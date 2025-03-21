@@ -15,7 +15,7 @@ from string import Template
 temp_str = 'C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
-last_price_lifetime = 60 * 10 # время жизни последней цены last_price для расчетов 10 минут в секундах
+last_price_lifetime = 60 * 15 # время жизни последней цены last_price для расчетов 15 минут в секундах
 
 
 def delay(base_delay=1, retry_count=None, max_delay=180, jitter=True):
@@ -90,16 +90,41 @@ def my_function():
                 option['datetime'] = current_datetime
                 date_object = datetime.strptime(option['_expiration_datetime'], "%a, %d %b %Y %H:%M:%S GMT").date()
                 option['_expiration_datetime'] = date_object.strftime('%d.%m.%Y')
-                print(option['_ticker'], option['_expiration_datetime'], option['_last_price_timestamp'])
                 filtered_option_list.append(option)
 
-        current_DateTimestamp = datetime.now()
-        currentTimestamp = int(datetime.timestamp(current_DateTimestamp))  # текущее время в секундах UTC
+        for option in filtered_option_list:
+            current_DateTimestamp = datetime.now()
+            currentTimestamp = int(datetime.timestamp(current_DateTimestamp))  # текущее время в секундах UTC
+            if option['_last_price_timestamp'] is not None and currentTimestamp - option['_last_price_timestamp'] < last_price_lifetime: # если есть LastPrice и время жизни его не истекло
+                Real_vol = option['_last_price_iv']
+                # print('Last Vola Real_vol=', Real_vol, option['_ticker'], option['_type'], option['_expiration_datetime'], 'bid=', option['_bid_iv'], 'last=', option['_last_price_iv'], 'ask=', option['_ask_iv'], 'quik_vol=', option['_volatility'])
+            else:
+                if option['_ask_iv'] is None or option['_bid_iv'] is None: # нет бида или нет аска
+                    Real_vol = option['_volatility']
+                    # print('QUIK Vola (нет бида или аска) Real_vol=', Real_vol, option['_ticker'], option['_type'], option['_expiration_datetime'], 'bid=', option['_bid_iv'], 'last=', option['_last_price_iv'], 'ask=', option['_ask_iv'], 'quik_vol=', option['_volatility'])
+                else:
+                    if option['_ask_iv'] is not None and option['_bid_iv'] is not None and option['_ask_iv'] > option['_volatility'] > option['_bid_iv']: # в пределах спреда bid-ask
+                        Real_vol = option['_volatility']
+                        # print('QUIK Vola в пределах спреда Real_vol=', Real_vol, option['_ticker'], option['_type'], option['_expiration_datetime'], 'bid=', option['_bid_iv'], 'last=', option['_last_price_iv'], 'ask=', option['_ask_iv'], 'quik_vol=', option['_volatility'])
+                    else:
+                        if option['_ask_iv'] < option['_volatility'] and option['_bid_iv'] < option['_volatility'] and option['_ask_iv'] < option['_volatility'] or option['_volatility'] < option['_bid_iv']: # вне пределов спреда bid-ask
+                            Real_vol = (option['_ask_iv'] + option['_bid_iv']) / 2
+                            # print('Середина спреда (вола квика вне пределов bid-ask) Real_vol=', Real_vol, option['_ticker'], option['_type'], option['_expiration_datetime'], 'bid=', option['_bid_iv'], 'last=', option['_last_price_iv'], 'ask=', option['_ask_iv'], 'quik_vol=', option['_volatility'])
+                        else:
+                            # Real_vol = option['_volatility']
+                            print('None', option['_ticker'], option['_type'], option['_expiration_datetime'], 'bid=', option['_bid_iv'], 'last=', option['_last_price_iv'], 'ask=', option['_ask_iv'], 'quik_vol=', option['_volatility'])
+            option['_real_vol'] = Real_vol
+            if option['_type'] == 'C':
+                option['_type'] = 'Call'
+            elif option['_type'] == 'P':
+                option['_type'] = 'Put'
+
         df_vol_history = pd.DataFrame.from_dict(filtered_option_list, orient='columns')
         df_vol_history.set_index('datetime', inplace=True)
         df_vol_history.index = df_vol_history.index.strftime('%d.%m.%Y %H:%M:%S')  # Reformat the date index using strftime()
-        print(df_vol_history.columns)
-        # print(df_vol_history['_last_price_timestamp'])
+        # df_vol_history.loc[df_vol_history['_type'] == 'C', '_type'] = 'Call'
+        # df_vol_history.loc[df_vol_history['_type'] == 'P', '_type'] = 'Put'
+        print(df_vol_history[['_ticker', '_type', '_expiration_datetime', '_real_vol']])
 
     except Exception as e:
         print(f"Ошибка в функции my_function: {str(e)}")
