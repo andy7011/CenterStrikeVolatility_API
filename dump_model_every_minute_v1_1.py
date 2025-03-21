@@ -12,7 +12,7 @@ import random
 from string import Template
 
 # Конфигурация для работы с файлами
-temp_str = 'C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 last_price_lifetime = 60 * 10 # время жизни последней цены last_price для расчетов 10 минут в секундах
@@ -88,14 +88,18 @@ def my_function():
             base_asset_ticker = option['_base_asset_ticker']
             if option['_strike'] == central_strikes_map[base_asset_ticker]:
                 option['datetime'] = current_datetime
+                date_object = datetime.strptime(option['_expiration_datetime'], "%a, %d %b %Y %H:%M:%S GMT").date()
+                option['_expiration_datetime'] = date_object.strftime('%d.%m.%Y')
+                print(option['_ticker'], option['_expiration_datetime'], option['_last_price_timestamp'])
                 filtered_option_list.append(option)
 
-        print(filtered_option_list)
-        df = pd.DataFrame.from_dict(filtered_option_list, orient='columns')
-        df.set_index('datetime', inplace=True)
-        df.index = df.index.strftime('%d.%m.%Y %H:%M:%S')  # Reformat the date index using strftime()
-        print(df.columns)
-        # print(df)
+        current_DateTimestamp = datetime.now()
+        currentTimestamp = int(datetime.timestamp(current_DateTimestamp))  # текущее время в секундах UTC
+        df_vol_history = pd.DataFrame.from_dict(filtered_option_list, orient='columns')
+        df_vol_history.set_index('datetime', inplace=True)
+        df_vol_history.index = df_vol_history.index.strftime('%d.%m.%Y %H:%M:%S')  # Reformat the date index using strftime()
+        print(df_vol_history.columns)
+        # print(df_vol_history['_last_price_timestamp'])
 
     except Exception as e:
         print(f"Ошибка в функции my_function: {str(e)}")
