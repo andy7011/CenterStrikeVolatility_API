@@ -4,7 +4,7 @@ import requests
 from datetime import datetime
 import pandas as pd
 
-from Dash_Example import last_price
+# from Dash_Example import last_price
 from central_strike import _calculate_central_strike
 from supported_base_asset import MAP
 import csv
@@ -12,7 +12,7 @@ import random
 from string import Template
 
 # Конфигурация для работы с файлами
-temp_str = 'C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 last_price_lifetime = 60 * 15 # время жизни последней цены last_price для расчетов 15 минут в секундах
@@ -81,6 +81,7 @@ def my_function():
         f.close()
 
         current_datetime = datetime.now()
+        print(f"Дата и время: {current_datetime}")
         # Список опционов
         option_list = model_from_api[1]
         filtered_option_list = []
@@ -122,11 +123,11 @@ def my_function():
                 elif option['_type'] == 'P':
                     option['_type'] = 'Put'
 
-                print([option['datetime'], option['_ticker'], option['_type'], option['_strike'],
-                                     option['_expiration_datetime'], option['_base_asset_ticker'], option['_ask'],
-                                     option['_ask_iv'], option['_bid'], option['_bid_iv'], option['_last_price'],
-                                     option['_last_price_iv'], option['_last_price_timestamp'], Real_vol])
-                data_options_vola = [option['datetime'], option['_ticker'], option['_type'], option['_strike'],
+                # print(current_DateTimestamp, option['_ticker'], option['_type'], option['_strike'],
+                #                      option['_expiration_datetime'], option['_base_asset_ticker'], option['_ask'],
+                #                      option['_ask_iv'], option['_bid'], option['_bid_iv'], option['_last_price'],
+                #                      option['_last_price_iv'], option['_last_price_timestamp'], Real_vol)
+                data_options_vola = [current_DateTimestamp, option['_ticker'], option['_type'], option['_strike'],
                                      option['_expiration_datetime'], option['_base_asset_ticker'], option['_ask'],
                                      option['_ask_iv'], option['_bid'], option['_bid_iv'], option['_last_price'],
                                      option['_last_price_iv'], option['_last_price_timestamp'], Real_vol]
@@ -136,7 +137,7 @@ def my_function():
         df_vol_history = pd.DataFrame.from_dict(filtered_option_list, orient='columns')
         df_vol_history.set_index('datetime', inplace=True)
         df_vol_history.index = df_vol_history.index.strftime('%d.%m.%Y %H:%M:%S')  # Reformat the date index using strftime()
-        print(df_vol_history[['_ticker', '_type', '_expiration_datetime', '_real_vol']])
+        # print(df_vol_history[['_ticker', '_type', '_expiration_datetime', '_real_vol']])
 
     except Exception as e:
         print(f"Ошибка в функции my_function: {str(e)}")

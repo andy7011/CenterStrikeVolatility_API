@@ -20,7 +20,7 @@ import time
 import csv
 from typing import NoReturn
 
-temp_str = 'C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 def utc_to_msk_datetime(dt, tzinfo=False):
@@ -433,6 +433,19 @@ def update_output_history(dropdown_value, slider_value, n):
     # Close the file
     file.close()
 
+    # OptionsVolaHistoryDamp.csv history data options volatility
+    with open(temp_obj.substitute(name_file='OptionsVolaHistoryDamp.csv'), 'r') as file:
+        df_vol_history = pd.read_csv(file, sep=';')
+        df_vol_history = df_vol_history[(df_vol_history.base_asset_ticker == dropdown_value)]
+        df_vol_history = df_vol_history.tail(limit * 2)
+        df_vol_history['DateTime'] = pd.to_datetime(df_vol_history['DateTime'], format='%Y-%m-%d %H:%M:%S.%f')
+        # df_vol_history['DateTime'] = df_vol_history['DateTime'].strftime('%Y-%m%m-%d %H:%M:%S')
+        df_vol_history.index = pd.DatetimeIndex(df_vol_history['DateTime'])
+        df_vol_history = df_vol_history.loc[df_vol_history['type'] == 'Put']
+    # Close the file
+    file.close()
+    print(df_vol_history['DateTime'], df_vol_history['type'])
+
 
     fig = go.Figure()
     # Create figure with secondary y-axis
@@ -440,15 +453,19 @@ def update_output_history(dropdown_value, slider_value, n):
 
     # График истории волатильности
     # Перебираем все столбцы
-    for i in df_volatility.columns:
+    # for i in df_volatility.columns:
         # fig.add_trace(go.Line(x=df_volatility.index, y=df_volatility[i], name=i))
-        fig.add_trace(go.Scatter(x=df_volatility.index, y=df_volatility[i], mode='lines+text',
-                                 name=i), secondary_y=True)
+        # fig.add_trace(go.Scatter(x=df_volatility.index, y=df_volatility[i], mode='lines+text',
+        #                          name=i), secondary_y=True)
+    # fig = px.line(df_vol_history, x='DateTime', y='Real_vol', color='expiration_datetime', secondary_y=True)
+    for d_exp in df_vol_history['expiration_datetime'].unique():
+        fig.add_trace(go.Scatter(x=df_vol_history.index, y=df_vol_history['Real_vol'], mode='lines+text',
+                                 name=d_exp), secondary_y=True)
 
     # График истории цены базового актива
     fig.add_trace(go.Scatter(x=df_BaseAssetPrice['DateTime'], y=df_BaseAssetPrice['last_price'], mode='lines+text',
                              name=dropdown_value, line=dict(color='gray', width=1, dash='dashdot')),
-                  secondary_y=False)
+                            secondary_y=False)
     # # Создаем свечной график
     # fig.add_trace(go.Candlestick(
     #     x=df_candles['time'],
