@@ -407,9 +407,10 @@ def update_output_smile(value, n):
 @app.callback(Output('plot_history', 'figure', allow_duplicate=True),
                [Input('dropdown-selection', 'value'),
                 Input('my_slider', 'value'),
-                Input('interval-component', 'n_intervals')],
+                Input('interval-component', 'n_intervals'),
+                Input('my-radio-buttons-final', 'radiobutton_value')],
               prevent_initial_call=True)
-def update_output_history(dropdown_value, slider_value, n):
+def update_output_history(dropdown_value, slider_value, n, radiobutton_value):
     limit = 440 * slider_value
     drop_base_ticker = dropdown_value
 
@@ -450,7 +451,7 @@ def update_output_history(dropdown_value, slider_value, n):
         df_vol_history = df_vol_history.tail(limit)
         df_vol_history['DateTime'] = pd.to_datetime(df_vol_history['DateTime'], format='%Y-%m-%d %H:%M:%S')
         df_vol_history.index = pd.DatetimeIndex(df_vol_history['DateTime'])
-        # df_vol_history = df_vol_history.loc[df_vol_history['type'] == 'Call']
+        # df_vol_history = df_vol_history.loc[df_vol_history['type'] == radiobutton_value]
     # Close the file
     file.close()
 
