@@ -407,33 +407,34 @@ def update_output_smile(value, n):
 @app.callback(Output('plot_history', 'figure', allow_duplicate=True),
                [Input('dropdown-selection', 'value'),
                 Input('my_slider', 'value'),
+                Input('my-radio-buttons-final', 'value'),
                 Input('interval-component', 'n_intervals'),
-                Input('my-radio-buttons-final', 'radiobutton_value')],
+                ],
               prevent_initial_call=True)
-def update_output_history(dropdown_value, slider_value, n, radiobutton_value):
+def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
     limit = 440 * slider_value
     drop_base_ticker = dropdown_value
 
-    # ДАННЫЕ ВОЛАТИЛЬНОСТЕЙ ОПЦИОНОВ ИЗ КВИКА
-    for base_asset_ticker in base_asset_ticker_list:
-        if drop_base_ticker == base_asset_ticker:
-            substitution_text = base_asset_ticker_list.get(base_asset_ticker)
-            # Volatility history data
-            with open(temp_obj.substitute(name_file=f'_TEST_CenterStrikeVola_{substitution_text}.csv'), 'r') as file:
-                df_volatility = pd.read_csv(file, sep=';')
-                df_volatility = df_volatility.tail(limit)
-            # Close the file
-            file.close()
-
-    # Преобразуем столбец DateTime в формат datetime
-    df_volatility['DateTime'] = pd.to_datetime(df_volatility['DateTime'], format='%d.%m.%Y %H:%M:%S', dayfirst=True)
-    # Удаляем столбцы содержащие только нулевые значения
-    df_volatility = df_volatility.loc[:, (df_volatility != 0).any(axis=0)]
-    # Преобразуйте 0 в NaN с помощью pandas DataFrame.replace()
-    df_volatility.replace(0, np.nan, inplace=True)
-    # # Устанавливаем индекс по столбцу DateTime
-    df_volatility.index = pd.DatetimeIndex(df_volatility['DateTime'])
-    del df_volatility['DateTime']
+    # # ДАННЫЕ ВОЛАТИЛЬНОСТЕЙ ОПЦИОНОВ ИЗ КВИКА
+    # for base_asset_ticker in base_asset_ticker_list:
+    #     if drop_base_ticker == base_asset_ticker:
+    #         substitution_text = base_asset_ticker_list.get(base_asset_ticker)
+    #         # Volatility history data
+    #         with open(temp_obj.substitute(name_file=f'_TEST_CenterStrikeVola_{substitution_text}.csv'), 'r') as file:
+    #             df_volatility = pd.read_csv(file, sep=';')
+    #             df_volatility = df_volatility.tail(limit)
+    #         # Close the file
+    #         file.close()
+    #
+    # # Преобразуем столбец DateTime в формат datetime
+    # df_volatility['DateTime'] = pd.to_datetime(df_volatility['DateTime'], format='%d.%m.%Y %H:%M:%S', dayfirst=True)
+    # # Удаляем столбцы содержащие только нулевые значения
+    # df_volatility = df_volatility.loc[:, (df_volatility != 0).any(axis=0)]
+    # # Преобразуйте 0 в NaN с помощью pandas DataFrame.replace()
+    # df_volatility.replace(0, np.nan, inplace=True)
+    # # # Устанавливаем индекс по столбцу DateTime
+    # df_volatility.index = pd.DatetimeIndex(df_volatility['DateTime'])
+    # del df_volatility['DateTime']
 
     # BaseAssetPrice history data DAMP
     with open(temp_obj.substitute(name_file='BaseAssetPriceHistoryDamp.csv'), 'r') as file:
@@ -451,7 +452,8 @@ def update_output_history(dropdown_value, slider_value, n, radiobutton_value):
         df_vol_history = df_vol_history.tail(limit)
         df_vol_history['DateTime'] = pd.to_datetime(df_vol_history['DateTime'], format='%Y-%m-%d %H:%M:%S')
         df_vol_history.index = pd.DatetimeIndex(df_vol_history['DateTime'])
-        # df_vol_history = df_vol_history.loc[df_vol_history['type'] == radiobutton_value]
+        df_vol_history = df_vol_history[(df_vol_history.type == radiobutton_value)]
+        print(radiobutton_value)
     # Close the file
     file.close()
 
@@ -471,10 +473,12 @@ def update_output_history(dropdown_value, slider_value, n, radiobutton_value):
     # График истории волатильности ПО ДАННЫМ ИЗ DAMP
     # fig = px.line(df_vol_history, x='DateTime', y='Real_vol', color='expiration_datetime')
     for d_exp in df_vol_history['expiration_datetime'].unique():
-        dff = df_vol_history[(df_vol_history.expiration_datetime == d_exp) & (df_vol_history.type == 'Call')]
+        # dff = df_vol_history[(df_vol_history.expiration_datetime == d_exp) & (df_vol_history.type == radiobutton_value)]
+        dff = df_vol_history[df_vol_history.expiration_datetime == d_exp]
         fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['Real_vol'],
                                  mode='lines+text',
                                  name=d_exp), secondary_y=True,)
+    fig.update_layout(legend_title_text=radiobutton_value)
         # dff = df_vol_history[(df_vol_history.expiration_datetime == d_exp) & (df_vol_history.type == 'Put')]
         # fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['Real_vol'],
         #                          mode='lines+text',
@@ -495,7 +499,6 @@ def update_output_history(dropdown_value, slider_value, n, radiobutton_value):
     # for d_exp in df_vol_history['expiration_datetime'].unique():
     #     fig.add_trace(go.Scatter(x=df_vol_history.index, y=df_vol_history['Real_vol'], name=d_exp, mode='lines+text'), secondary_y=True)
 
-    print(df_vol_history.columns)
     # # for d_exp in df_vol_history['expiration_datetime'].unique():
     # #     fig.add_trace(go.Scatter(x=df_vol_history.index, y=df_vol_history['Real_vol'], mode='lines+text',
     # #                              name=d_exp), secondary_y=True)

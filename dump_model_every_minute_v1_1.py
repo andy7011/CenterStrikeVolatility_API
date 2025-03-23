@@ -17,7 +17,6 @@ temp_obj = Template(temp_str)
 
 last_price_lifetime = 60 * 15 # время жизни последней цены last_price для расчетов (15 минут в секундах)
 
-
 def delay(base_delay=1, retry_count=None, max_delay=180, jitter=True):
     """Вычисляет время задержки перед повторным запросом."""
     if retry_count is None:
