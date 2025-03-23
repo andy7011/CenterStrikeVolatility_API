@@ -15,7 +15,7 @@ from string import Template
 temp_str = 'C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
-last_price_lifetime = 60 * 15 # время жизни последней цены last_price для расчетов 15 минут в секундах
+last_price_lifetime = 60 * 15 # время жизни последней цены last_price для расчетов (15 минут в секундах)
 
 
 def delay(base_delay=1, retry_count=None, max_delay=180, jitter=True):
@@ -81,7 +81,8 @@ def my_function():
         f.close()
 
         current_datetime = datetime.now()
-        print(f"Дата и время: {current_datetime}")
+        print(f"Дата и время: {current_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
+
         # Список опционов
         option_list = model_from_api[1]
         filtered_option_list = []
@@ -96,6 +97,7 @@ def my_function():
         # print(filtered_option_list)
         with open(temp_obj.substitute(name_file='OptionsVolaHistoryDamp.csv'), 'a', newline='') as f:
             writer = csv.writer(f, delimiter=";", lineterminator="\r")
+            # Вычисление/определение реальной волатильности Real_vol
             for option in filtered_option_list:
                 current_DateTimestamp = datetime.now()
                 currentTimestamp = int(datetime.timestamp(current_DateTimestamp))  # текущее время в секундах UTC
@@ -123,11 +125,11 @@ def my_function():
                 elif option['_type'] == 'P':
                     option['_type'] = 'Put'
 
-                # print(current_DateTimestamp, option['_ticker'], option['_type'], option['_strike'],
+                # print(current_DateTimestamp.strftime('%Y-%m-%d %H:%M:%S'), option['_ticker'], option['_type'], option['_strike'],
                 #                      option['_expiration_datetime'], option['_base_asset_ticker'], option['_ask'],
                 #                      option['_ask_iv'], option['_bid'], option['_bid_iv'], option['_last_price'],
                 #                      option['_last_price_iv'], option['_last_price_timestamp'], Real_vol)
-                data_options_vola = [current_DateTimestamp, option['_ticker'], option['_type'], option['_strike'],
+                data_options_vola = [current_DateTimestamp.strftime('%Y-%m-%d %H:%M:%S'), option['_ticker'], option['_type'], option['_strike'],
                                      option['_expiration_datetime'], option['_base_asset_ticker'], option['_ask'],
                                      option['_ask_iv'], option['_bid'], option['_bid_iv'], option['_last_price'],
                                      option['_last_price_iv'], option['_last_price_timestamp'], Real_vol]

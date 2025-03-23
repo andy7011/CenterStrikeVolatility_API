@@ -405,6 +405,7 @@ def update_output_history(dropdown_value, slider_value, n):
     limit = 440 * slider_value
     drop_base_ticker = dropdown_value
 
+    # ДАННЫЕ ВОЛАТИЛЬНОСТЕЙ ОПЦИОНОВ ИЗ КВИКА
     for base_asset_ticker in base_asset_ticker_list:
         if drop_base_ticker == base_asset_ticker:
             substitution_text = base_asset_ticker_list.get(base_asset_ticker)
@@ -425,7 +426,7 @@ def update_output_history(dropdown_value, slider_value, n):
     df_volatility.index = pd.DatetimeIndex(df_volatility['DateTime'])
     del df_volatility['DateTime']
 
-    # BaseAssetPrice history data
+    # BaseAssetPrice history data DAMP
     with open(temp_obj.substitute(name_file='BaseAssetPriceHistoryDamp.csv'), 'r') as file:
         df_BaseAssetPrice = pd.read_csv(file, sep=';')
         df_BaseAssetPrice = df_BaseAssetPrice[(df_BaseAssetPrice.ticker == dropdown_value)]
@@ -433,65 +434,87 @@ def update_output_history(dropdown_value, slider_value, n):
     # Close the file
     file.close()
 
+    # ДАННЫЕ ИЗ DAMP
     # OptionsVolaHistoryDamp.csv history data options volatility
     with open(temp_obj.substitute(name_file='OptionsVolaHistoryDamp.csv'), 'r') as file:
         df_vol_history = pd.read_csv(file, sep=';')
         df_vol_history = df_vol_history[(df_vol_history.base_asset_ticker == dropdown_value)]
-        df_vol_history = df_vol_history.tail(limit * 2)
-        df_vol_history['DateTime'] = pd.to_datetime(df_vol_history['DateTime'], format='%Y-%m-%d %H:%M:%S.%f')
-        # df_vol_history['DateTime'] = df_vol_history['DateTime'].strftime('%Y-%m%m-%d %H:%M:%S')
+        df_vol_history = df_vol_history.tail(limit)
+        df_vol_history['DateTime'] = pd.to_datetime(df_vol_history['DateTime'], format='%Y-%m-%d %H:%M:%S')
         df_vol_history.index = pd.DatetimeIndex(df_vol_history['DateTime'])
-        df_vol_history = df_vol_history.loc[df_vol_history['type'] == 'Put']
+        # df_vol_history = df_vol_history.loc[df_vol_history['type'] == 'Call']
     # Close the file
     file.close()
-    print(df_vol_history['DateTime'], df_vol_history['type'])
 
 
-    fig = go.Figure()
+    # fig = go.Figure()
     # Create figure with secondary y-axis
     fig = make_subplots(specs=[[{"secondary_y": True}]])
 
-    # График истории волатильности
-    # Перебираем все столбцы
+    # # График истории волатильности опционов ПО ДАННЫМ ИЗ КВИКА
+    # # Перебираем все столбцы
     # for i in df_volatility.columns:
-        # fig.add_trace(go.Line(x=df_volatility.index, y=df_volatility[i], name=i))
-        # fig.add_trace(go.Scatter(x=df_volatility.index, y=df_volatility[i], mode='lines+text',
-        #                          name=i), secondary_y=True)
-    # fig = px.line(df_vol_history, x='DateTime', y='Real_vol', color='expiration_datetime', secondary_y=True)
+    #     fig.add_trace(go.Scatter(x=df_volatility.index, y=df_volatility[i], mode='lines+text',
+    #                              name=i), secondary_y=True,
+    #                             )
+
+
+    # График истории волатильности ПО ДАННЫМ ИЗ DAMP
+    # fig = px.line(df_vol_history, x='DateTime', y='Real_vol', color='expiration_datetime')
     for d_exp in df_vol_history['expiration_datetime'].unique():
-        fig.add_trace(go.Scatter(x=df_vol_history.index, y=df_vol_history['Real_vol'], mode='lines+text',
-                                 name=d_exp), secondary_y=True)
+        dff = df_vol_history[(df_vol_history.expiration_datetime == d_exp) & (df_vol_history.type == 'Call')]
+        fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['Real_vol'],
+                                 mode='lines+text',
+                                 name=d_exp), secondary_y=True,)
+        # dff = df_vol_history[(df_vol_history.expiration_datetime == d_exp) & (df_vol_history.type == 'Put')]
+        # fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['Real_vol'],
+        #                          mode='lines+text',
+        #                          name=d_exp), secondary_y=True,)
+
+    # fig2 = px.scatter(df_vol_history, x='DateTime', y='Real_vol', color='expiration_datetime')
+    # fig2.update_traces(yaxis="y2")
+    # subplot_fig.add_trace(fig1.data + fig2.data)
+    #
 
     # График истории цены базового актива
     fig.add_trace(go.Scatter(x=df_BaseAssetPrice['DateTime'], y=df_BaseAssetPrice['last_price'], mode='lines+text',
                              name=dropdown_value, line=dict(color='gray', width=1, dash='dashdot')),
-                            secondary_y=False)
-    # # Создаем свечной график
-    # fig.add_trace(go.Candlestick(
-    #     x=df_candles['time'],
-    #     open=df_candles['Open'],
-    #     high=df_candles['High'],
-    #     low=df_candles['Low'],
-    #     close=df_candles['Close']
-    # ), secondary_y=False)
+                            secondary_y=False,)
+    # fig = px.line(df_BaseAssetPrice, x='DateTime', y='last_price', color='ticker')
 
-    # Убираем неторговое время
-    fig.update_xaxes(
-        rangebreaks=[
-            dict(bounds=["sat", "mon"]),  # hide weekends, eg. hide sat to before mon
-            dict(bounds=[24, 9], pattern="hour"),  # hide hours outside of 9am-24pm
-        ]
-    )
 
-    # Добавляем к оси Х 10 минут
-    fig.update_xaxes(range=[df_volatility.index.min(), df_volatility.index.max() + timedelta(minutes=10)])
+    # for d_exp in df_vol_history['expiration_datetime'].unique():
+    #     fig.add_trace(go.Scatter(x=df_vol_history.index, y=df_vol_history['Real_vol'], name=d_exp, mode='lines+text'), secondary_y=True)
 
-    # # Добавляем аннотацию
-    # fig.add_annotation(x=df_volatility.index[-1], y=df_volatility.columns[-1],
-    #                    text="Text annotation with arrow",
-    #                    showarrow=True,
-    #                    arrowhead=1)
+    print(df_vol_history.columns)
+    # # for d_exp in df_vol_history['expiration_datetime'].unique():
+    # #     fig.add_trace(go.Scatter(x=df_vol_history.index, y=df_vol_history['Real_vol'], mode='lines+text',
+    # #                              name=d_exp), secondary_y=True)
+    #
+    #
+    #
 
+
+    # # # Создаем свечной график
+    # # fig.add_trace(go.Candlestick(
+    # #     x=df_candles['time'],
+    # #     open=df_candles['Open'],
+    # #     high=df_candles['High'],
+    # #     low=df_candles['Low'],
+    # #     close=df_candles['Close']
+    # # ), secondary_y=False)
+    #
+    # # # Убираем неторговое время
+    # # fig.update_xaxes(
+    # #     rangebreaks=[
+    # #         dict(bounds=["sat", "mon"]),  # hide weekends, eg. hide sat to before mon
+    # #         dict(bounds=[24, 9], pattern="hour"),  # hide hours outside of 9am-24pm
+    # #     ]
+    # # )
+    #
+    # # # Добавляем к оси Х 10 минут
+    # # subplot_fig.update_xaxes(range=[df_vol_history.index.min(), df_vol_history.index.max() + timedelta(minutes=10)])
+    #
     fig.update_layout(xaxis_title=None)
 
     fig.update_layout(
@@ -502,6 +525,7 @@ def update_output_history(dropdown_value, slider_value, n):
     )
 
     return fig
+    # return subplot_fig
 
 #Callback to update the table
 @app.callback(
