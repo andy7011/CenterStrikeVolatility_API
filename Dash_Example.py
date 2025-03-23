@@ -151,8 +151,16 @@ app.layout = html.Div(children=[
 
 
     html.Div(children=[
+
+        # Радио кнопки Call и Put
+        dcc.RadioItems(options=['Call', 'Put'],
+                       value='Call',
+                       inline=True,
+                       id='my-radio-buttons-final'),
+
         # График истории
         dcc.Graph(id='plot_history'),
+
         # Слайдер
         dcc.Slider(0, 28,
             id='my_slider',
