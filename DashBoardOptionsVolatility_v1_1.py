@@ -4,8 +4,7 @@ from dash import dcc, Input, Output, callback, dash_table, State
 from dash import html
 import dash_daq as daq
 import datetime
-from datetime import timedelta
-from pytz import timezone, utc  # Работаем с временнОй зоной и UTC
+from pytz import utc
 import requests
 import plotly.express as px
 import plotly.graph_objects as go
@@ -14,12 +13,8 @@ import pandas as pd
 from central_strike import _calculate_central_strike
 from supported_base_asset import MAP
 from string import Template
-import numpy as np
-import schedule
 import time
 import random
-import csv
-from typing import NoReturn
 
 temp_str = 'C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
@@ -82,7 +77,7 @@ def get_object_from_json_endpoint_with_retry(url, method='GET', params={}, max_d
             jitter = random.uniform(0, 1)
             wait_time = delay * jitter
 
-            print(f"{current_datetime.strftime('%Y-%m-%d %H:%M:%S')} Попытка {attempt}: Получена ошибка 502. Ждём {wait_time:.1f} секунд перед повторной попыткой")
+            print(f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} Попытка {attempt}: Получена ошибка 502. Ждём {wait_time:.1f} секунд перед повторной попыткой")
             time.sleep(wait_time)
 
 # Create the app
@@ -153,16 +148,20 @@ app.layout = html.Div(children=[
     html.H6(id='last_update_time', style={'textAlign': 'left'}),
 
     html.Div(children=[
-        # Селектор выбора базового актива
-        dcc.Dropdown(df._base_asset_ticker.unique(), value=df._base_asset_ticker.unique()[0], id='dropdown-selection',  style={'width':'40%'}),
-        html.Div(id='dd-output-container')]),
 
         html.Div(children=[
             # График улыбки волатильности
-            dcc.Graph(id='plot_smile', style={'display': 'inline-block'}),
+            dcc.Graph(id='plot_smile', style={'display': 'inline-block'})
+            ]),
+
+        html.Div(children=[
+            # Селектор выбора базового актива
+            dcc.Dropdown(df._base_asset_ticker.unique(), value=df._base_asset_ticker.unique()[0], id='dropdown-selection',  style={'width':'80%'}),
+            html.Div(id='dd-output-container')]),
+
             # Спидометр TrueVega
             # https://stackoverflow.com/questions/69275527/python-dash-gauge-how-can-i-use-strings-as-values-instead-of-numbers
-            daq.Gauge(id="graph-gauge", style={'display': 'inline-block'},
+            daq.Gauge(id="graph-gauge",
                 units="TrueVega",
                 label='TrueVega',
                 labelPosition='bottom',
@@ -188,7 +187,7 @@ app.layout = html.Div(children=[
                 max=10,
                 min=0,
             ),
-        ]),
+            ], style={'display': 'flex', 'flexDirection': 'row'}),
 
 
     html.Div(children=[
@@ -197,6 +196,7 @@ app.layout = html.Div(children=[
         dcc.RadioItems(options=['Call', 'Put'],
                        value='Call',
                        inline=True,
+                        style=dict(display='flex', justifyContent='right'),
                        id='my-radio-buttons-final'),
 
         # График истории
@@ -286,10 +286,10 @@ def update_output_smile(value, n):
         ticker = asset.get('_ticker')
         last_price = asset.get('_last_price')
         strike_step = MAP[ticker]['strike_step']
-        central_strike = _calculate_central_strike(last_price, strike_step)  # вычисление центрального страйка
-        asset.update({
-            'central_strike': central_strike
-        })
+        # central_strike = _calculate_central_strike(last_price, strike_step)  # вычисление центрального страйка
+        # asset.update({
+        #     'central_strike': central_strike
+        # })
     # print('base_asset_list:', base_asset_list) # вывод списка базовых активов
     base_asset_ticker_list = {}
     for i in range(len(base_asset_list)):
@@ -439,7 +439,7 @@ def update_output_smile(value, n):
         title_text="Volatility smile of the option series", uirevision="Don't change"
     )
     fig.update_layout(
-        margin=dict(l=0, r=0, t=30, b=0),
+        margin=dict(l=0, r=2, t=30, b=0),
     )
     return fig
 
@@ -489,7 +489,7 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
     with open(temp_obj.substitute(name_file='OptionsVolaHistoryDamp.csv'), 'r') as file:
         df_vol_history = pd.read_csv(file, sep=';')
         df_vol_history = df_vol_history[(df_vol_history.base_asset_ticker == dropdown_value)]
-        df_vol_history = df_vol_history.tail(limit * 6)
+        df_vol_history = df_vol_history.tail(limit * 10)
         df_vol_history['DateTime'] = pd.to_datetime(df_vol_history['DateTime'], format='%Y-%m-%d %H:%M:%S')
         df_vol_history.index = pd.DatetimeIndex(df_vol_history['DateTime'])
         df_vol_history = df_vol_history[(df_vol_history.type == radiobutton_value)]
