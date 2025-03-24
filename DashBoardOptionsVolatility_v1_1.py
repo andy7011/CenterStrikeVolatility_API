@@ -82,7 +82,7 @@ def get_object_from_json_endpoint_with_retry(url, method='GET', params={}, max_d
             jitter = random.uniform(0, 1)
             wait_time = delay * jitter
 
-            print(f"Дата и время: {current_datetime.strftime('%Y-%m-%d %H:%M:%S')}. Попытка {attempt}: Получена ошибка 502. Ждём {wait_time:.1f} секунд перед повторной попыткой")
+            print(f"{current_datetime.strftime('%Y-%m-%d %H:%M:%S')} Попытка {attempt}: Получена ошибка 502. Ждём {wait_time:.1f} секунд перед повторной попыткой")
             time.sleep(wait_time)
 
 # Create the app
@@ -489,7 +489,7 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
     with open(temp_obj.substitute(name_file='OptionsVolaHistoryDamp.csv'), 'r') as file:
         df_vol_history = pd.read_csv(file, sep=';')
         df_vol_history = df_vol_history[(df_vol_history.base_asset_ticker == dropdown_value)]
-        df_vol_history = df_vol_history.tail(limit * 4)
+        df_vol_history = df_vol_history.tail(limit * 6)
         df_vol_history['DateTime'] = pd.to_datetime(df_vol_history['DateTime'], format='%Y-%m-%d %H:%M:%S')
         df_vol_history.index = pd.DatetimeIndex(df_vol_history['DateTime'])
         df_vol_history = df_vol_history[(df_vol_history.type == radiobutton_value)]
