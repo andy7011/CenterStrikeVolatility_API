@@ -17,6 +17,7 @@ from string import Template
 import numpy as np
 import schedule
 import time
+import random
 import csv
 from typing import NoReturn
 
@@ -43,6 +44,46 @@ def utc_timestamp_to_msk_datetime(seconds) -> datetime:
     """
     dt_utc = datetime.datetime.fromtimestamp(seconds)  # Переводим кол-во секунд, прошедших с 01.01.1970 в UTC
     return utc_to_msk_datetime(dt_utc)  # Переводим время из UTC в московское
+
+
+def get_object_from_json_endpoint_with_retry(url, method='GET', params={}, max_delay=180):
+    """
+    Модифицированная версия функции с механизмом повторных запросов при ошибке 502.
+
+    Args:
+        url (str): URL для запроса
+        method (str): Метод HTTP запроса (по умолчанию 'GET')
+        params (dict): Параметры запроса
+        max_delay (int): Максимальная задержка между попытками в секундах (по умолчанию 180)
+
+    Returns:
+        dict: Данные из JSON ответа
+    """
+    attempt = 0
+    while True:
+        try:
+            response = requests.request(method, url, params=params)
+            response_data = None
+
+            if response.status_code == 200:
+                response_data = response.json()
+            else:
+                raise Exception(f"Error: {response.status_code}")
+
+            return response_data
+
+        except Exception as e:
+            attempt += 1
+            if "Error: 502" not in str(e):
+                raise
+
+            # Расчёт задержки с экспоненциальным увеличением и случайным отклонением
+            delay = min(2 ** attempt, max_delay)
+            jitter = random.uniform(0, 1)
+            wait_time = delay * jitter
+
+            print(f"Дата и время: {current_datetime.strftime('%Y-%m-%d %H:%M:%S')}. Попытка {attempt}: Получена ошибка 502. Ждём {wait_time:.1f} секунд перед повторной попыткой")
+            time.sleep(wait_time)
 
 # Create the app
 app = dash.Dash(__name__)
@@ -77,7 +118,7 @@ def zero_to_nan(values):
     """Replace every 0 with 'nan' and return a copy."""
     return [float('nan') if x==0 else x for x in values]
 
-model_from_api = get_object_from_json_endpoint('https://option-volatility-dashboard.ru/dump_model')
+model_from_api = get_object_from_json_endpoint_with_retry('https://option-volatility-dashboard.ru/dump_model')
 
 # Список базовых активов, вычисление и добавление в словарь центрального страйка
 base_asset_list = model_from_api[0]
@@ -204,7 +245,7 @@ app.layout = html.Div(children=[
               [Input('interval-component', 'n_intervals')],
               [State('intermediate-value', 'children')])
 def clean_data(value, dff):
-    model_from_api = get_object_from_json_endpoint('https://option-volatility-dashboard.ru/dump_model')
+    model_from_api = get_object_from_json_endpoint_with_retry('https://option-volatility-dashboard.ru/dump_model')
 
     # Список опционов
     option_list = model_from_api[1]
@@ -237,7 +278,7 @@ def update_time(n):
                Input('interval-component', 'n_intervals')],
               prevent_initial_call=True)
 def update_output_smile(value, n):
-    model_from_api = get_object_from_json_endpoint('https://option-volatility-dashboard.ru/dump_model')
+    model_from_api = get_object_from_json_endpoint_with_retry('https://option-volatility-dashboard.ru/dump_model')
 
     # Список базовых активов, вычисление и добавление в словарь центрального страйка
     base_asset_list = model_from_api[0]
@@ -448,7 +489,7 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
     with open(temp_obj.substitute(name_file='OptionsVolaHistoryDamp.csv'), 'r') as file:
         df_vol_history = pd.read_csv(file, sep=';')
         df_vol_history = df_vol_history[(df_vol_history.base_asset_ticker == dropdown_value)]
-        df_vol_history = df_vol_history.tail(limit * 2)
+        df_vol_history = df_vol_history.tail(limit * 4)
         df_vol_history['DateTime'] = pd.to_datetime(df_vol_history['DateTime'], format='%Y-%m-%d %H:%M:%S')
         df_vol_history.index = pd.DatetimeIndex(df_vol_history['DateTime'])
         df_vol_history = df_vol_history[(df_vol_history.type == radiobutton_value)]
