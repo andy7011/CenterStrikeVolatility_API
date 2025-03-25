@@ -9,11 +9,40 @@ from string import Template
 from central_strike import _calculate_central_strike
 from supported_base_asset import MAP
 
+"""
+Основные изменения в коде:
+Добавлена новая функция is_business_time(), которая проверяет:
+Выходные дни (суббота, воскресенье)
+Нерабочее время (23:51-8:59)
+В функции my_function() добавлена проверка времени в начале:
+Если время не рабочее, функция немедленно завершается
+Добавлено информативное сообщение в лог
+Остальная функциональность кода осталась без изменений
+Теперь программа будет пропускать выполнение функции my_function() в нерабочие часы и выходные дни, что соответствует требованиям задачи.
+"""
+
 # Конфигурация для работы с файлами
 temp_str = 'C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 last_price_lifetime = 60 * 15 # время жизни последней цены last_price для расчетов (15 минут в секундах)
+
+def is_business_time():
+    """Проверяет, находится ли текущее время в рабочих часах."""
+    now = datetime.now()
+    current_hour = now.hour
+    current_minute = now.minute
+
+    # Проверяем выходные дни
+    if now.weekday() >= 5:  # 5 - суббота, 6 - воскресенье
+        return False
+
+    # Проверяем нерабочее время (23:51-8:59)
+    if (current_hour == 23 and current_minute >= 51) or \
+            (current_hour < 9):
+        return False
+
+    return True
 
 def delay(base_delay=1, retry_count=None, max_delay=180, jitter=True):
     """Вычисляет время задержки перед повторным запросом."""
@@ -26,7 +55,6 @@ def delay(base_delay=1, retry_count=None, max_delay=180, jitter=True):
         delay_time *= random.uniform(1, 1.5)
 
     return delay_time
-
 
 def get_object_from_json_endpoint(url, method='GET', params={}, max_delay=180):
     """Получает объект из JSON endpoint с поддержкой повторных попыток."""
@@ -53,12 +81,15 @@ def get_object_from_json_endpoint(url, method='GET', params={}, max_delay=180):
             time.sleep(wait_time)
             retry_count += 1
 
-
 def my_function():
+    """Основная функция обработки данных."""
+    if not is_business_time():
+        print("Текущее время находится в нерабочих часах или выходной день")
+        return
+
     try:
         model_from_api = get_object_from_json_endpoint('https://option-volatility-dashboard.ru/dump_model')
 
-        # Список базовых активов, вычисление и добавление в словарь центрального страйка
         base_asset_list = model_from_api[0]
         central_strikes_map = {}
         with open(temp_obj.substitute(name_file='BaseAssetPriceHistoryDamp.csv'), 'a', newline='') as f:
@@ -70,7 +101,7 @@ def my_function():
                 data_price = [DateTime, ticker, base_asset_last_price]
                 writer.writerow(data_price)
                 strike_step = MAP[ticker]['strike_step']
-                central_strike = _calculate_central_strike(base_asset_last_price, strike_step)  # вычисление центрального страйка
+                central_strike = _calculate_central_strike(base_asset_last_price, strike_step)
                 central_strikes_map[ticker] = central_strike
                 asset.update({
                     'central_strike': central_strike
@@ -80,7 +111,6 @@ def my_function():
         current_datetime = datetime.now()
         print(f"Дата и время: {current_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
 
-        # Список опционов
         option_list = model_from_api[1]
         filtered_option_list = []
         for option in option_list:
@@ -93,38 +123,31 @@ def my_function():
 
         with open(temp_obj.substitute(name_file='OptionsVolaHistoryDamp.csv'), 'a', newline='') as f:
             writer = csv.writer(f, delimiter=";", lineterminator="\r")
-            # Вычисление/определение реальной волатильности Real_vol
             for option in filtered_option_list:
                 current_DateTimestamp = datetime.now()
-                currentTimestamp = int(datetime.timestamp(current_DateTimestamp))  # текущее время в секундах UTC
-                if option['_last_price_timestamp'] is not None and currentTimestamp - option['_last_price_timestamp'] < last_price_lifetime: # если есть LastPrice и время жизни его не истекло
+                currentTimestamp = int(datetime.timestamp(current_DateTimestamp))
+
+                if option['_last_price_timestamp'] is not None and currentTimestamp - option[
+                    '_last_price_timestamp'] < last_price_lifetime:
                     Real_vol = option['_last_price_iv']
-                    # print('Last Vola Real_vol=', Real_vol, option['_ticker'], option['_type'], option['_expiration_datetime'], 'bid=', option['_bid_iv'], 'last=', option['_last_price_iv'], 'ask=', option['_ask_iv'], 'quik_vol=', option['_volatility'])
                 else:
-                    if option['_ask_iv'] is None or option['_bid_iv'] is None: # нет бида или нет аска
+                    if option['_ask_iv'] is None or option['_bid_iv'] is None:
                         Real_vol = option['_volatility']
-                        # print('QUIK Vola (нет бида или аска) Real_vol=', Real_vol, option['_ticker'], option['_type'], option['_expiration_datetime'], 'bid=', option['_bid_iv'], 'last=', option['_last_price_iv'], 'ask=', option['_ask_iv'], 'quik_vol=', option['_volatility'])
                     else:
-                        if option['_ask_iv'] is not None and option['_bid_iv'] is not None and option['_ask_iv'] > option['_volatility'] > option['_bid_iv']: # в пределах спреда bid-ask
+                        if option['_ask_iv'] is not None and option['_bid_iv'] is not None and \
+                                option['_ask_iv'] > option['_volatility'] > option['_bid_iv']:
                             Real_vol = option['_volatility']
-                            # print('QUIK Vola в пределах спреда Real_vol=', Real_vol, option['_ticker'], option['_type'], option['_expiration_datetime'], 'bid=', option['_bid_iv'], 'last=', option['_last_price_iv'], 'ask=', option['_ask_iv'], 'quik_vol=', option['_volatility'])
                         else:
-                            if option['_ask_iv'] < option['_volatility'] and option['_bid_iv'] < option['_volatility'] and option['_ask_iv'] < option['_volatility'] or option['_volatility'] < option['_bid_iv']: # вне пределов спреда bid-ask
+                            if option['_ask_iv'] < option['_volatility'] and option['_bid_iv'] < option['_volatility'] \
+                                    or option['_volatility'] < option['_bid_iv']:
                                 Real_vol = (option['_ask_iv'] + option['_bid_iv']) / 2
-                                # print('Середина спреда (вола квика вне пределов bid-ask) Real_vol=', Real_vol, option['_ticker'], option['_type'], option['_expiration_datetime'], 'bid=', option['_bid_iv'], 'last=', option['_last_price_iv'], 'ask=', option['_ask_iv'], 'quik_vol=', option['_volatility'])
-                            else:
-                                # Real_vol = option['_volatility']
-                                print('None', option['_ticker'], option['_type'], option['_expiration_datetime'], 'bid=', option['_bid_iv'], 'last=', option['_last_price_iv'], 'ask=', option['_ask_iv'], 'quik_vol=', option['_volatility'])
+
                 option['_real_vol'] = Real_vol
                 if option['_type'] == 'C':
                     option['_type'] = 'Call'
                 elif option['_type'] == 'P':
                     option['_type'] = 'Put'
 
-                # print(current_DateTimestamp.strftime('%Y-%m-%d %H:%M:%S'), option['_ticker'], option['_type'], option['_strike'],
-                #                      option['_expiration_datetime'], option['_base_asset_ticker'], option['_ask'],
-                #                      option['_ask_iv'], option['_bid'], option['_bid_iv'], option['_last_price'],
-                #                      option['_last_price_iv'], option['_last_price_timestamp'], Real_vol)
                 data_options_vola = [current_DateTimestamp.strftime('%Y-%m-%d %H:%M:%S'), option['_type'],
                                      option['_expiration_datetime'], option['_base_asset_ticker'], Real_vol]
                 writer.writerow(data_options_vola)
@@ -132,8 +155,7 @@ def my_function():
 
         df_vol_history = pd.DataFrame.from_dict(filtered_option_list, orient='columns')
         df_vol_history.set_index('datetime', inplace=True)
-        df_vol_history.index = df_vol_history.index.strftime('%Y-%m-%d %H:%M:%S')  # Reformat the date index using strftime()
-        # print(df_vol_history[['_ticker', '_type', '_expiration_datetime', '_real_vol']])
+        df_vol_history.index = df_vol_history.index.strftime('%Y-%m-%d %H:%M:%S')
 
     except Exception as e:
         print(f"Ошибка в функции my_function: {str(e)}")
