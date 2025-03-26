@@ -153,13 +153,8 @@ def my_function():
                 writer.writerow(data_options_vola)
         f.close()
 
-        df_vol_history = pd.DataFrame.from_dict(filtered_option_list, orient='columns')
-        df_vol_history.set_index('datetime', inplace=True)
-        df_vol_history.index = df_vol_history.index.strftime('%Y-%m-%d %H:%M:%S')
-
     except Exception as e:
         print(f"Ошибка в функции my_function: {str(e)}")
-
 
 schedule.every(60).seconds.do(my_function)
 

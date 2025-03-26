@@ -456,11 +456,10 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
     with open(temp_obj.substitute(name_file='OptionsVolaHistoryDamp.csv'), 'r') as file:
         df_vol_history = pd.read_csv(file, sep=';')
         df_vol_history = df_vol_history[(df_vol_history.base_asset_ticker == dropdown_value)]
-        df_vol_history = df_vol_history.tail(limit * 10)
+        df_vol_history = df_vol_history.tail(limit * len(df_vol_history['expiration_datetime'].unique()) * 2) # глубина истории по количеству серий
         df_vol_history['DateTime'] = pd.to_datetime(df_vol_history['DateTime'], format='%Y-%m-%d %H:%M:%S')
         df_vol_history.index = pd.DatetimeIndex(df_vol_history['DateTime'])
         df_vol_history = df_vol_history[(df_vol_history.type == radiobutton_value)]
-        # print(radiobutton_value)
     # Close the file
     file.close()
 
@@ -468,8 +467,7 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
     fig = make_subplots(specs=[[{"secondary_y": True}]])
 
     # График истории волатильности ПО ДАННЫМ ИЗ DAMP (из CSV OptionsVolaHistoryDamp.csv)
-    for d_exp in df_vol_history['expiration_datetime'].unique():
-        # dff = df_vol_history[(df_vol_history.expiration_datetime == d_exp) & (df_vol_history.type == radiobutton_value)]
+    for d_exp in sorted(df_vol_history['expiration_datetime'].unique()):
         dff = df_vol_history[df_vol_history.expiration_datetime == d_exp]
         fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['Real_vol'],
                                  mode='lines+text',

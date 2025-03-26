@@ -23,7 +23,7 @@ data_options_vola['expiration_datetime'] = pd.to_datetime(data_options_vola['exp
 
 
 print(data_options_vola['expiration_datetime'])
-# Конвертирование столбца с датой 'expiration_datetime' в строку формата '%Y-%m-%d %H:%M:%S'
+# Конвертирование столбца с датой 'expiration_datetime' в строку формата '%Y.%m.%d'
 data_options_vola['expiration_datetime'] = data_options_vola['expiration_datetime'].dt.strftime('%Y-%m-%d')
 print(data_options_vola['expiration_datetime'])
 
