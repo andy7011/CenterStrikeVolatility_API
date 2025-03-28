@@ -1,4 +1,6 @@
 from math import isnan
+from time import strftime
+
 import dash
 from dash import dcc, Input, Output, callback, dash_table, State
 from dash import html

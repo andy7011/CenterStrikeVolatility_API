@@ -149,7 +149,7 @@ def my_function():
                     option['_type'] = 'Put'
 
                 data_options_vola = [current_DateTimestamp.strftime('%Y-%m-%d %H:%M:%S'), option['_type'],
-                                     option['_expiration_datetime'], option['_base_asset_ticker'], Real_vol]
+                                     option['_expiration_datetime'], option['_base_asset_ticker'], Real_vol, option['_volatility']]
                 writer.writerow(data_options_vola)
         f.close()
 
