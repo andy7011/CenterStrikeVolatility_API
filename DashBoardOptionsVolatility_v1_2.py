@@ -24,7 +24,7 @@ from functools import lru_cache
 def get_cached_data(url):
     return get_object_from_json_endpoint_with_retry(url)
 
-temp_str = 'C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 def utc_to_msk_datetime(dt, tzinfo=False):
@@ -151,51 +151,61 @@ df['expiration_date'] = df['_expiration_datetime'].dt.strftime('%d.%m.%Y')
 
 app.layout = html.Div(children=[
 
-    # Текущее время обновления данных
-    html.H6(id='last_update_time', style={'textAlign': 'left'}),
-
     html.Div(children=[
 
         html.Div(children=[
+            # Текущее время обновления данных
+            html.H6(id='last_update_time', style={'textAlign': 'left'}),
+
             # График улыбки волатильности
-            dcc.Graph(id='plot_smile', style={'display': 'inline-block'})
-            ]),
+            dcc.Graph(id='plot_smile'),
+        ]),
 
         html.Div(children=[
-            # Селектор выбора базового актива
-            dcc.Dropdown(df._base_asset_ticker.unique(), value=df._base_asset_ticker.unique()[0], id='dropdown-selection',  style={'width':'80%'}),
-            html.Div(id='dd-output-container')]),
+            html.Div(children=[
+                html.Div(id='dd-output-container')]),
 
-            # Спидометр TrueVega
-            # https://stackoverflow.com/questions/69275527/python-dash-gauge-how-can-i-use-strings-as-values-instead-of-numbers
-            daq.Gauge(id="graph-gauge",
-                units="TrueVega",
-                label='TrueVega',
-                labelPosition='bottom',
-                color={
-                    "ranges": {
-                        "red": [0, 2],
-                        "pink": [2, 4],
-                        "#ADD8E6": [4, 6],
-                        "#4169E1": [6, 8],
-                        "blue": [8, 10],
-                    },
-                },
-                scale={
-                    "custom": {
-                        1: {"label": "Strong Sell"},
-                        3: {"label": "Sell"},
-                        5: {"label": "Neutral"},
-                        7: {"label": "Buy"},
-                        9: {"label": "Strong Buy"},
-                    }
-                },
-                value=0,
-                max=10,
-                min=0,
-            ),
+                # Селектор выбора базового актива
+                dcc.Dropdown(df._base_asset_ticker.unique(), value=df._base_asset_ticker.unique()[0], id='dropdown-selection'),
+
+
+                html.Div(children=[
+                    # Спидометр TrueVega
+                    # https://stackoverflow.com/questions/69275527/python-dash-gauge-how-can-i-use-strings-as-values-instead-of-numbers
+                    daq.Gauge(id="graph-gauge",
+                        units="TrueVega",
+                        label='TrueVega',
+                        labelPosition='bottom',
+                        color={
+                            "ranges": {
+                                "red": [0, 2],
+                                "pink": [2, 4],
+                                "#ADD8E6": [4, 6],
+                                "#4169E1": [6, 8],
+                                "blue": [8, 10],
+                            },
+                        },
+                        scale={
+                            "custom": {
+                                1: {"label": "Strong Sell"},
+                                3: {"label": "Sell"},
+                                5: {"label": "Neutral"},
+                                7: {"label": "Buy"},
+                                9: {"label": "Strong Buy"},
+                            }
+                        },
+                        value=0,
+                        max=10,
+                        min=0,
+                    ),
+                    ]),
+
+
+                    # Гистограмма TrueVega
+                    dcc.Graph(figure=px.histogram(df_table, x='strike', y='TrueVega'), id='hisogram_TrueVega'),
+                    ], style={'display': 'flex', 'flexDirection': 'column'}),
+
             ], style={'display': 'flex', 'flexDirection': 'row'}),
-
 
     html.Div(children=[
 
@@ -244,7 +254,6 @@ app.layout = html.Div(children=[
             'color': 'white'
         }]
     ),
-
 ])
 
 # Callback to update the table

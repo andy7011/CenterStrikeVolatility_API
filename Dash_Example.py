@@ -20,7 +20,7 @@ import time
 import csv
 from typing import NoReturn
 
-temp_str = 'C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 def utc_to_msk_datetime(dt, tzinfo=False):
@@ -156,6 +156,7 @@ app.layout = html.Div(children=[
         dcc.RadioItems(options=['Call', 'Put'],
                        value='Call',
                        inline=True,
+                        style=dict(display='flex', justifyContent='right'),
                        id='my-radio-buttons-final'),
 
         # График истории
@@ -448,7 +449,7 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
     with open(temp_obj.substitute(name_file='OptionsVolaHistoryDamp.csv'), 'r') as file:
         df_vol_history = pd.read_csv(file, sep=';')
         df_vol_history = df_vol_history[(df_vol_history.base_asset_ticker == dropdown_value)]
-        df_vol_history = df_vol_history.tail(limit * 2)
+        df_vol_history = df_vol_history.tail(limit * 10)
         df_vol_history['DateTime'] = pd.to_datetime(df_vol_history['DateTime'], format='%Y-%m-%d %H:%M:%S')
         df_vol_history.index = pd.DatetimeIndex(df_vol_history['DateTime'])
         df_vol_history = df_vol_history[(df_vol_history.type == radiobutton_value)]

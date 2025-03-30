@@ -16,7 +16,7 @@ from string import Template
 import time
 import random
 
-temp_str = 'C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 def utc_to_msk_datetime(dt, tzinfo=False):
@@ -511,6 +511,7 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
 
 
     # График истории волатильности ПО ДАННЫМ ИЗ DAMP (из CSV OptionsVolaHistoryDamp.csv)
+    # print(sorted(df_vol_history['expiration_datetime'].unique()))
     for d_exp in df_vol_history['expiration_datetime'].unique():
         # dff = df_vol_history[(df_vol_history.expiration_datetime == d_exp) & (df_vol_history.type == radiobutton_value)]
         dff = df_vol_history[df_vol_history.expiration_datetime == d_exp]
