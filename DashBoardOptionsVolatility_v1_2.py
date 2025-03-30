@@ -202,8 +202,9 @@ app.layout = html.Div(children=[
 
 
                     # Гистограмма TrueVega
-                    dcc.Graph(figure=px.histogram(df_table, x='strike', y='TrueVega'), id='hisogram_TrueVega'),
-                    ], style={'display': 'flex', 'flexDirection': 'column'}),
+                    dcc.Graph(figure=px.histogram(df_table, x='strike', y='TrueVega') ),
+                    ], style={'display': 'flex', 'flexDirection': 'column'},
+                    id='Hisogram_TrueVega'),
 
             ], style={'display': 'flex', 'flexDirection': 'row'}),
 
@@ -543,6 +544,19 @@ def updateGauge(n, value):
     else:
         value = (abs(tv_sum_positive) / (abs(tv_sum_positive) + abs(tv_sum_negative))) * 10
     return value
+
+# # Callback to update the histogram TrueVega
+# @app.callback(
+#     Output('Hisogram_TrueVega', 'data', allow_duplicate=True),
+#     [Input('interval-component', 'n_intervals'),
+#      Input('dropdown-selection', 'value')],
+#     prevent_initial_call=True
+# )
+# def updateGauge(n, value):
+#     df_pos = pd.read_csv(temp_obj.substitute(name_file='MyPos.csv'), sep=';')
+#     # Фильтрация строк по базовому активу
+#     df_pos = df_pos[df_pos['optionbase'] == value]
+#     return df_pos.to_dict('records')
 
 if __name__ == '__main__':
 
