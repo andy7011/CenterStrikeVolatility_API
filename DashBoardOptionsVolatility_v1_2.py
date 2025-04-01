@@ -353,8 +353,10 @@ def update_output_smile(value, n):
 
         # fig = px.line(dff_call, x='_strike', y='_volatility', color='expiration_date', width=1000, height=600)
         # fig = px.line(dff_call, x='_strike', y='_volatility', color='expiration_date')
-        fig.add_trace(go.Scatter(x=dff_call['_strike'], y=dff_call['_volatility'], mode='lines+text',
-                             name=str(dff['expiration_date'].unique())))
+        for exp_day in dff_call['expiration_date'].unique():
+            dff_smile = dff_call[dff_call.expiration_date == exp_day]
+            fig.add_trace(go.Scatter(x=dff_smile['_strike'], y=dff_smile['_volatility'], mode='lines+text',
+                                 name=exp_day), secondary_y=False,)
 
         # Мои позиции BUY
         fig.add_trace(go.Scatter(x=df_table_buy['strike'], y=df_table_buy['OpenIV'],
@@ -442,8 +444,7 @@ def update_output_smile(value, n):
 
         # TrueVega позиции
         fig.add_trace(go.Bar(x=df_table_base['strike'], y=df_table_base['TrueVega'], text=df_table_base['TrueVega'],
-            textposition='auto', opacity=0.1), secondary_y=True)
-        # fig.update_traces(opacity=0.1)
+            textposition='auto', name='TrueVega', opacity=0.1), secondary_y=True)
 
         # Цена базового актива (вертикальная линия)
         fig.add_vline(x=base_asset_last_price, line_dash='dash', line_color='firebrick')
