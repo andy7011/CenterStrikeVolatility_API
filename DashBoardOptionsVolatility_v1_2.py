@@ -24,7 +24,7 @@ from functools import lru_cache
 def get_cached_data(url):
     return get_object_from_json_endpoint_with_retry(url)
 
-temp_str = 'C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 def utc_to_msk_datetime(dt, tzinfo=False):
@@ -152,61 +152,57 @@ df['expiration_date'] = df['_expiration_datetime'].dt.strftime('%d.%m.%Y')
 app.layout = html.Div(children=[
 
     html.Div(children=[
-
         html.Div(children=[
             # Текущее время обновления данных
             html.H6(id='last_update_time', style={'textAlign': 'left'}),
 
             # График улыбки волатильности
             dcc.Graph(id='plot_smile'),
-        ]),
+
+            # Гистограмма TrueVega
+            dcc.Graph(id='Bar_TrueVega', figure=px.bar(df_table, x='strike', y='TrueVega', color="optionbase", text_auto=True, opacity=0.5)),
+
+        ], style={'width': '77%', 'display': 'inline-block'}),
+
 
         html.Div(children=[
-            html.Div(children=[
-                html.Div(id='dd-output-container')]),
+            # html.Div(id='dd-output-container')]),
+            # Селектор выбора базового актива
+            dcc.Dropdown(df._base_asset_ticker.unique(), value=df._base_asset_ticker.unique()[0], id='dropdown-selection'),
 
-                # Селектор выбора базового актива
-                dcc.Dropdown(df._base_asset_ticker.unique(), value=df._base_asset_ticker.unique()[0], id='dropdown-selection'),
+            # Спидометр TrueVega
+            # https://stackoverflow.com/questions/69275527/python-dash-gauge-how-can-i-use-strings-as-values-instead-of-numbers
+            daq.Gauge(id="graph-gauge",
+                units="TrueVega",
+                label='TrueVega',
+                labelPosition='bottom',
+                color={
+                    "ranges": {
+                        "red": [0, 2],
+                        "pink": [2, 4],
+                        "#ADD8E6": [4, 6],
+                        "#4169E1": [6, 8],
+                        "blue": [8, 10],
+                    },
+                },
+                scale={
+                    "custom": {
+                        1: {"label": "Strong Sell"},
+                        3: {"label": "Sell"},
+                        5: {"label": "Neutral"},
+                        7: {"label": "Buy"},
+                        9: {"label": "Strong Buy"},
+                    }
+                },
+                value=0,
+                max=10,
+                min=0,
+                ),
 
+        ], style={'width': '23%', 'display': 'inline-block'}),
 
-                html.Div(children=[
-                    # Спидометр TrueVega
-                    # https://stackoverflow.com/questions/69275527/python-dash-gauge-how-can-i-use-strings-as-values-instead-of-numbers
-                    daq.Gauge(id="graph-gauge",
-                        units="TrueVega",
-                        label='TrueVega',
-                        labelPosition='bottom',
-                        color={
-                            "ranges": {
-                                "red": [0, 2],
-                                "pink": [2, 4],
-                                "#ADD8E6": [4, 6],
-                                "#4169E1": [6, 8],
-                                "blue": [8, 10],
-                            },
-                        },
-                        scale={
-                            "custom": {
-                                1: {"label": "Strong Sell"},
-                                3: {"label": "Sell"},
-                                5: {"label": "Neutral"},
-                                7: {"label": "Buy"},
-                                9: {"label": "Strong Buy"},
-                            }
-                        },
-                        value=0,
-                        max=10,
-                        min=0,
-                    ),
-                    ]),
+    ], style={'display': 'flex', 'flexDirection': 'row'}),
 
-
-                    # Гистограмма TrueVega
-                    dcc.Graph(figure=px.histogram(df_table, x='strike', y='TrueVega') ),
-                    ], style={'display': 'flex', 'flexDirection': 'column'},
-                    id='Hisogram_TrueVega'),
-
-            ], style={'display': 'flex', 'flexDirection': 'row'}),
 
     html.Div(children=[
 
@@ -233,29 +229,32 @@ app.layout = html.Div(children=[
             },
             value=1
         ),
-        html.Div(id='slider-output-1')
-    ]),
+        html.Div(id='slider-output-1'),
 
-    # Интервал обновления данных
-    dcc.Interval(
-        id='interval-component',
-        interval=1000 * 10,
-        n_intervals=0),
+        # Интервал обновления данных
+        dcc.Interval(
+            id='interval-component',
+            interval=1000 * 10,
+            n_intervals=0),
 
-    # Таблица моих позиций
-    html.Div(id='intermediate-value', style={'display': 'none'}),
-        dash_table.DataTable(id='table', data=df_table.to_dict('records'), page_size=8, style_table={'max-width': '50px'},
-        style_data_conditional = [
-        {
-            'if': {
-                'filter_query': '{P/L} > 1',
-                'column_id': 'P/L'
-            },
-            'backgroundColor': '#3D9970',
-            'color': 'white'
-        }]
-    ),
+
+        # Таблица моих позиций
+        html.Div(id='intermediate-value', style={'display': 'none'}),
+            dash_table.DataTable(id='table', data=df_table.to_dict('records'), page_size=8, style_table={'max-width': '50px'},
+            style_data_conditional = [
+            {
+                'if': {
+                    'filter_query': '{P/L} > 1',
+                    'column_id': 'P/L'
+                },
+                'backgroundColor': '#3D9970',
+                'color': 'white'
+            }
+        ]),
+    ])
 ])
+
+
 
 # Callback to update the table
 @app.callback(Output('intermediate-value', 'children'),
@@ -275,13 +274,13 @@ def clean_data(value, dff):
     # print(dff)
     return dff.tail(450).to_json(date_format='iso', orient='split')
 
-# Callback to update the dropdown (селектор базового актива)
-@app.callback(
-    Output('dd-output-container', 'children'),
-    Input('dropdown-selection', 'value')
-)
-def update_output(value):
-    return f'You have selected {value}'
+# # Callback to update the dropdown (селектор базового актива)
+# @app.callback(
+#     Output('dd-output-container', 'children'),
+#     Input('dropdown-selection', 'value')
+# )
+# def update_output(value):
+#     return f'You have selected {value}'
 
 # Callback to update the last-update-time element
 @app.callback(Output('last_update_time', 'children'),
@@ -344,7 +343,11 @@ def update_output_smile(value, n):
         # Close the file explicitly file.close()
         file.close()
 
-        fig = px.line(dff_call, x='_strike', y='_volatility', color='expiration_date', width=1000, height=600)
+        # Create figure with secondary y-axis
+        fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+        # fig = px.line(dff_call, x='_strike', y='_volatility', color='expiration_date', width=1000, height=600)
+        fig = px.line(dff_call, x='_strike', y='_volatility', color='expiration_date')
 
         # Мои позиции BUY
         fig.add_trace(go.Scatter(x=df_table_buy['strike'], y=df_table_buy['OpenIV'],

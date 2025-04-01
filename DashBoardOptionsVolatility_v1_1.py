@@ -156,7 +156,7 @@ app.layout = html.Div(children=[
 
         html.Div(children=[
             # Селектор выбора базового актива
-            dcc.Dropdown(df._base_asset_ticker.unique(), value=df._base_asset_ticker.unique()[0], id='dropdown-selection',  style={'width':'80%'}),
+            dcc.Dropdown(df._base_asset_ticker.unique(), value=df._base_asset_ticker.unique()[0], id='dropdown-selection'),
             html.Div(id='dd-output-container')]),
 
             # Спидометр TrueVega
