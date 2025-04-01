@@ -24,7 +24,7 @@ from functools import lru_cache
 def get_cached_data(url):
     return get_object_from_json_endpoint_with_retry(url)
 
-temp_str = 'C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 def utc_to_msk_datetime(dt, tzinfo=False):
@@ -153,8 +153,6 @@ app.layout = html.Div(children=[
 
     html.Div(children=[
         html.Div(children=[
-            # Текущее время обновления данных
-            html.H6(id='last_update_time', style={'textAlign': 'left'}),
 
             # График улыбки волатильности
             dcc.Graph(id='plot_smile'),
@@ -166,6 +164,9 @@ app.layout = html.Div(children=[
 
 
         html.Div(children=[
+            # Текущее время обновления данных
+            html.H6(id='last_update_time', style={'textAlign': 'left'}),
+
             # html.Div(id='dd-output-container')]),
             # Селектор выбора базового актива
             dcc.Dropdown(df._base_asset_ticker.unique(), value=df._base_asset_ticker.unique()[0], id='dropdown-selection'),
@@ -324,11 +325,15 @@ def update_output_smile(value, n):
         # Open the file using the "with" statement
         with open(temp_obj.substitute(name_file='MyPos.csv'), 'r') as file:
             df_table = pd.read_csv(file, sep=';')
+            # df_table = df_table[(df_table.optionbase == value)
             df_table_buy = df_table[(df_table.optionbase == value) & (df_table.net_pos > 0)]
             df_table_sell = df_table[(df_table.optionbase == value) & (df_table.net_pos < 0)]
             MyPos_ticker_list = []
             for i in range(len(df_table)):
                 MyPos_ticker_list.append(df_table['ticker'][i])
+            # DataFrame для отрисовки баланса rueVega
+            df_table_base = df_table
+            df_table_base = df_table_base[df_table_base.optionbase == value]
         # Close the file explicitly file.close()
         file.close()
 
@@ -347,7 +352,9 @@ def update_output_smile(value, n):
         fig = make_subplots(specs=[[{"secondary_y": True}]])
 
         # fig = px.line(dff_call, x='_strike', y='_volatility', color='expiration_date', width=1000, height=600)
-        fig = px.line(dff_call, x='_strike', y='_volatility', color='expiration_date')
+        # fig = px.line(dff_call, x='_strike', y='_volatility', color='expiration_date')
+        fig.add_trace(go.Scatter(x=dff_call['_strike'], y=dff_call['_volatility'], mode='lines+text',
+                             name=str(dff['expiration_date'].unique())))
 
         # Мои позиции BUY
         fig.add_trace(go.Scatter(x=df_table_buy['strike'], y=df_table_buy['OpenIV'],
@@ -432,6 +439,11 @@ def update_output_smile(value, n):
                                       '_last_price_timestamp']],
                                  hovertemplate="<b>%{customdata}</b><br>"
                                  ))
+
+        # TrueVega позиции
+        fig.add_trace(go.Bar(x=df_table_base['strike'], y=df_table_base['TrueVega'], text=df_table_base['TrueVega'],
+            textposition='auto', opacity=0.1), secondary_y=True)
+        # fig.update_traces(opacity=0.1)
 
         # Цена базового актива (вертикальная линия)
         fig.add_vline(x=base_asset_last_price, line_dash='dash', line_color='firebrick')
@@ -564,4 +576,3 @@ def updateGauge(n, value):
 if __name__ == '__main__':
 
     app.run_server(debug=True) # Run the Dash app
-
