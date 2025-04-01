@@ -157,9 +157,6 @@ app.layout = html.Div(children=[
             # График улыбки волатильности
             dcc.Graph(id='plot_smile'),
 
-            # Гистограмма TrueVega
-            dcc.Graph(id='Bar_TrueVega', figure=px.bar(df_table, x='strike', y='TrueVega', color="optionbase", text_auto=True, opacity=0.1)),
-
         ], style={'width': '77%', 'display': 'inline-block'}),
 
 
