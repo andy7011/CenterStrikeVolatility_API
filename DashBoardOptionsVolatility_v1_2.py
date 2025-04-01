@@ -252,8 +252,6 @@ app.layout = html.Div(children=[
     ])
 ])
 
-
-
 # Callback to update the table
 @app.callback(Output('intermediate-value', 'children'),
               [Input('interval-component', 'n_intervals')],
@@ -271,14 +269,6 @@ def clean_data(value, dff):
     dff = df[(df._base_asset_ticker == value) & (df._type == 'C')]
     # print(dff)
     return dff.tail(450).to_json(date_format='iso', orient='split')
-
-# # Callback to update the dropdown (селектор базового актива)
-# @app.callback(
-#     Output('dd-output-container', 'children'),
-#     Input('dropdown-selection', 'value')
-# )
-# def update_output(value):
-#     return f'You have selected {value}'
 
 # Callback to update the last-update-time element
 @app.callback(Output('last_update_time', 'children'),
@@ -348,12 +338,14 @@ def update_output_smile(value, n):
         # Create figure with secondary y-axis
         fig = make_subplots(specs=[[{"secondary_y": True}]])
 
+        # Рисуем график улыбки
         # fig = px.line(dff_call, x='_strike', y='_volatility', color='expiration_date', width=1000, height=600)
         # fig = px.line(dff_call, x='_strike', y='_volatility', color='expiration_date')
         for exp_day in dff_call['expiration_date'].unique():
             dff_smile = dff_call[dff_call.expiration_date == exp_day]
             fig.add_trace(go.Scatter(x=dff_smile['_strike'], y=dff_smile['_volatility'], mode='lines+text',
                                  name=exp_day), secondary_y=False,)
+
 
         # Мои позиции BUY
         fig.add_trace(go.Scatter(x=df_table_buy['strike'], y=df_table_buy['OpenIV'],
@@ -452,6 +444,8 @@ def update_output_smile(value, n):
         fig.update_layout(
             margin=dict(l=0, r=2, t=30, b=0),
         )
+        # убрать сетку правой оси
+        fig['layout']['yaxis2']['showgrid'] = False
         return fig
 
     except Exception as e:
