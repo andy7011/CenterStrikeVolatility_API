@@ -24,7 +24,7 @@ from functools import lru_cache
 def get_cached_data(url):
     return get_object_from_json_endpoint_with_retry(url)
 
-temp_str = 'C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\ashadrin\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 def utc_to_msk_datetime(dt, tzinfo=False):
@@ -489,13 +489,26 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
     for d_exp in sorted(df_vol_history['expiration_datetime'].unique()):
         dff = df_vol_history[df_vol_history.expiration_datetime == d_exp]
         fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['Real_vol'],
+                                 legendgroup="group",  # this can be any string, not just "group"
+                                 legendgrouptitle_text="RealVol",
                                  mode='lines+text',
                                  name=d_exp), secondary_y=True,)
     fig.update_layout(legend_title_text=radiobutton_value)
 
+    # График истории БИРЖЕВОЙ волатильности (из CSV OptionsVolaHistoryDamp.csv)
+    for d_exp in sorted(df_vol_history['expiration_datetime'].unique()):
+        dff = df_vol_history[df_vol_history.expiration_datetime == d_exp]
+        fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['Quik_vol'], visible='legendonly',
+                                 legendgroup="group2",
+                                 legendgrouptitle_text="QuikVol",
+                                 mode='lines+text',
+                                 line=dict(color='gray', width=1, dash='dot'),
+                                 name=d_exp), secondary_y=True, )
+    fig.update_layout(legend=dict(groupclick="toggleitem"))
+
     # График истории цены базового актива
     fig.add_trace(go.Scatter(x=df_BaseAssetPrice['DateTime'], y=df_BaseAssetPrice['last_price'], mode='lines+text',
-                             name=dropdown_value, line=dict(color='gray', width=1, dash='dashdot')),
+                             name=dropdown_value, line=dict(color='gray', width=3, dash='dashdot')),
                             secondary_y=False,)
 
     # Убираем неторговое время
@@ -551,19 +564,6 @@ def updateGauge(n, value):
     else:
         value = (abs(tv_sum_positive) / (abs(tv_sum_positive) + abs(tv_sum_negative))) * 10
     return value
-
-# # Callback to update the histogram TrueVega
-# @app.callback(
-#     Output('Hisogram_TrueVega', 'data', allow_duplicate=True),
-#     [Input('interval-component', 'n_intervals'),
-#      Input('dropdown-selection', 'value')],
-#     prevent_initial_call=True
-# )
-# def updateGauge(n, value):
-#     df_pos = pd.read_csv(temp_obj.substitute(name_file='MyPos.csv'), sep=';')
-#     # Фильтрация строк по базовому активу
-#     df_pos = df_pos[df_pos['optionbase'] == value]
-#     return df_pos.to_dict('records')
 
 if __name__ == '__main__':
 
