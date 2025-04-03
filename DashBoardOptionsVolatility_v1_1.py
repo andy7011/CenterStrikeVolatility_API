@@ -226,7 +226,7 @@ app.layout = html.Div(children=[
 
     # Таблица моих позиций
     html.Div(id='intermediate-value', style={'display': 'none'}),
-        dash_table.DataTable(id='table', data=df_table.to_dict('records'), page_size=8, style_table={'max-width': '50px'},
+        dash_table.DataTable(id='table', data=df_table.to_dict('records'), page_size=20, style_table={'max-width': '50px'},
         style_data_conditional = [
         {
             'if': {

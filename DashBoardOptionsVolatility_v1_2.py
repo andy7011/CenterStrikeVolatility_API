@@ -162,11 +162,12 @@ app.layout = html.Div(children=[
 
         html.Div(children=[
             # Текущее время обновления данных
-            html.H6(id='last_update_time', style={'textAlign': 'left'}),
+            html.H6(id='last_update_time', style={'textAlign': 'center'}),
 
             # html.Div(id='dd-output-container')]),
             # Селектор выбора базового актива
-            dcc.Dropdown(df._base_asset_ticker.unique(), value=df._base_asset_ticker.unique()[0], id='dropdown-selection'),
+            dcc.Dropdown(df._base_asset_ticker.unique(), value=df._base_asset_ticker.unique()[0], id='dropdown-selection',
+                         style={'width':'70%'}),
 
             # Спидометр TrueVega
             # https://stackoverflow.com/questions/69275527/python-dash-gauge-how-can-i-use-strings-as-values-instead-of-numbers
@@ -199,7 +200,7 @@ app.layout = html.Div(children=[
 
         ], style={'width': '23%', 'display': 'inline-block'}),
 
-    ], style={'display': 'flex', 'flexDirection': 'row'}),
+    ], style={'display': 'flex', 'flexDirection': 'row', 'justify-content': 'center'}),
 
 
     html.Div(children=[
@@ -238,7 +239,7 @@ app.layout = html.Div(children=[
 
         # Таблица моих позиций
         html.Div(id='intermediate-value', style={'display': 'none'}),
-            dash_table.DataTable(id='table', data=df_table.to_dict('records'), page_size=8, style_table={'max-width': '50px'},
+            dash_table.DataTable(id='table', data=df_table.to_dict('records'), page_size=20, style_table={'max-width': '50px'},
             style_data_conditional = [
             {
                 'if': {
@@ -267,7 +268,6 @@ def clean_data(value, dff):
     df['_expiration_datetime'].dt.date
     df['expiration_date'] = df['_expiration_datetime'].dt.strftime('%d.%m.%Y')
     dff = df[(df._base_asset_ticker == value) & (df._type == 'C')]
-    # print(dff)
     return dff.tail(450).to_json(date_format='iso', orient='split')
 
 # Callback to update the last-update-time element
@@ -439,7 +439,7 @@ def update_output_smile(value, n):
         fig.add_vline(x=base_asset_last_price, line_dash='dash', line_color='firebrick')
 
         fig.update_layout(
-            title_text="Volatility smile of the option series", uirevision="Don't change"
+            title_text=f"Volatility smile of the option series <b>{value}<b>", uirevision="Don't change"
         )
         fig.update_layout(
             margin=dict(l=0, r=2, t=30, b=0),
@@ -522,7 +522,7 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
     fig.update_layout(xaxis_title=None)
 
     fig.update_layout(
-        title_text=f'The history of the volatility of the central strike of the option series {dropdown_value}', uirevision="Don't change"
+        title_text=f'The history of the volatility of the central strike of the option series <b>{dropdown_value}<b>', uirevision="Don't change"
     )
     fig.update_layout(
         margin=dict(l=0, r=0, t=30, b=0),

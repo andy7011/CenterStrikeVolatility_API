@@ -175,7 +175,8 @@ app.layout = html.Div(children=[
 
     html.Div(children=[
         # Селектор выбора базового актива
-        dcc.Dropdown(df._base_asset_ticker.unique(), value=df._base_asset_ticker.unique()[0], id='dropdown-selection',  style={'width':'40%'}),
+        dcc.Dropdown(df._base_asset_ticker.unique(), value=df._base_asset_ticker.unique()[0], id='dropdown-selection',
+                     style={'width':'60%', 'align-items': 'center', 'justify-content': 'center'}),
         html.Div(id='dd-output-container')]),
 
         html.Div(children=[
