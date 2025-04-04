@@ -153,21 +153,20 @@ app.layout = html.Div(children=[
 
     html.Div(children=[
         html.Div(children=[
-
             # График улыбки волатильности
             dcc.Graph(id='plot_smile'),
-
-        ], style={'width': '77%', 'display': 'inline-block'}),
+        ], style={'width': '87%', 'display': 'inline-block'}),
 
 
         html.Div(children=[
             # Текущее время обновления данных
-            html.H6(id='last_update_time', style={'textAlign': 'center'}),
+            html.H6(id='last_update_time'),
 
             # html.Div(id='dd-output-container')]),
-            # Селектор выбора базового актива
-            dcc.Dropdown(df._base_asset_ticker.unique(), value=df._base_asset_ticker.unique()[0], id='dropdown-selection',
-                         style={'width':'70%'}),
+            html.Div([
+                # Селектор выбора базового актива
+                dcc.Dropdown(df._base_asset_ticker.unique(), value=df._base_asset_ticker.unique()[0], id='dropdown-selection')
+                ]),
 
             # Спидометр TrueVega
             # https://stackoverflow.com/questions/69275527/python-dash-gauge-how-can-i-use-strings-as-values-instead-of-numbers
@@ -197,10 +196,9 @@ app.layout = html.Div(children=[
                 max=10,
                 min=0,
                 ),
+        ], style={'display': 'inline-block'}),
 
-        ], style={'width': '23%', 'display': 'inline-block'}),
-
-    ], style={'display': 'flex', 'flexDirection': 'row', 'justify-content': 'center'}),
+    ], style={'display': 'flex', 'flexDirection': 'row'}),
 
 
     html.Div(children=[
