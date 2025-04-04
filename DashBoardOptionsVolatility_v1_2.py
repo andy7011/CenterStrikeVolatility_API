@@ -1,15 +1,13 @@
 from math import isnan
-from time import strftime
-
 import dash
 from dash import dcc, Input, Output, callback, dash_table, State
 from dash import html
 import dash_daq as daq
 from dash.exceptions import PreventUpdate
 import datetime
+from datetime import timedelta
 from pytz import utc
 import requests
-import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pandas as pd
@@ -459,12 +457,18 @@ def update_output_smile(value, n):
                 ],
               prevent_initial_call=True)
 def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
-    limit = 440 * slider_value
+    # limit = 450 * slider_value
+    limit_time = datetime.datetime.now() - timedelta(hours=12 * slider_value)
+
+
     # BaseAssetPrice history data DAMP
     with open(temp_obj.substitute(name_file='BaseAssetPriceHistoryDamp.csv'), 'r') as file:
         df_BaseAssetPrice = pd.read_csv(file, sep=';')
         df_BaseAssetPrice = df_BaseAssetPrice[(df_BaseAssetPrice.ticker == dropdown_value)]
-        df_BaseAssetPrice = df_BaseAssetPrice.tail(limit)
+        # df_BaseAssetPrice = df_BaseAssetPrice.tail(limit)
+        df_BaseAssetPrice['DateTime'] = pd.to_datetime(df_BaseAssetPrice['DateTime'], format='%Y-%m-%d %H:%M:%S')
+        df_BaseAssetPrice.index = pd.DatetimeIndex(df_BaseAssetPrice['DateTime'])
+        df_BaseAssetPrice = df_BaseAssetPrice[(df_BaseAssetPrice.DateTime > limit_time)]
     # Close the file
     file.close()
 
@@ -473,10 +477,13 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
     with open(temp_obj.substitute(name_file='OptionsVolaHistoryDamp.csv'), 'r') as file:
         df_vol_history = pd.read_csv(file, sep=';')
         df_vol_history = df_vol_history[(df_vol_history.base_asset_ticker == dropdown_value)]
-        df_vol_history = df_vol_history.tail(limit * len(df_vol_history['expiration_datetime'].unique()) * 2) # глубина истории по количеству серий
+        # df_vol_history = df_vol_history.tail(limit * len(df_vol_history['expiration_datetime'].unique()) * 2) # глубина истории по количеству серий
+
         df_vol_history['DateTime'] = pd.to_datetime(df_vol_history['DateTime'], format='%Y-%m-%d %H:%M:%S')
         df_vol_history.index = pd.DatetimeIndex(df_vol_history['DateTime'])
         df_vol_history = df_vol_history[(df_vol_history.type == radiobutton_value)]
+        df_vol_history = df_vol_history[(df_vol_history.DateTime > limit_time)]
+        # print(df_vol_history)
     # Close the file
     file.close()
 
