@@ -10,15 +10,13 @@ from central_strike import _calculate_central_strike
 from supported_base_asset import MAP
 
 """
-Основные изменения в коде:
-Добавлена новая функция is_business_time(), которая проверяет:
+функция is_business_time() проверяет:
 Выходные дни (суббота, воскресенье)
 Нерабочее время (23:51-8:59)
-В функции my_function() добавлена проверка времени в начале:
+В функции my_function() производится проверка времени в начале:
 Если время не рабочее, функция немедленно завершается
 Добавлено информативное сообщение в лог
-Остальная функциональность кода осталась без изменений
-Теперь программа будет пропускать выполнение функции my_function() в нерабочие часы и выходные дни, что соответствует требованиям задачи.
+Программа пропускает выполнение функции my_function() в нерабочие часы и выходные дни.
 """
 
 # Конфигурация для работы с файлами
@@ -111,11 +109,11 @@ def my_function():
         current_datetime = datetime.now()
         print(f"Дата и время: {current_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
 
-        option_list = model_from_api[1]
+        option_list = model_from_api[1] # отфильтрованный список опционов
         filtered_option_list = []
         for option in option_list:
             base_asset_ticker = option['_base_asset_ticker']
-            if option['_strike'] == central_strikes_map[base_asset_ticker]:
+            if option['_strike'] == central_strikes_map[base_asset_ticker]: # фильтрация опционов по центральному страйку
                 option['datetime'] = current_datetime
                 date_object = datetime.strptime(option['_expiration_datetime'], "%a, %d %b %Y %H:%M:%S GMT").date()
                 option['_expiration_datetime'] = date_object.strftime('%Y-%m-%d')
@@ -141,6 +139,8 @@ def my_function():
                             if option['_ask_iv'] < option['_volatility'] and option['_bid_iv'] < option['_volatility'] \
                                     or option['_volatility'] < option['_bid_iv']:
                                 Real_vol = (option['_ask_iv'] + option['_bid_iv']) / 2
+                                if Real_vol > option['_volatility'] * 2 or Real_vol < option['_volatility'] / 2:
+                                    Real_vol = option['_volatility']
 
                 option['_real_vol'] = Real_vol
                 if option['_type'] == 'C':
