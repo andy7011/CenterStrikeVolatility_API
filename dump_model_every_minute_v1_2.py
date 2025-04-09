@@ -117,6 +117,9 @@ def my_function():
                 option['datetime'] = current_datetime
                 date_object = datetime.strptime(option['_expiration_datetime'], "%a, %d %b %Y %H:%M:%S GMT").date()
                 option['_expiration_datetime'] = date_object.strftime('%Y-%m-%d')
+                # Проверяем наличие ключа и что значение не NaN
+                if '_volatility' in option and option['_volatility'] == option['_volatility']:
+                    option['_volatility'] = round(option['_volatility'], 2) # округление до двух знаков после запятой
                 filtered_option_list.append(option)
 
         with open(temp_obj.substitute(name_file='OptionsVolaHistoryDamp.csv'), 'a', newline='') as f:
@@ -149,12 +152,16 @@ def my_function():
                     option['_type'] = 'Put'
 
                 data_options_vola = [current_DateTimestamp.strftime('%Y-%m-%d %H:%M:%S'), option['_type'],
-                                     option['_expiration_datetime'], option['_base_asset_ticker'], Real_vol, option['_volatility']]
+                                     option['_expiration_datetime'], option['_base_asset_ticker'], round(Real_vol, 2), option['_volatility']]
                 writer.writerow(data_options_vola)
+                print(data_options_vola)
         f.close()
+
 
     except Exception as e:
         print(f"Ошибка в функции my_function: {str(e)}")
+
+
 
 schedule.every(60).seconds.do(my_function)
 
