@@ -117,9 +117,6 @@ def my_function():
                 option['datetime'] = current_datetime
                 date_object = datetime.strptime(option['_expiration_datetime'], "%a, %d %b %Y %H:%M:%S GMT").date()
                 option['_expiration_datetime'] = date_object.strftime('%Y-%m-%d')
-                # Проверяем наличие ключа и что значение не NaN
-                if '_volatility' in option and option['_volatility'] == option['_volatility']:
-                    option['_volatility'] = round(option['_volatility'], 2) # округление до двух знаков после запятой
                 filtered_option_list.append(option)
 
         with open(temp_obj.substitute(name_file='OptionsVolaHistoryDamp.csv'), 'a', newline='') as f:
@@ -127,6 +124,11 @@ def my_function():
             for option in filtered_option_list:
                 current_DateTimestamp = datetime.now()
                 currentTimestamp = int(datetime.timestamp(current_DateTimestamp))
+                # Проверяем наличие ключа и что значение не None
+                print(option['_volatility'])
+                print(type(option['_volatility']))
+                if '_volatility' in option and type(option['_volatility']) == float:
+                    option['_volatility'] = round(option['_volatility'], 2)  # округление до двух знаков после запятой
 
                 if option['_last_price_timestamp'] is not None and currentTimestamp - option[
                     '_last_price_timestamp'] < last_price_lifetime:
@@ -145,14 +147,18 @@ def my_function():
                                 if Real_vol > option['_volatility'] * 2 or Real_vol < option['_volatility'] / 2:
                                     Real_vol = option['_volatility']
 
-                option['_real_vol'] = Real_vol
+                if Real_vol == Real_vol:
+                    option['_real_vol'] = round(Real_vol, 2)  # округление до двух знаков после запятой
+                else:
+                    print('Real_vol is not a number', Real_vol)
+                    option['_real_vol'] = None
                 if option['_type'] == 'C':
                     option['_type'] = 'Call'
                 elif option['_type'] == 'P':
                     option['_type'] = 'Put'
-
+                print('Real_vol', Real_vol)
                 data_options_vola = [current_DateTimestamp.strftime('%Y-%m-%d %H:%M:%S'), option['_type'],
-                                     option['_expiration_datetime'], option['_base_asset_ticker'], round(Real_vol, 2), option['_volatility']]
+                                     option['_expiration_datetime'], option['_base_asset_ticker'], option['_real_vol'], option['_volatility']]
                 writer.writerow(data_options_vola)
                 print(data_options_vola)
         f.close()
