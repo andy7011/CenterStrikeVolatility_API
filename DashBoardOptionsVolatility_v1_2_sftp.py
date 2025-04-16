@@ -8,151 +8,16 @@ import datetime
 from datetime import timedelta
 from pytz import utc
 import requests
+import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pandas as pd
-from central_strike import _calculate_central_strike
-from supported_base_asset import MAP
+from app.central_strike import _calculate_central_strike
+from app.supported_base_asset import MAP
 from string import Template
 import time
 import random
 from functools import lru_cache
-import paramiko
-import math
-import socket
-import threading
-from queue import Queue
-import os
-
-
-class APILoader:
-    def __init__(self):
-        self.queue = Queue()
-        self.running = False
-
-    def start(self):
-        self.running = True
-        self.thread = threading.Thread(target=self._load_data)
-        self.thread.daemon = True
-        self.thread.start()
-
-    def _load_data(self):
-        while self.running:
-            try:
-                model_data = get_object_from_json_endpoint_with_retry(
-                    'https://option-volatility-dashboard.ru/dump_model',
-                    timeout=5
-                )
-                self.queue.put({
-                    'status': 'success',
-                    'data': model_data
-                })
-            except Exception as e:
-                self.queue.put({
-                    'status': 'error',
-                    'error': str(e)
-                })
-            time.sleep(1)  # Интервал между запросами
-
-api_loader = None
-
-class SFTPManager:
-    def __init__(self, host, port, username, password):
-        if not all([host, port, username, password]):
-            raise ValueError("Все параметры подключения обязательны")
-        self.host = host
-        self.port = port
-        self.username = username
-        self.password = password
-        self.sftp_client = None
-        self.queue = Queue()
-        self.running = False
-        self.chunk_size = 1024 * 1024  # 1MB chunks
-        self.reconnect_attempts = 3
-        self.reconnect_delay = 1  # секунды
-
-    def connect(self):
-        for attempt in range(self.reconnect_attempts):
-            try:
-                transport = paramiko.Transport((self.host, self.port))
-                transport.default_window_size = 4294967294
-                transport.packetizer.REKEY_BYTES = pow(2, 32)  # Уменьшено с 2^40
-                transport.packetizer.REKEY_PACKETS = pow(2, 32)  # Уменьшено с 2^40
-                transport.connect(username=self.username, password=self.password)
-
-                self.sftp_client = paramiko.SFTPClient.from_transport(transport)
-                self.running = True
-                return True
-
-            except Exception as e:
-                if attempt < self.reconnect_attempts - 1:
-                    print(f"Попытка {attempt + 1} подключения не удалась: {str(e)}")
-                    time.sleep(self.reconnect_delay)
-                    continue
-                print(f"Ошибка подключения к SFTP: {str(e)}")
-                return False
-
-    def download_file(self, remote_file, local_file):
-        try:
-            # Проверка доступности локальной директории
-            os.makedirs(os.path.dirname(local_file), exist_ok=True)
-
-            # Проверка прав доступа
-            if not os.access(os.path.dirname(local_file), os.W_OK):
-                raise PermissionError(f"Нет прав на запись в директорию {os.path.dirname(local_file)}")
-
-            # Проверка свободного места
-            free_space = shutil.disk_usage(os.path.dirname(local_file)).free
-            remote_size = self.sftp_client.stat(remote_file).st_size
-            if free_space < remote_size:
-                raise Exception(f"Недостаточно свободного места. Требуется {remote_size} байт, доступно {free_space}")
-
-            # Загрузка файла
-            with open(local_file, 'wb') as local:
-                with self.sftp_client.open(remote_file, 'rb',
-                                           bufsize=self.chunk_size) as remote:
-                    remote.prefetch()
-
-                    total_written = 0
-                    start_time = time.time()
-
-                    for i in range(chunk_count):
-                        if time.time() - start_time > 9:
-                            raise Exception("Превышено время загрузки файла")
-
-                        chunk = remote.read(self.chunk_size)
-                        local.write(chunk)
-                        total_written += len(chunk)
-
-                        progress = (total_written / remote_size) * 100
-                        self.queue.put({
-                            'progress': progress,
-                            'status': 'downloading'
-                        })
-
-            self.queue.put({
-                'status': 'completed',
-                'progress': 100,
-                'file_size': remote_size
-            })
-            return True
-
-        except Exception as e:
-            self.queue.put({
-                'status': 'error',
-                'error': str(e)
-            })
-            return False
-
-def start_sftp_manager():
-    sftp_manager = SFTPManager("195.146.92.68", 22, "sftpuser", "25JQrAnT7")
-    if sftp_manager.connect():
-        return sftp_manager
-    return None
-
-# В главном потоке Dash
-sftp_manager = None
-download_thread = None
 
 @lru_cache(maxsize=None)
 def get_cached_data(url):
@@ -160,88 +25,6 @@ def get_cached_data(url):
 
 temp_str = 'C:\\Users\\sftpuser\\Position\\$name_file'
 temp_obj = Template(temp_str)
-
-def check_port_availability(host, port, timeout=5):
-    """
-    Проверка доступности порта
-    """
-    try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(timeout)
-        result = sock.connect_ex((host, port))
-        sock.close()
-        return result == 0
-    except Exception as e:
-        print(f"Ошибка при проверке порта: {str(e)}")
-        return False
-
-def create_sftp_client(host, port, username, password):
-    """
-    Создание SFTP клиента с проверкой доступности порта
-    """
-    if not check_port_availability(host, port):
-        raise Exception(f"Порт {port} недоступен на сервере {host}")
-
-    try:
-        transport = paramiko.Transport((host, port))
-        transport.default_window_size = 4294967294
-        transport.packetizer.REKEY_BYTES = pow(2, 40)
-        transport.packetizer.REKEY_PACKETS = pow(2, 40)
-        transport.connect(username=username, password=password)
-
-        sftp_client = paramiko.SFTPClient.from_transport(transport)
-        return sftp_client
-    except Exception as e:
-        print(f"Ошибка при создании SFTP клиента: {str(e)}")
-        raise
-
-sftp_client = create_sftp_client("195.146.92.68", 22, "sftpuser", "25JQrAnT7")
-
-
-def download_file_from_server(sftp_client, remote_file, local_file):
-    """
-    Загрузка файла с мониторингом процесса и обработкой ошибок
-    """
-    try:
-        chunk_size = 6 * 1024 * 1024  # 6MB chunks
-        file_size = sftp_client.stat(remote_file).st_size
-        chunk_count = int(math.ceil(file_size / float(chunk_size)))
-
-        print(f"Начало загрузки файла {remote_file}")
-        print(f"Общий размер: {file_size / (1024 * 1024):.2f} MB")
-
-        with open(local_file, 'wb') as local:
-            with sftp_client.open(remote_file, 'rb', bufsize=chunk_size) as remote:
-                remote.prefetch()
-
-                total_read = 0
-                start_time = time.time()
-
-                for i in range(chunk_count):
-                    start_chunk_time = time.time()
-                    prefetch = chunk_size * (i + 1)
-                    remote.prefetch(prefetch)
-
-                    chunk = remote.read(chunk_size)
-                    local.write(chunk)
-                    total_read += len(chunk)
-
-                    chunk_time = time.time() - start_chunk_time
-                    chunk_speed = (len(chunk) / 1024) / chunk_time if chunk_time > 0 else 0
-
-                    total_time = time.time() - start_time
-                    total_speed = (total_read / 1024) / total_time if total_time > 0 else 0
-
-                    progress = (total_read / file_size) * 100
-                    print(f"\rПрогресс: {progress:.1f}% | "
-                          f"Скорость: {chunk_speed:.2f} KB/s | "
-                          f"Общая скорость: {total_speed:.2f} KB/s", end="")
-
-                print("\nЗагрузка завершена успешно!")
-                return True, total_speed
-    except Exception as e:
-        print(f"Ошибка при загрузке файла: {str(e)}")
-        return False, 0
 
 def utc_to_msk_datetime(dt, tzinfo=False):
     """Перевод времени из UTC в московское
@@ -306,18 +89,16 @@ def get_object_from_json_endpoint_with_retry(url, method='GET', params={}, max_d
 # Create the app
 app = dash.Dash(__name__)
 
-# My positions data from SFTP
-download_file_from_server(sftp_client, temp_obj.substitute(name_file='MyPos.csv'), "local_MyPos.csv")
-with open("local_MyPos.csv", 'r') as file:
+# My positions data
+with open(temp_obj.substitute(name_file='MyPos.csv'), 'r') as file:
     df_table = pd.read_csv(file, sep=';')
 # Close the file explicitly file.close()
 file.close()
 # print('\n df_table.columns:\n', df_table.columns)
 # print('df_table:\n', df_table)
 
-# My orders data from SFTP
-download_file_from_server(sftp_client, temp_obj.substitute(name_file='MyOrders.csv'), "local_MyOrders.csv")
-with open("local_MyOrders.csv", 'r') as file:
+# My orders data
+with open(temp_obj.substitute(name_file='MyOrders.csv'), 'r') as file:
     df_orders = pd.read_csv(file, sep=';')
 # Close the file explicitly file.close()
 file.close()
@@ -484,6 +265,7 @@ def clean_data(value, dff):
     df['_expiration_datetime'].dt.date
     df['expiration_date'] = df['_expiration_datetime'].dt.strftime('%d.%m.%Y')
     dff = df[(df._base_asset_ticker == value) & (df._type == 'C')]
+    # print(dff)
     return dff.tail(450).to_json(date_format='iso', orient='split')
 
 # Callback to update the last-update-time element
@@ -498,21 +280,8 @@ def update_time(n):
                Input('interval-component', 'n_intervals')],
               prevent_initial_call=True)
 def update_output_smile(value, n):
-    global api_loader  # Объявляем api_loader как глобальную переменную
-
-    if api_loader is None:
-        api_loader = APILoader()
-        api_loader.start()
-
     try:
-        if api_loader.queue.empty():
-            raise PreventUpdate
-
-        result = api_loader.queue.get()
-        if result['status'] == 'error':
-            raise Exception(result['error'])
-
-        model_from_api = result['data']
+        model_from_api = get_object_from_json_endpoint_with_retry('https://option-volatility-dashboard.ru/dump_model', timeout=5)
 
         # Список базовых активов, вычисление и добавление в словарь центрального страйка
         base_asset_list = model_from_api[0]
@@ -537,10 +306,9 @@ def update_output_smile(value, n):
 
         dff_call = dff[(dff._type == 'C')]  # оставим только коллы
 
-        # My positions data from SFTP
+        # My positions data
         # Open the file using the "with" statement
-        download_file_from_server(sftp_client, temp_obj.substitute(name_file='MyPos.csv'), "local_MyPos.csv")
-        with open("local_MyPos.csv", 'r') as file:
+        with open(temp_obj.substitute(name_file='MyPos.csv'), 'r') as file:
             df_table = pd.read_csv(file, sep=';')
             # df_table = df_table[(df_table.optionbase == value)
             df_table_buy = df_table[(df_table.optionbase == value) & (df_table.net_pos > 0)]
@@ -554,10 +322,9 @@ def update_output_smile(value, n):
         # Close the file explicitly file.close()
         file.close()
 
-        # My orders data from SFTP
+        # My orders data
         # Open the file using the "with" statement
-        download_file_from_server(sftp_client, temp_obj.substitute(name_file='MyOrders.csv'), "local_MyOrders.csv")
-        with open("local_MyOrders.csv", 'r') as file:
+        with open(temp_obj.substitute(name_file='MyOrders.csv'), 'r') as file:
             df_orders = pd.read_csv(file, sep=';')
             df_orders = df_orders[(df_orders.optionbase == value)]
             MyOrders_ticker_list = []
@@ -673,7 +440,7 @@ def update_output_smile(value, n):
             title_text=f"Volatility smile of the option series <b>{value}<b>", uirevision="Don't change"
         )
         fig.update_layout(
-            margin=dict(l=0, r=2, t=30, b=0),
+            margin=dict(l=0, r=0, t=30, b=0),
         )
         # убрать сетку правой оси
         fig['layout']['yaxis2']['showgrid'] = False
@@ -683,129 +450,140 @@ def update_output_smile(value, n):
         print(f"Ошибка при обновлении графика: {str(e)}")
         raise PreventUpdate
 
-
-@app.callback(
-    Output('plot_history', 'figure', allow_duplicate=True),
-    [Input('dropdown-selection', 'value'),
-     Input('my_slider', 'value'),
-     Input('my-radio-buttons-final', 'value'),
-     Input('interval-component', 'n_intervals')],
-    prevent_initial_call=True)
+#Callback to update the line-graph history data (обновление данных графика истории)
+@app.callback(Output('plot_history', 'figure', allow_duplicate=True),
+               [Input('dropdown-selection', 'value'),
+                Input('my_slider', 'value'),
+                Input('my-radio-buttons-final', 'value'),
+                Input('interval-component', 'n_intervals'),
+                ],
+              prevent_initial_call=True)
 def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
-    try:
-        # Проверка загруженных файлов
-        if not os.path.exists("local_BaseAssetPriceHistoryDamp.csv") or \
-                not os.path.exists("local_OptionsVolaHistoryDamp.csv"):
-            raise Exception("Файлы не загружены")
+    # limit = 450 * slider_value
+    limit_time = datetime.datetime.now() - timedelta(hours=12 * slider_value)
 
-        df_BaseAssetPrice = pd.read_csv("local_BaseAssetPriceHistoryDamp.csv", sep=';')
-        df_vol_history = pd.read_csv("local_OptionsVolaHistoryDamp.csv", sep=';', low_memory=False)
-
-        # Проверка корректности данных
-        if df_BaseAssetPrice.empty or df_vol_history.empty:
-            raise Exception("Пустые данные в загруженных файлах")
-
-        # Обработка данных
+    # BaseAssetPrice history data DAMP
+    with open(temp_obj.substitute(name_file='BaseAssetPriceHistoryDamp.csv'), 'r') as file:
+        df_BaseAssetPrice = pd.read_csv(file, sep=';')
         df_BaseAssetPrice = df_BaseAssetPrice[(df_BaseAssetPrice.ticker == dropdown_value)]
-        if df_BaseAssetPrice.empty:
-            raise Exception(f"Нет данных для тикера {dropdown_value}")
-
-        df_BaseAssetPrice['DateTime'] = pd.to_datetime(df_BaseAssetPrice['DateTime'],
-                                                       format='%Y-%m-%d %H:%M:%S')
+        # df_BaseAssetPrice = df_BaseAssetPrice.tail(limit)
+        df_BaseAssetPrice['DateTime'] = pd.to_datetime(df_BaseAssetPrice['DateTime'], format='%Y-%m-%d %H:%M:%S')
         df_BaseAssetPrice.index = pd.DatetimeIndex(df_BaseAssetPrice['DateTime'])
-
-        limit_time = df_BaseAssetPrice['DateTime'].iloc[-1] - timedelta(hours=12 * slider_value)
         df_BaseAssetPrice = df_BaseAssetPrice[(df_BaseAssetPrice.DateTime > limit_time)]
+    # Close the file
+    file.close()
 
-        # Создание графика
-        fig = make_subplots(specs=[[{"secondary_y": True}]])
+    # ДАННЫЕ ИЗ DAMP/csv
+    # OptionsVolaHistoryDamp.csv history data options volatility
+    with open(temp_obj.substitute(name_file='OptionsVolaHistoryDamp.csv'), 'r') as file:
+        df_vol_history = pd.read_csv(file, sep=';')
+        df_vol_history = df_vol_history[(df_vol_history.base_asset_ticker == dropdown_value)]
+        # df_vol_history = df_vol_history.tail(limit * len(df_vol_history['expiration_datetime'].unique()) * 2) # глубина истории по количеству серий
 
-        for d_exp in sorted(df_vol_history['expiration_datetime'].unique()):
-            dff = df_vol_history[df_vol_history.expiration_datetime == d_exp]
-            fig.add_trace(go.Scatter(
-                x=dff['DateTime'],
-                y=dff['Real_vol'],
-                legendgroup="group",
-                legendgrouptitle_text="RealVol",
-                mode='lines+text',
-                name=d_exp
-            ), secondary_y=True)
+        df_vol_history['DateTime'] = pd.to_datetime(df_vol_history['DateTime'], format='%Y-%m-%d %H:%M:%S')
+        df_vol_history.index = pd.DatetimeIndex(df_vol_history['DateTime'])
+        df_vol_history = df_vol_history[(df_vol_history.type == radiobutton_value)]
+        df_vol_history = df_vol_history[(df_vol_history.DateTime > limit_time)]
+        # print(df_vol_history)
+    # Close the file
+    file.close()
 
-        fig.update_layout(
-            title_text=f'The history of the volatility of the central strike of the option series <b>{dropdown_value}<b>',
-            uirevision="Don't change"
-        )
+    # Create figure with secondary y-axis
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
 
-        return fig
+    # График истории волатильности ПО ДАННЫМ ИЗ DAMP (из CSV OptionsVolaHistoryDamp.csv)
+    for d_exp in sorted(df_vol_history['expiration_datetime'].unique()):
+        dff = df_vol_history[df_vol_history.expiration_datetime == d_exp]
+        fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['Real_vol'],
+                                 legendgroup="group",  # this can be any string, not just "group"
+                                 legendgrouptitle_text="RealVol",
+                                 mode='lines+text',
+                                 name=d_exp), secondary_y=True,)
+    fig.update_layout(legend_title_text=radiobutton_value)
 
-    except Exception as e:
-        print(f"Ошибка в callback: {str(e)}")
-        raise PreventUpdate
+    # График истории БИРЖЕВОЙ волатильности (из CSV OptionsVolaHistoryDamp.csv)
+    for d_exp in sorted(df_vol_history['expiration_datetime'].unique()):
+        dff = df_vol_history[df_vol_history.expiration_datetime == d_exp]
+        fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['Quik_vol'], visible='legendonly',
+                                 legendgroup="group2",
+                                 legendgrouptitle_text="QuikVol",
+                                 mode='lines+text',
+                                 line=dict(color='gray', width=1, dash='dot'),
+                                 name=d_exp), secondary_y=True, )
+    fig.update_layout(legend=dict(groupclick="toggleitem"))
 
+    # График истории цены базового актива
+    fig.add_trace(go.Scatter(x=df_BaseAssetPrice['DateTime'], y=df_BaseAssetPrice['last_price'], mode='lines+text',
+                             name=dropdown_value, line=dict(color='gray', width=3, dash='dashdot')),
+                            secondary_y=False,)
 
-# Callback to update the table
+    # Убираем неторговое время
+    fig.update_xaxes(
+        rangebreaks=[
+            dict(bounds=["sat", "mon"]),  # hide weekends, eg. hide sat to before mon
+            dict(bounds=[24, 9], pattern="hour"),  # hide hours outside of 9am-24pm
+        ]
+    )
+
+    fig.update_layout(xaxis_title=None)
+
+    fig.update_layout(
+        title_text=f'The history of the volatility of the central strike of the option series <b>{dropdown_value}<b>', uirevision="Don't change"
+    )
+    fig.update_layout(
+        margin=dict(l=0, r=0, t=30, b=0),
+    )
+
+    return fig
+
+#Callback to update the table
 @app.callback(
     Output('table', 'data', allow_duplicate=True),
     [Input('interval-component', 'n_intervals'),
-     Input('dropdown-selection', 'value')],
+    Input('dropdown-selection', 'value')],
     prevent_initial_call=True)
 def updateTable(n, value):
-    try:
-        success, speed = download_file_from_server(sftp_client,
-                                                   temp_obj.substitute(name_file='MyPos.csv'),
-                                                   "local_MyPos.csv")
+    df_pos = pd.read_csv(temp_obj.substitute(name_file='MyPos.csv'), sep=';')
+    # Фильтрация строк по базовому активу
+    df_pos = df_pos[df_pos['optionbase'] == value]
 
-        if not success:
-            raise Exception("Ошибка при загрузке файла")
-
-        with open("local_MyPos.csv", 'r') as file:
-            df_pos = pd.read_csv(file, sep=';')
-        file.close()
-
-        df_pos = df_pos[df_pos['optionbase'] == value]
-        return df_pos.to_dict('records')
-    except Exception as e:
-        print(f"Ошибка в callback updateTable: {str(e)}")
-        raise PreventUpdate
-
+    return df_pos.to_dict('records')
 
 # Callback to update the graph-gauge
 @app.callback(
     Output('graph-gauge', 'value', allow_duplicate=True),
     [Input('interval-component', 'n_intervals'),
      Input('dropdown-selection', 'value')],
-    prevent_initial_call=True)
+    prevent_initial_call=True
+)
 def updateGauge(n, value):
-    try:
-        success, speed = download_file_from_server(sftp_client,
-            temp_obj.substitute(name_file='MyPos.csv'),
-            "local_MyPos.csv")
+    df_pos = pd.read_csv(temp_obj.substitute(name_file='MyPos.csv'), sep=';')
+    # Фильтрация строк по базовому активу
+    df_pos = df_pos[df_pos['optionbase'] == value]
 
-        if not success:
-            raise Exception("Ошибка при загрузке файла")
+    # TrueVega
+    tv_sum_positive = df_pos.loc[df_pos['net_pos'] > 0, 'TrueVega'].sum()
+    tv_sum_negative = df_pos.loc[df_pos['net_pos'] < 0, 'TrueVega'].sum()
+    tv_sum = abs(tv_sum_positive) + abs(tv_sum_negative)
+    if tv_sum == 0:
+        value = 0
+    else:
+        value = (abs(tv_sum_positive) / (abs(tv_sum_positive) + abs(tv_sum_negative))) * 10
+    return value
 
-        with open("local_MyPos.csv", 'r') as file:
-            df_pos = pd.read_csv(file, sep=';')
-        file.close()
-
-        df_pos = df_pos[df_pos['optionbase'] == value]
-
-        tv_sum_positive = df_pos.loc[df_pos['net_pos'] > 0, 'TrueVega'].sum()
-        tv_sum_negative = df_pos.loc[df_pos['net_pos'] < 0, 'TrueVega'].sum()
-        tv_sum = abs(tv_sum_positive) + abs(tv_sum_negative)
-        if tv_sum == 0:
-            value = 0
-        else:
-            value = (abs(tv_sum_positive) / (abs(tv_sum_positive) + abs(tv_sum_negative))) * 10
-        return value
-    except Exception as e:
-        print(f"Ошибка в callback updateGauge: {str(e)}")
-        raise PreventUpdate
+# # Callback to update the histogram TrueVega
+# @app.callback(
+#     Output('Hisogram_TrueVega', 'data', allow_duplicate=True),
+#     [Input('interval-component', 'n_intervals'),
+#      Input('dropdown-selection', 'value')],
+#     prevent_initial_call=True
+# )
+# def updateGauge(n, value):
+#     df_pos = pd.read_csv(temp_obj.substitute(name_file='MyPos.csv'), sep=';')
+#     # Фильтрация строк по базовому активу
+#     df_pos = df_pos[df_pos['optionbase'] == value]
+#     return df_pos.to_dict('records')
 
 if __name__ == '__main__':
-    try:
-        app.run_server(debug=True)
-    finally:
-        if 'sftp_client' in locals():
-            sftp_client.close()
-            print('SFTP соединение закрыто')
+
+    app.run(debug=False) # Run the Dash app
