@@ -10,5 +10,8 @@
     </content>
     <orderEntry type="jdk" jdkName="Python 3.12 (CenterStrikeVolatility_API)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
+    <orderEntry type="module" module-name="FinamPy" />
+    <orderEntry type="module" module-name="FinLabPy" />
+    <orderEntry type="module" module-name="AlorPy" />
   </component>
 </module>

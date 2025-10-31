@@ -1,21 +1,25 @@
 MAP = {
-    'RIM5': {
+    'RIZ5': {
         'strike_step': 2500,
         'max_strikes_count': 13,
     },
-    'SiM5': {
+    'SiZ5': {
         'strike_step': 1000,
         'max_strikes_count': 13,
     },
-    'CRM5': {
-        'strike_step': 0.25,
+    'RIH6': {
+        'strike_step': 2500,
         'max_strikes_count': 13,
     },
-    'GZM5': {
+    'SiH6': {
+        'strike_step': 1000,
+        'max_strikes_count': 13,
+    },
+    'SRZ5': {
         'strike_step': 250,
         'max_strikes_count': 13,
     },
-    'SRM5': {
+    'SRH6': {
         'strike_step': 250,
         'max_strikes_count': 13,
     },

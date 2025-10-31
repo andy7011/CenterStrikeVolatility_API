@@ -3,5 +3,9 @@
   <component name="VcsDirectoryMappings">
     <mapping directory="" vcs="Git" />
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/AlorPy" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/FinLabPy" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/FinamPy" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/QuikPy" vcs="Git" />
   </component>
 </project>
