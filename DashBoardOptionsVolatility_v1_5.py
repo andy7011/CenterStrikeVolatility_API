@@ -571,11 +571,10 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
 @app.callback(Output('MyPosTiltHistory', 'figure', allow_duplicate=True),
               [Input('dropdown-selection', 'value'),
                Input('my_slider', 'value'),
-               Input('my-radio-buttons-final', 'value'),
                Input('interval-component', 'n_intervals'),
                ],
               prevent_initial_call=True)
-def update_output_MyPosTiltn(dropdown_value, slider_value, radiobutton_value, n):
+def update_output_MyPosTiltn(dropdown_value, slider_value, n):
     # limit = 450 * slider_value
     limit_time = datetime.datetime.now() - timedelta(hours=12 * slider_value)
 
@@ -618,7 +617,7 @@ def update_output_MyPosTiltn(dropdown_value, slider_value, radiobutton_value, n)
                                  mode='lines+text',
                                  line=dict(dash='dot'),
                                  name=d_exp), secondary_y=True, )
-    fig.update_layout(legend_title_text=radiobutton_value)
+    # fig.update_layout(legend_title_text=radiobutton_value)
 
     # График истории наклона моей позиции ПО ценам из стакана (из CSV MyPosTilt.csv)
     for d_exp in sorted(df_MyPosTilt['expdate'].unique()):
@@ -628,7 +627,7 @@ def update_output_MyPosTiltn(dropdown_value, slider_value, radiobutton_value, n)
                                  legendgrouptitle_text="RealTilt",
                                  mode='lines+text',
                                  name=d_exp), secondary_y=True, )
-    fig.update_layout(legend_title_text=radiobutton_value)
+    # fig.update_layout(legend_title_text=radiobutton_value)
 
     # График истории наклона моей позиции по БИРЖЕВОЙ волатильности QuikTilt (из CSV MyPosTilt.csv)
     for d_exp in sorted(df_MyPosTilt['expdate'].unique()):
@@ -669,11 +668,10 @@ def update_output_MyPosTiltn(dropdown_value, slider_value, radiobutton_value, n)
 @app.callback(Output('naklon_history', 'figure', allow_duplicate=True),
               [Input('dropdown-selection', 'value'),
                Input('my_slider', 'value'),
-               Input('my-radio-buttons-final', 'value'),
                Input('interval-component', 'n_intervals'),
                ],
               prevent_initial_call=True)
-def update_output_history_naklon(dropdown_value, slider_value, radiobutton_value, n):
+def update_output_history_naklon(dropdown_value, slider_value, n):
     # limit = 450 * slider_value
     limit_time = datetime.datetime.now() - timedelta(hours=12 * slider_value)
 
@@ -715,7 +713,7 @@ def update_output_history_naklon(dropdown_value, slider_value, radiobutton_value
                                  legendgrouptitle_text="Real",
                                  mode='lines+text',
                                  name=d_exp), secondary_y=True, )
-    fig.update_layout(legend_title_text=radiobutton_value)
+    # fig.update_layout(legend_title_text=radiobutton_value)
 
     # График истории наклона БИРЖЕВОЙ улыбки (из CSV OptionsSmileNaklonHistory.csv)
     for d_exp in sorted(df_vol_history_naklon['expiration_datetime'].unique()):
