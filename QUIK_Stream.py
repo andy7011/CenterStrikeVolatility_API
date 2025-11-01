@@ -1,11 +1,17 @@
 import logging  # Выводим лог на консоль и в файл
 from datetime import datetime, UTC  # Дата и время
 from locale import currency
+import math
+import numpy as np
+from scipy.stats import norm
 
 from QuikPy import QuikPy  # Работа с QUIK из Python через LUA скрипты QUIK#
 
 
 futures_firm_id = 'SPBFUT'  # Код фирмы для фьючерсов. Измените, если требуется, на фирму, которую для фьючерсов поставил ваш брокер
+
+_RISK_FREE_INTEREST_RATE = 0  # risk-free interest rate
+_VOLATILITY_CALCULATION_ITERATIONS_LIMIT = 100
 
 
 def get_time_to_maturity(expiration_datetime: int):
