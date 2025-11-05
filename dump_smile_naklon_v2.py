@@ -119,7 +119,7 @@ def my_function():
     try:
         model_from_api = get_object_from_json_endpoint('https://option-volatility-dashboard.tech/dump_model')
 
-        base_asset_list = model_from_api[0]
+        base_asset_list = model_from_api[0] # список базовых активов
         strikes_map_up = {}
         adjacent_strikes_map_up = {}
         strikes_map_down = {}
@@ -183,10 +183,10 @@ def my_function():
         # print('\n')
 
         current_datetime = datetime.now()
-        print('\n')
+        # print('\n')
         print(f"Дата и время: {current_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
 
-        option_list = model_from_api[1]  # отфильтрованный список опционов
+        option_list = model_from_api[1]  # список опционов
         filtered_option_list_up = []
         adjacent_filtered_option_list_up = []
         filtered_option_list_down = []
