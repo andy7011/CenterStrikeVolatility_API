@@ -120,7 +120,7 @@ def my_function():
     try:
         model_from_api = get_object_from_json_endpoint('https://option-volatility-dashboard.tech/dump_model')
 
-        base_asset_list = model_from_api[0] # Фьючерсы
+        base_asset_list = model_from_api[0] # список базовых активов
         central_strikes_map = {}
         with open(temp_obj.substitute(name_file='BaseAssetPriceHistoryDamp.csv'), 'a', newline='') as f:
             writer = csv.writer(f, delimiter=";", lineterminator="\r")

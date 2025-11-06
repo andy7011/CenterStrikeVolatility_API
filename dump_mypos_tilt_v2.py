@@ -129,21 +129,19 @@ def my_function():
         return
 
     try:
+        current_datetime = datetime.now()
+
         # My positions data
         with open(temp_obj.substitute(name_file='MyPos.csv'), 'r') as file:
             df_table = pd.read_csv(file, sep=';')
-        # # Close the file explicitly file.close()
-        # file.close()
-        # print('\n df_table.columns:\n', df_table.columns)
-        # print('df_table:\n', df_table)
+        if df_table.empty:
+            print(f"{current_datetime.strftime('%Y-%m-%d %H:%M:%S')} Без позиции")
+            return
         base_asset_list = df_table['optionbase'].unique()
-        # print('base_asset_list:\n', base_asset_list)
         tickers_list = df_table['ticker'].tolist()
-        # print('tickers_list:\n', tickers_list)
 
         model_from_api = get_object_from_json_endpoint('https://option-volatility-dashboard.tech/dump_model')
 
-        current_datetime = datetime.now()
         # print('\n')
         print(f"Дата и время: {current_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
 

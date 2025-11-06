@@ -10,7 +10,6 @@ from app.central_strike import _calculate_central_strike
 from app.supported_base_asset import MAP
 
 """
-Вариант кода v2 - расчет наклона улыбки с учетом величины отклонения базового актива от центрального страйка
 функция is_business_time() проверяет:
 Выходные дни (суббота, воскресенье)
 Нерабочее время (23:51-8:59)
@@ -106,8 +105,12 @@ def clean_old_records(file_path):
 
 
 # Выполняем очистку при запуске
+clean_old_records(temp_obj.substitute(name_file='BaseAssetPriceHistoryDamp.csv'))
+print(f"Очистка файла истории цены базового актива BaseAssetPriceHistoryDamp.csv от старых записей (старше 14 дней) завершена")
+clean_old_records(temp_obj.substitute(name_file='OptionsVolaHistoryDamp.csv'))
+print(f"Очистка файла исторических данных волатильности опционов на ЦС OptionsVolaHistoryDamp.csv от старых записей (старше 14 дней) завершена")
 clean_old_records(temp_obj.substitute(name_file='OptionsSmileNaklonHistory.csv'))
-print(f"Очистка файла OptionsSmileNaklonHistory.csv от старых записей (старше 14 дней) завершена")
+print(f"Очистка файла истории наклона улыбки OptionsSmileNaklonHistory.csv от старых записей (старше 14 дней) завершена")
 
 
 def my_function():
@@ -120,6 +123,27 @@ def my_function():
         model_from_api = get_object_from_json_endpoint('https://option-volatility-dashboard.tech/dump_model')
 
         base_asset_list = model_from_api[0] # список базовых активов
+
+        # Сохраняем цены базовых активов в файл
+        central_strikes_map = {}
+        with open(temp_obj.substitute(name_file='BaseAssetPriceHistoryDamp.csv'), 'a', newline='') as f:
+            writer = csv.writer(f, delimiter=";", lineterminator="\r")
+            for asset in base_asset_list:
+                DateTime = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                ticker = asset.get('_ticker')
+                base_asset_last_price = asset.get('_last_price')
+                data_price = [DateTime, ticker, base_asset_last_price]
+                writer.writerow(data_price)
+                strike_step = MAP[ticker]['strike_step']
+                central_strike = _calculate_central_strike(base_asset_last_price, strike_step)
+                central_strikes_map[ticker] = central_strike
+                asset.update({
+                    'central_strike': central_strike
+                })
+        f.close()
+
+        # Находим центральный страйк для каждого базового актива, а также страйки смещенные влево и
+        # вправо на величину offset и рядом расположенные (adjacent) страйки
         strikes_map_up = {}
         adjacent_strikes_map_up = {}
         strikes_map_down = {}
@@ -156,7 +180,7 @@ def my_function():
             # print(f"Верхний страйк для {ticker}: {offset_strike_plus}")
 
             adjacent_base_asset_last_price_offset_plus = base_asset_last_price + (
-                        strike_step * (offset + adjacent_strike))
+                    strike_step * (offset + adjacent_strike))
             adjacent_offset_strike_plus = _calculate_central_strike(adjacent_base_asset_last_price_offset_plus,
                                                                     strike_step)  # Верхний смежный страйк
             adjacent_strikes_map_up[ticker] = adjacent_offset_strike_plus
@@ -185,14 +209,20 @@ def my_function():
         current_datetime = datetime.now()
         print(f"Дата и время: {current_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
 
-        option_list = model_from_api[1]  # список опционов
+        option_list = model_from_api[1] # список опционов
+        filtered_option_list = []
         filtered_option_list_up = []
         adjacent_filtered_option_list_up = []
         filtered_option_list_down = []
         adjacent_filtered_option_list_down = []
         for option in option_list:
             base_asset_ticker = option['_base_asset_ticker']
-            if option['_strike'] == strikes_map_up[base_asset_ticker] and option[
+            if option['_strike'] == central_strikes_map[base_asset_ticker]:
+                option['datetime'] = current_datetime
+                date_object = datetime.strptime(option['_expiration_datetime'], "%a, %d %b %Y %H:%M:%S GMT").date()
+                option['_expiration_datetime'] = date_object.strftime('%Y-%m-%d')
+                filtered_option_list.append(option)
+            elif option['_strike'] == strikes_map_up[base_asset_ticker] and option[
                 '_type'] == 'C':  # фильтрация опционов по страйкам
                 option['datetime'] = current_datetime
                 date_object = datetime.strptime(option['_expiration_datetime'], "%a, %d %b %Y %H:%M:%S GMT").date()
@@ -216,11 +246,60 @@ def my_function():
                 date_object = datetime.strptime(option['_expiration_datetime'], "%a, %d %b %Y %H:%M:%S GMT").date()
                 option['_expiration_datetime'] = date_object.strftime('%Y-%m-%d')
                 adjacent_filtered_option_list_down.append(option)
+        # print(f"Фильтрованный список опционов: {filtered_option_list}")
         # print(f"Фильтрованный список опционов UP: {filtered_option_list_up}")
         # print(f"Фильтрованный список смежных опционов UP: {adjacent_filtered_option_list_up}")
         # print(f"Фильтрованный список опционов DOWN: {filtered_option_list_down}")
         # print(f"Фильтрованный список смежных опционов DOWN: {adjacent_filtered_option_list_down}")
 
+        # Запись в файл волатильности call и put на центральном страйке на текущую минуту
+        with open(temp_obj.substitute(name_file='OptionsVolaHistoryDamp.csv'), 'a', newline='') as f:
+            writer = csv.writer(f, delimiter=";", lineterminator="\r")
+            for option in filtered_option_list:
+                current_DateTimestamp = datetime.now()
+                currentTimestamp = int(datetime.timestamp(current_DateTimestamp))
+
+                # # Проверяем наличие ключа и что значение не NaN
+                # if '_volatility' in option and option['_volatility'] == option['_volatility']:
+                # option['_volatility'] = round(option['_volatility'], 2) # округление до двух знаков после запятой
+
+                if option['_last_price_timestamp'] is not None and currentTimestamp - option[
+                    '_last_price_timestamp'] < last_price_lifetime:
+                    Real_vol = option['_last_price_iv']
+                else:
+                    if option['_ask_iv'] is None or option['_bid_iv'] is None:
+                        Real_vol = option['_volatility']
+                    else:
+                        if option['_ask_iv'] is not None and option['_bid_iv'] is not None and \
+                                option['_ask_iv'] > option['_volatility'] > option['_bid_iv']:
+                            Real_vol = option['_volatility']
+                        else:
+                            if option['_ask_iv'] < option['_volatility']:
+                                Real_vol = option['_ask_iv']
+                            else:
+                                if option['_bid_iv'] > option['_volatility']:
+                                    Real_vol = option['_bid_iv']
+                if Real_vol is None:
+                    Real_vol = option['_volatility']
+
+                option['_real_vol'] = Real_vol
+                if option['_type'] == 'C':
+                    option['_type'] = 'Call'
+                elif option['_type'] == 'P':
+                    option['_type'] = 'Put'
+
+                data_options_vola = [current_DateTimestamp.strftime('%Y-%m-%d %H:%M:%S'), option['_type'],
+                                     option['_expiration_datetime'], option['_base_asset_ticker'], Real_vol,
+                                     option['_volatility']]
+                writer.writerow(data_options_vola)
+        f.close()
+
+        df_vol_history = pd.DataFrame.from_dict(filtered_option_list, orient='columns')
+        df_vol_history.set_index('datetime', inplace=True)
+        df_vol_history.index = df_vol_history.index.strftime('%Y-%m-%d %H:%M:%S')
+
+
+        # Запись в файл значений наклона улыбки волатильности на текущую минуту
         with open(temp_obj.substitute(name_file='OptionsSmileNaklonHistory.csv'), 'a', newline='') as f:
             writer = csv.writer(f, delimiter=";", lineterminator="\r")
 
@@ -232,7 +311,7 @@ def my_function():
                 currentTimestamp = int(datetime.timestamp(current_DateTimestamp))
 
                 # print('\n')
-                print(option_up['_base_asset_ticker'], option_up['_expiration_datetime'])
+                # print(option_up['_base_asset_ticker'], option_up['_expiration_datetime'])
 
                 # print(f"option_up: {option_up['_last_price_iv'], option_up['_last_price_timestamp'], option_up['_ask_iv'], option_up['_bid_iv']}")
                 if option_up['_last_price_iv'] is not None and option_up[
@@ -377,7 +456,7 @@ def my_function():
 
                     Real = Real_vol_up - Real_vol_down
                     Quik = Quik_up - Quik_down
-                print(f"Real, Quik: {round(Real, 2), round(Quik, 2)}")
+                # print(f"Real, Quik: {round(Real, 2), round(Quik, 2)}")
 
                 data_options_naklon = [current_DateTimestamp.strftime('%Y-%m-%d %H:%M:%S'),
                                        option_up['_expiration_datetime'], option_up['_base_asset_ticker'],
