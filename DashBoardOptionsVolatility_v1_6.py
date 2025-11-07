@@ -161,13 +161,14 @@ df['expiration_date'] = df['_expiration_datetime'].dt.strftime('%d.%m.%Y')
 # Tabs content
 tab1_content = [dcc.Graph(id='MyPosTiltHistory', style={'margin-top': 10})]
 tab2_content = [dcc.Graph(id='naklon_history', style={'margin-top': 10})]
-tab3_content = [dcc.RadioItems(options=['Call', 'Put'],
-                       value='Call',
-                       inline=True,
-                       style=dict(display='flex', justifyContent='right'),
-                       id='my-radio-buttons-final'),
-                # # График истории
-                dcc.Graph(id='plot_history', style={'margin-top': 10})]
+tab3_content = [# График истории
+                dcc.Graph(id='plot_history', style={'margin-top': 10}),
+                dcc.RadioItems(options=['Call', 'Put'],
+                               value='Call',
+                               inline=True,
+                               style=dict(display='flex', justifyContent='right'),
+                               id='my-radio-buttons-final'),
+            ]
 tab4_content = [html.Div(id='intermediate-value', style={'display': 'none'}),
         dash_table.DataTable(id='table', data=df_table.to_dict('records'), page_size=20,
                              style_table={'max-width': '50px'},
@@ -296,6 +297,7 @@ app.layout = html.Div(children=[
                                6: '3d',
                                10: '5d',
                                14: '7d',
+                               20: '10d',
                                28: '14d'
                            },
                            value=6
@@ -374,7 +376,7 @@ def update_output_smile(value, n):
             MyPos_ticker_list = []
             for i in range(len(df_table)):
                 MyPos_ticker_list.append(df_table['ticker'][i])
-            # DataFrame для отрисовки баланса rueVega
+            # DataFrame для отрисовки баланса TrueVega
             df_table_base = df_table
             df_table_base = df_table_base[df_table_base.optionbase == value]
         # Close the file explicitly file.close()
