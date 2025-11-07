@@ -168,6 +168,19 @@ tab3_content = [dcc.RadioItems(options=['Call', 'Put'],
                        id='my-radio-buttons-final'),
                 # # График истории
                 dcc.Graph(id='plot_history', style={'margin-top': 10})]
+tab4_content = [html.Div(id='intermediate-value', style={'display': 'none'}),
+        dash_table.DataTable(id='table', data=df_table.to_dict('records'), page_size=20,
+                             style_table={'max-width': '50px'},
+                             style_data_conditional=[
+                                 {
+                                     'if': {
+                                         'filter_query': '{P/L} > 1',
+                                         'column_id': 'P/L'
+                                     },
+                                     'backgroundColor': '#3D9970',
+                                     'color': 'white'
+                                 }
+                             ])]
 
 app = dash.Dash(external_stylesheets=[dbc.themes.BOOTSTRAP])
 app.layout = html.Div(children=[
@@ -228,7 +241,8 @@ app.layout = html.Div(children=[
         dbc.Tabs([
                     dbc.Tab(tab1_content, label='MyPos'),
                     dbc.Tab(tab2_content, label='Наклон улыбки'),
-                    dbc.Tab(tab3_content, label='Volatility history')
+                    dbc.Tab(tab3_content, label='Volatility history'),
+                    dbc.Tab(tab4_content, label='MyPos table'),
                 ]),
 
 
@@ -249,20 +263,20 @@ app.layout = html.Div(children=[
         # # График истории
         # dcc.Graph(id='plot_history'),
 
-        # Таблица моих позиций
-        html.Div(id='intermediate-value', style={'display': 'none'}),
-        dash_table.DataTable(id='table', data=df_table.to_dict('records'), page_size=20,
-                             style_table={'max-width': '50px'},
-                             style_data_conditional=[
-                                 {
-                                     'if': {
-                                         'filter_query': '{P/L} > 1',
-                                         'column_id': 'P/L'
-                                     },
-                                     'backgroundColor': '#3D9970',
-                                     'color': 'white'
-                                 }
-                             ]),
+        # # Таблица моих позиций
+        # html.Div(id='intermediate-value', style={'display': 'none'}),
+        # dash_table.DataTable(id='table', data=df_table.to_dict('records'), page_size=20,
+        #                      style_table={'max-width': '50px'},
+        #                      style_data_conditional=[
+        #                          {
+        #                              'if': {
+        #                                  'filter_query': '{P/L} > 1',
+        #                                  'column_id': 'P/L'
+        #                              },
+        #                              'backgroundColor': '#3D9970',
+        #                              'color': 'white'
+        #                          }
+        #                      ]),
 
         # Интервал обновления данных
         dcc.Interval(
