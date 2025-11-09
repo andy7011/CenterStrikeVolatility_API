@@ -60,21 +60,21 @@ if __name__ == '__main__':  # Точка входа при запуске это
                 si = qp_provider.get_symbol_info(class_code, active_futures_holding['sec_code'])  # Спецификация тикера
                 # print(si)
                 option_type = qp_provider.get_param_ex(class_code, sec_code, 'OPTIONTYPE', trans_id=0)['data']['param_image'] # Тип опциона
-                print(f'Тип опциона option_type: {option_type}')
+                print(f'option_type - Тип опциона: {option_type}')
                 opt_price = qp_provider.get_param_ex(class_code, sec_code, 'LAST', trans_id=0)['data']['param_value'] # Цена последней сделки по опциону
-                print(f'Цена последней сделки opt_price: {opt_price}')
+                print(f'opt_price - Цена последней сделки: {opt_price}')
                 asset_price = qp_provider.get_param_ex('SPBFUT', si['base_active_seccode'], 'LAST', trans_id=0)['data']['param_value'] # Цена последней сделки базового актива
-                print(f'Цена последней сделки базового актива asset_price: {asset_price}')
+                print(f'asset_price - Цена последней сделки базового актива: {asset_price}')
                 VOLATILITY = qp_provider.get_param_ex(class_code, sec_code, 'VOLATILITY', trans_id=0)['data']['param_value'] # Волатильность опциона
-                print(f'Волатильность опциона VOLATILITY: {VOLATILITY}')
+                print(f'VOLATILITY - Волатильность опциона: {VOLATILITY}')
                 THEORPRICE = qp_provider.get_param_ex(class_code, sec_code, 'THEORPRICE', trans_id=0)['data']['param_value'] # Теоретическая цена
-                print(f'Теоретическая цена THEORPRICE: {THEORPRICE}')
+                print(f'THEORPRICE - Теоретическая цена опциона: {THEORPRICE}')
                 EXPDATE_image = qp_provider.get_param_ex(class_code, sec_code, 'EXPDATE', trans_id=0)['data']['param_image'] # Дата исполнения инструмента
                 EXPDATE_str = datetime.strptime(EXPDATE_image, "%d.%m.%Y").strftime("%Y-%m-%d")
                 EXPDATE = datetime.strptime(EXPDATE_str, "%Y-%m-%d")
-                print(f'Дата исполнения инструмента EXPDATE: {EXPDATE}')
+                print(f'EXPDATE - Дата исполнения инструмента: {EXPDATE}')
                 time_to_maturity = get_time_to_maturity(EXPDATE)
-                print(f'Время до исполнения инструмента time_to_maturity: {time_to_maturity}')
+                print(f'time_to_maturity - Время до исполнения инструмента в долях года: {time_to_maturity}')
 
 
                 logger.info(f'- Позиция {si["class_code"]}.{si["sec_code"]} ({si["short_name"]}) {active_futures_holding["totalnet"]} @ {active_futures_holding["cbplused"]}')
