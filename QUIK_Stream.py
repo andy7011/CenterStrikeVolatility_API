@@ -15,6 +15,16 @@ futures_firm_id = 'SPBFUT'  # Код фирмы для фьючерсов. Из�
 _RISK_FREE_INTEREST_RATE = 0  # risk-free interest rate
 _VOLATILITY_CALCULATION_ITERATIONS_LIMIT = 100
 
+'''
+    :param S: Asset price
+    :param K: Strike price
+    :param T: Time to maturity
+    :param r: risk-free rate
+    :param sigma: volatility
+    :param cp: Call or Put
+    :return: call price
+'''
+
 
 def get_time_to_maturity(expiration_datetime: int):
     difference = expiration_datetime - datetime.utcnow()
@@ -60,13 +70,15 @@ if __name__ == '__main__':  # Точка входа при запуске это
                 sec_code = active_futures_holding["sec_code"]  # Код тикера
                 class_code = qp_provider.get_security_class(class_codes, sec_code)['data']  # Код режима торгов из всех режимов по тикеру
                 si = qp_provider.get_symbol_info(class_code, active_futures_holding['sec_code'])  # Спецификация тикера
-                # print(si)
+                print(si)
                 option_type_str = qp_provider.get_param_ex(class_code, sec_code, 'OPTIONTYPE', trans_id=0)['data']['param_image'] # Тип опциона
                 print(f'option_type - Тип опциона: {option_type_str}')
                 opt_price = qp_provider.get_param_ex(class_code, sec_code, 'LAST', trans_id=0)['data']['param_value'] # Цена последней сделки по опциону
                 print(f'opt_price - Цена последней сделки: {opt_price}')
                 asset_price = qp_provider.get_param_ex('SPBFUT', si['base_active_seccode'], 'LAST', trans_id=0)['data']['param_value'] # Цена последней сделки базового актива
-                print(f'asset_price - Цена последней сделки базового актива: {asset_price}')
+                print(f'asset_price - Цена последней сделки базового актива: {asset_price}, тип: {type(asset_price)}')
+                STRIKE = qp_provider.get_param_ex(class_code, sec_code, 'STRIKE', trans_id=0)['data']['param_value'] # Страйк опциона
+                print(f'STRIKE - Страйк опциона: {STRIKE}, тип: {type(STRIKE)}')
                 VOLATILITY = qp_provider.get_param_ex(class_code, sec_code, 'VOLATILITY', trans_id=0)['data']['param_value'] # Волатильность опциона
                 print(f'VOLATILITY - Волатильность опциона: {VOLATILITY}')
                 THEORPRICE = qp_provider.get_param_ex(class_code, sec_code, 'THEORPRICE', trans_id=0)['data']['param_value'] # Теоретическая цена
@@ -78,7 +90,9 @@ if __name__ == '__main__':  # Точка входа при запуске это
                 time_to_maturity = get_time_to_maturity(EXPDATE)
                 print(f'time_to_maturity - Время до исполнения инструмента в долях года: {time_to_maturity}')
                 opt_type_converted = option_type.PUT if option_type_str == "Put" else option_type.CALL
-                option = Option(si["sec_code"], si["base_active_seccode"], EXPDATE, si["option_strike"], opt_type_converted)
+                print(f'Strike K: {si["option_strike"]}, тип: {type(si["option_strike"])}')
+                # option = Option(si["sec_code"], si["base_active_seccode"], EXPDATE, STRIKE, opt_type_converted)
+                option = Option(si["sec_code"], si["base_active_seccode"], time_to_maturity, STRIKE, opt_type_converted)
                 print(option)
                 opt_volatility = implied_volatility.get_iv_for_option_price(asset_price, option, opt_price)
                 print(opt_volatility)
