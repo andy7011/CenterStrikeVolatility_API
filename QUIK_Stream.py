@@ -5,8 +5,10 @@ import math
 import numpy as np
 from scipy.stats import norm
 
+import implied_volatility
+import option_type
 from QuikPy import QuikPy  # Работа с QUIK из Python через LUA скрипты QUIK#
-
+from option import Option
 
 futures_firm_id = 'SPBFUT'  # Код фирмы для фьючерсов. Измените, если требуется, на фирму, которую для фьючерсов поставил ваш брокер
 
@@ -59,8 +61,8 @@ if __name__ == '__main__':  # Точка входа при запуске это
                 class_code = qp_provider.get_security_class(class_codes, sec_code)['data']  # Код режима торгов из всех режимов по тикеру
                 si = qp_provider.get_symbol_info(class_code, active_futures_holding['sec_code'])  # Спецификация тикера
                 # print(si)
-                option_type = qp_provider.get_param_ex(class_code, sec_code, 'OPTIONTYPE', trans_id=0)['data']['param_image'] # Тип опциона
-                print(f'option_type - Тип опциона: {option_type}')
+                option_type_str = qp_provider.get_param_ex(class_code, sec_code, 'OPTIONTYPE', trans_id=0)['data']['param_image'] # Тип опциона
+                print(f'option_type - Тип опциона: {option_type_str}')
                 opt_price = qp_provider.get_param_ex(class_code, sec_code, 'LAST', trans_id=0)['data']['param_value'] # Цена последней сделки по опциону
                 print(f'opt_price - Цена последней сделки: {opt_price}')
                 asset_price = qp_provider.get_param_ex('SPBFUT', si['base_active_seccode'], 'LAST', trans_id=0)['data']['param_value'] # Цена последней сделки базового актива
@@ -75,7 +77,11 @@ if __name__ == '__main__':  # Точка входа при запуске это
                 print(f'EXPDATE - Дата исполнения инструмента: {EXPDATE}')
                 time_to_maturity = get_time_to_maturity(EXPDATE)
                 print(f'time_to_maturity - Время до исполнения инструмента в долях года: {time_to_maturity}')
-
+                opt_type_converted = option_type.PUT if option_type_str == "Put" else option_type.CALL
+                option = Option(si["sec_code"], si["base_active_seccode"], EXPDATE, si["option_strike"], opt_type_converted)
+                print(option)
+                opt_volatility = implied_volatility.get_iv_for_option_price(asset_price, option, opt_price)
+                print(opt_volatility)
 
                 logger.info(f'- Позиция {si["class_code"]}.{si["sec_code"]} ({si["short_name"]}) {active_futures_holding["totalnet"]} @ {active_futures_holding["cbplused"]}')
                 info_portfolio = {'sec_code': si['sec_code'], 'base_active_seccode': si['base_active_seccode'], 'class_code': si['class_code'], 'exp_date': si['exp_date'], 'option_strike': si['option_strike'], 'totalnet': active_futures_holding['totalnet'], 'avrposnprice': active_futures_holding['avrposnprice']}

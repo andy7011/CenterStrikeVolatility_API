@@ -26,7 +26,7 @@ def get_cached_data(url):
     return get_object_from_json_endpoint_with_retry(url)
 
 
-temp_str = 'C:\\Users\\шадрин\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 
@@ -92,8 +92,8 @@ def get_object_from_json_endpoint_with_retry(url, method='GET', params={}, max_d
             raise
 
 
-# Create the app
-app = dash.Dash(__name__)
+# # Create the app
+# app = dash.Dash(__name__)
 
 # My positions data
 with open(temp_obj.substitute(name_file='MyPos.csv'), 'r') as file:
@@ -294,6 +294,7 @@ app.layout = html.Div(children=[
                            marks={
                                1: '0.5d',
                                2: '1d',
+                               4: '2d',
                                6: '3d',
                                10: '5d',
                                14: '7d',
