@@ -73,7 +73,8 @@ if __name__ == '__main__':  # Точка входа при запуске это
                     # print(f'option_type - Тип опциона: {option_type_str}')
                     opt_type_converted = option_type.PUT if option_type_str == "Put" else option_type.CALL
 
-                    opt_price_str = qp_provider.get_param_ex(class_code, sec_code, 'LAST', trans_id=0)['data']['param_value'] # Цена последней сделки по опциону
+                    # Цена последней сделки по опциону (LAST)
+                    opt_price_str = qp_provider.get_param_ex(class_code, sec_code, 'LAST', trans_id=0)['data']['param_value']
                     opt_price = float(opt_price_str)
                     # print(f'opt_price - Цена последней сделки: {opt_price}, тип: {type(opt_price)}')
 
@@ -103,7 +104,7 @@ if __name__ == '__main__':  # Точка входа при запуске это
 
                     # Волатильность опциона (sigma)
                     VOLATILITY = qp_provider.get_param_ex(class_code, sec_code, 'VOLATILITY', trans_id=0)['data']['param_value'] # Волатильность опциона
-                    VOLATILITY = float(VOLATILITY)
+                    VOLATILITY = float(VOLATILITY) / 100
                     # print(f'VOLATILITY - Волатильность опциона: {VOLATILITY}, тип: {type(VOLATILITY)}')
 
                     ## Теоретическая цена
@@ -121,6 +122,18 @@ if __name__ == '__main__':  # Точка входа при запуске это
                     time_to_maturity = get_time_to_maturity(EXPDATE)
                     # print(f'time_to_maturity - Время до исполнения инструмента в долях года: {time_to_maturity}, тип: {type(time_to_maturity)}')
 
+                    # Число дней до погашения
+                    DAYS_TO_MAT_DATE = qp_provider.get_param_ex(class_code, sec_code, 'DAYS_TO_MAT_DATE', trans_id=0)['data']['param_value']
+                    DAYS_TO_MAT_DATE = float(DAYS_TO_MAT_DATE)
+                    # print(f'DAYS_TO_MAT_DATE - Число дней до погашения: {DAYS_TO_MAT_DATE}, тип: {type(DAYS_TO_MAT_DATE)}')
+
+                    # Вычисление Vega
+                    vega = implied_volatility._vega(asset_price, VOLATILITY, STRIKE, time_to_maturity, implied_volatility._RISK_FREE_INTEREST_RATE, opt_type_converted)
+                    Vega = vega / 100
+
+                    # Вычисление TrueVega
+                    TrueVega = Vega / (DAYS_TO_MAT_DATE ** 0.5)
+
                     # Создание опциона
                     option = Option(si["sec_code"], si["base_active_seccode"], EXPDATE, STRIKE, opt_type_converted)
 
@@ -129,13 +142,11 @@ if __name__ == '__main__':  # Точка входа при запуске это
                     opt_volatility_bid = implied_volatility.get_iv_for_option_price(asset_price, option, BID)
                     opt_volatility_offer = implied_volatility.get_iv_for_option_price(asset_price, option, OFFER)
 
-                    # Вычисление Vega
-                    vega = implied_volatility._vega(asset_price, VOLATILITY, STRIKE, time_to_maturity, implied_volatility._RISK_FREE_INTEREST_RATE, opt_type_converted)
-
                     print(f'opt_volatility - Волатильность опциона Last {si["sec_code"]} {option_type_str}: {opt_volatility_last}, {opt_price_str}, {TIME}')
                     print(f'opt_volatility_bid - Волатильность опциона Bid {si["sec_code"]} {option_type_str}: {opt_volatility_bid}, {BID}')
                     print(f'opt_volatility_offer - Волатильность опциона Ask {si["sec_code"]} {option_type_str}: {opt_volatility_offer}, {OFFER}')
-                    print(f'Вега опциона {si["sec_code"]} {option_type_str}: {vega}')
+                    print(f'Vega опциона {si["sec_code"]} {option_type_str}: {Vega}')
+                    print(f'TrueVega опциона {si["sec_code"]} {option_type_str}: {TrueVega}')
                     print('\n')
 
                     logger.info(f'- Позиция {si["class_code"]}.{si["sec_code"]} ({si["short_name"]}) {active_futures_holding["totalnet"]} @ {active_futures_holding["cbplused"]}')
