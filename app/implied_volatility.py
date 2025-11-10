@@ -28,7 +28,6 @@ def get_iv_for_option_price(asset_price: int, option: Option, opt_price: int):
     return iv * 100
 
 
-# def _implied_vol(C, S, K, r, T, tol, opt_type=option_type.CALL):
 def _implied_vol(C, S, K, r, T, tol, opt_type=option_type):
     x0 = _inflexion_point(S, K, T, r)
     p = _option_price(S, x0, K, T, r, opt_type)
@@ -57,7 +56,7 @@ def _inflexion_point(S, K, T, r):
     return math.sqrt(2 * np.abs(math.log(m)) / T)
 
 
-def _option_price(S, sigma, K, T, r, opt_type=option_type.CALL):
+def _option_price(S, sigma, K, T, r, opt_type=option_type):
     d1 = (math.log(S / K) + (r + .5 * sigma ** 2) * T) / (sigma * T ** .5)
     d2 = d1 - sigma * T ** 0.5
     price = 0
@@ -74,7 +73,7 @@ def _option_price(S, sigma, K, T, r, opt_type=option_type.CALL):
     return price
 
 
-def _vega(S, sigma, K, T, r, opt_type=option_type.CALL):
+def _vega(S, sigma, K, T, r, opt_type=option_type):
     d1 = (math.log(S / K) + (r + .5 * sigma ** 2) * T) / (sigma * T ** .5)
     v = 0
     if opt_type == option_type.CALL:
