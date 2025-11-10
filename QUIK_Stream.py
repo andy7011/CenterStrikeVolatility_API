@@ -1,8 +1,5 @@
 import logging  # Выводим лог на консоль и в файл
 from datetime import datetime, UTC  # Дата и время
-from locale import currency
-import math
-import numpy as np
 from scipy.stats import norm
 
 import implied_volatility
@@ -11,9 +8,6 @@ from QuikPy import QuikPy  # Работа с QUIK из Python через LUA с�
 from option import Option
 
 futures_firm_id = 'SPBFUT'  # Код фирмы для фьючерсов. Измените, если требуется, на фирму, которую для фьючерсов поставил ваш брокер
-
-_RISK_FREE_INTEREST_RATE = 0  # risk-free interest rate
-_VOLATILITY_CALCULATION_ITERATIONS_LIMIT = 100
 
 '''
     :param S: Asset price
@@ -35,11 +29,11 @@ if __name__ == '__main__':  # Точка входа при запуске это
     logger = logging.getLogger('QuikPy.Accounts')  # Будем вести лог
     qp_provider = QuikPy()  # Подключение к локальному запущенному терминалу QUIK
 
-    logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',  # Формат сообщения
-                        datefmt='%d.%m.%Y %H:%M:%S',  # Формат даты
-                        level=logging.DEBUG,  # Уровень логируемых событий NOTSET/DEBUG/INFO/WARNING/ERROR/CRITICAL
-                        handlers=[logging.FileHandler('QUIK_Stream.log', encoding='utf-8'), logging.StreamHandler()])  # Лог записываем в файл и выводим на консоль
-    logging.Formatter.converter = lambda *args: datetime.now(tz=qp_provider.tz_msk).timetuple()  # В логе время указываем по МСК
+    # logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',  # Формат сообщения
+    #                     datefmt='%d.%m.%Y %H:%M:%S',  # Формат даты
+    #                     level=logging.DEBUG,  # Уровень логируемых событий NOTSET/DEBUG/INFO/WARNING/ERROR/CRITICAL
+    #                     handlers=[logging.FileHandler('QUIK_Stream.log', encoding='utf-8'), logging.StreamHandler()])  # Лог записываем в файл и выводим на консоль
+    # logging.Formatter.converter = lambda *args: datetime.now(tz=qp_provider.tz_msk).timetuple()  # В логе время указываем по МСК
 
     class_codes = qp_provider.get_classes_list()['data']  # Режимы торгов через запятую
     class_codes_list = class_codes[:-1].split(',')  # Удаляем последнюю запятую, разбиваем значения по запятой в список режимов торгов
@@ -59,51 +53,68 @@ if __name__ == '__main__':  # Точка входа при запуске это
         #     class_securities = qp_provider.get_class_securities(class_code)['data'][:-1].split(',')  # Список инструментов режима торгов. Удаляем последнюю запятую, разбиваем значения по запятой
         #     logger.info(f'  - Тикеры ({class_securities})')
 
+        # Получаем информацию о счете
         firm_id = trade_account['firmid']  # Фирма
         trade_account_id = trade_account['trdaccid']  # Счет
         client_code = next((moneyLimit['client_code'] for moneyLimit in money_limits if moneyLimit['firmid'] == firm_id), None)  # Код клиента
         logger.info(f'Учетная запись #{i}, Код клиента {client_code if client_code else "не задан"}, Фирма {firm_id}, Счет {trade_account_id} ({trade_account["description"]})')
         logger.info(f'Режимы торгов: {intersection_class_codes}')
+        # Получаем информацию по инструментам в портфеле
         if firm_id == futures_firm_id:  # Для фирмы фьючерсов
             active_futures_holdings = [futuresHolding for futuresHolding in qp_provider.get_futures_holdings()['data'] if futuresHolding['totalnet'] != 0]  # Активные фьючерсные позиции
             for active_futures_holding in active_futures_holdings:  # Пробегаемся по всем активным позициям
                 sec_code = active_futures_holding["sec_code"]  # Код тикера
                 class_code = qp_provider.get_security_class(class_codes, sec_code)['data']  # Код режима торгов из всех режимов по тикеру
-                si = qp_provider.get_symbol_info(class_code, active_futures_holding['sec_code'])  # Спецификация тикера
-                print(si)
-                option_type_str = qp_provider.get_param_ex(class_code, sec_code, 'OPTIONTYPE', trans_id=0)['data']['param_image'] # Тип опциона
-                print(f'option_type - Тип опциона: {option_type_str}')
-                opt_price = qp_provider.get_param_ex(class_code, sec_code, 'LAST', trans_id=0)['data']['param_value'] # Цена последней сделки по опциону
-                print(f'opt_price - Цена последней сделки: {opt_price}')
-                asset_price = qp_provider.get_param_ex('SPBFUT', si['base_active_seccode'], 'LAST', trans_id=0)['data']['param_value'] # Цена последней сделки базового актива
-                print(f'asset_price - Цена последней сделки базового актива: {asset_price}, тип: {type(asset_price)}')
-                STRIKE = qp_provider.get_param_ex(class_code, sec_code, 'STRIKE', trans_id=0)['data']['param_value'] # Страйк опциона
-                print(f'STRIKE - Страйк опциона: {STRIKE}, тип: {type(STRIKE)}')
-                VOLATILITY = qp_provider.get_param_ex(class_code, sec_code, 'VOLATILITY', trans_id=0)['data']['param_value'] # Волатильность опциона
-                print(f'VOLATILITY - Волатильность опциона: {VOLATILITY}')
-                THEORPRICE = qp_provider.get_param_ex(class_code, sec_code, 'THEORPRICE', trans_id=0)['data']['param_value'] # Теоретическая цена
-                print(f'THEORPRICE - Теоретическая цена опциона: {THEORPRICE}')
-                EXPDATE_image = qp_provider.get_param_ex(class_code, sec_code, 'EXPDATE', trans_id=0)['data']['param_image'] # Дата исполнения инструмента
-                EXPDATE_str = datetime.strptime(EXPDATE_image, "%d.%m.%Y").strftime("%Y-%m-%d")
-                EXPDATE = datetime.strptime(EXPDATE_str, "%Y-%m-%d")
-                print(f'EXPDATE - Дата исполнения инструмента: {EXPDATE}')
-                time_to_maturity = get_time_to_maturity(EXPDATE)
-                print(f'time_to_maturity - Время до исполнения инструмента в долях года: {time_to_maturity}')
-                opt_type_converted = option_type.PUT if option_type_str == "Put" else option_type.CALL
-                print(f'Strike K: {si["option_strike"]}, тип: {type(si["option_strike"])}')
-                # option = Option(si["sec_code"], si["base_active_seccode"], EXPDATE, STRIKE, opt_type_converted)
-                option = Option(si["sec_code"], si["base_active_seccode"], time_to_maturity, STRIKE, opt_type_converted)
-                print(option)
-                opt_volatility = implied_volatility.get_iv_for_option_price(asset_price, option, opt_price)
-                print(opt_volatility)
+                if class_code == "SPBOPT": # Берем только опционы
+                    si = qp_provider.get_symbol_info(class_code, active_futures_holding['sec_code'])  # Спецификация тикера
+                    # print(si)
+                    option_type_str = qp_provider.get_param_ex(class_code, sec_code, 'OPTIONTYPE', trans_id=0)['data']['param_image'] # Тип опциона
+                    # print(f'option_type - Тип опциона: {option_type_str}')
+                    opt_price_str = qp_provider.get_param_ex(class_code, sec_code, 'LAST', trans_id=0)['data']['param_value'] # Цена последней сделки по опциону
+                    opt_price = float(opt_price_str)
+                    # print(f'opt_price - Цена последней сделки: {opt_price}, тип: {type(opt_price)}')
+                    BID = qp_provider.get_param_ex(class_code, sec_code, 'BID', trans_id=0)['data']['param_value'] # Цена BID
+                    BID = float(BID)
+                    # print(f'BID - Цена BID: {BID}, тип: {type(BID)}')
+                    OFFER = qp_provider.get_param_ex(class_code, sec_code, 'OFFER', trans_id=0)['data']['param_value'] # Цена ASK
+                    OFFER = float(OFFER)
+                    # print(f'OFFER - Цена ASK: {OFFER}, тип: {type(OFFER)}')
+                    TIME = qp_provider.get_param_ex(class_code, sec_code, 'TIME', trans_id=0)['data']['param_image'] # Время последней сделки
+                    # print(f'TIME - Время последней сделки: {TIME}')
+                    asset_price_str = qp_provider.get_param_ex('SPBFUT', si['base_active_seccode'], 'LAST', trans_id=0)['data']['param_value'] # Цена последней сделки базового актива
+                    asset_price = float(asset_price_str)
+                    # print(f'asset_price - Цена последней сделки базового актива: {asset_price}, тип: {type(asset_price)}')
+                    STRIKE_STR = qp_provider.get_param_ex(class_code, sec_code, 'STRIKE', trans_id=0)['data']['param_value'] # Страйк опциона
+                    STRIKE = float(STRIKE_STR)
+                    # print(f'STRIKE - Страйк опциона: {STRIKE}, тип: {type(STRIKE)}')
+                    # VOLATILITY = qp_provider.get_param_ex(class_code, sec_code, 'VOLATILITY', trans_id=0)['data']['param_value'] # Волатильность опциона
+                    # print(f'VOLATILITY - Волатильность опциона: {VOLATILITY}')
+                    # THEORPRICE = qp_provider.get_param_ex(class_code, sec_code, 'THEORPRICE', trans_id=0)['data']['param_value'] # Теоретическая цена
+                    # print(f'THEORPRICE - Теоретическая цена опциона: {THEORPRICE}')
+                    EXPDATE_image = qp_provider.get_param_ex(class_code, sec_code, 'EXPDATE', trans_id=0)['data']['param_image'] # Дата исполнения инструмента
+                    EXPDATE_str = datetime.strptime(EXPDATE_image, "%d.%m.%Y").strftime("%Y-%m-%d")
+                    EXPDATE = datetime.strptime(EXPDATE_str, "%Y-%m-%d")
+                    # print(f'EXPDATE - Дата исполнения инструмента: {EXPDATE}, тип: {type(EXPDATE)}')
+                    time_to_maturity = get_time_to_maturity(EXPDATE)
+                    # print(f'time_to_maturity - Время до исполнения инструмента в долях года: {time_to_maturity}, тип: {type(time_to_maturity)}')
+                    opt_type_converted = option_type.PUT if option_type_str == "Put" else option_type.CALL
+                    option = Option(si["sec_code"], si["base_active_seccode"], EXPDATE, STRIKE, opt_type_converted)
+                    # option = Option(si["sec_code"], si["base_active_seccode"], time_to_maturity, STRIKE, opt_type_converted)
+                    opt_volatility = implied_volatility.get_iv_for_option_price(asset_price, option, opt_price)
+                    print(f'opt_volatility - Волатильность опциона {si["sec_code"]} {option_type_str}: {opt_volatility}, {opt_price_str}, {TIME}')
+                    opt_volatility_bid = implied_volatility.get_iv_for_option_price(asset_price, option, BID)
+                    print(f'opt_volatility_bid - Волатильность опциона {si["sec_code"]} {option_type_str}: {opt_volatility_bid}, {BID}')
+                    opt_volatility_offer = implied_volatility.get_iv_for_option_price(asset_price, option, OFFER)
+                    print(f'opt_volatility_offer - Волатильность опциона {si["sec_code"]} {option_type_str}: {opt_volatility_offer}, {OFFER}')
+                    print('\n')
 
-                logger.info(f'- Позиция {si["class_code"]}.{si["sec_code"]} ({si["short_name"]}) {active_futures_holding["totalnet"]} @ {active_futures_holding["cbplused"]}')
-                info_portfolio = {'sec_code': si['sec_code'], 'base_active_seccode': si['base_active_seccode'], 'class_code': si['class_code'], 'exp_date': si['exp_date'], 'option_strike': si['option_strike'], 'totalnet': active_futures_holding['totalnet'], 'avrposnprice': active_futures_holding['avrposnprice']}
-                print(info_portfolio)
+                    logger.info(f'- Позиция {si["class_code"]}.{si["sec_code"]} ({si["short_name"]}) {active_futures_holding["totalnet"]} @ {active_futures_holding["cbplused"]}')
+                    info_portfolio = {'sec_code': si['sec_code'], 'base_active_seccode': si['base_active_seccode'], 'class_code': si['class_code'], 'exp_date': si['exp_date'], 'option_strike': si['option_strike'], 'totalnet': active_futures_holding['totalnet'], 'avrposnprice': active_futures_holding['avrposnprice']}
+                    # print(info_portfolio)
 
-                # print(active_futures_holding)
-                # data_portfolio = {active_futures_holding['totalnet'], active_futures_holding['avrposnprice']}
-                # print(data_portfolio)
+                    # print(active_futures_holding)
+                    # data_portfolio = {active_futures_holding['totalnet'], active_futures_holding['avrposnprice']}
+                    # print(data_portfolio)
 
             # Видео: https://www.youtube.com/watch?v=u2C7ElpXZ4k
             # Баланс = Лимит откр.поз. + Вариац.маржа + Накоплен.доход

@@ -4,13 +4,18 @@ from model import option_series_type
 
 # For reference see https://www.moex.com/ru/derivatives/
 
-_DAILY_SESSION_START_TIME_UTC = time(6, 0)     # 9:00 in MSK
-_EVENING_SESSION_START_TIME_UTC = time(16, 5)  # 19:05 in MSK
-_EVENING_SESSION_END_TIME_UTC = time(20, 50)   # 23:50 in MSK
+# _DAILY_SESSION_START_TIME_UTC = time(6, 0)     # 9:00 in MSK
+# _EVENING_SESSION_START_TIME_UTC = time(16, 5)  # 19:05 in MSK
+# _EVENING_SESSION_END_TIME_UTC = time(20, 50)   # 23:50 in MSK
+_DAILY_SESSION_START_TIME_UTC = time(9, 0)     # 9:00 in MSK
+_EVENING_SESSION_START_TIME_UTC = time(19, 5)  # 19:05 in MSK
+_EVENING_SESSION_END_TIME_UTC = time(23, 50)   # 23:50 in MSK
 
 
-_DEFAULT_OPTION_EXPIRATION_TIME_UTC = time(15, 50)          # 18:50 in MSK
-_CURRENCY_QUARTER_OPTION_EXPIRATION_TIME_UTC = time(11, 0)  # 14:00 in MSK
+# _DEFAULT_OPTION_EXPIRATION_TIME_UTC = time(15, 50)          # 18:50 in MSK
+# _CURRENCY_QUARTER_OPTION_EXPIRATION_TIME_UTC = time(11, 0)  # 14:00 in MSK
+_DEFAULT_OPTION_EXPIRATION_TIME_UTC = time(18, 50)          # 18:50 in MSK
+_CURRENCY_QUARTER_OPTION_EXPIRATION_TIME_UTC = time(14, 0)  # 14:00 in MSK
 
 
 def is_trading_session_active_now() -> bool:

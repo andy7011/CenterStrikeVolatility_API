@@ -28,7 +28,8 @@ def get_iv_for_option_price(asset_price: int, option: Option, opt_price: int):
     return iv * 100
 
 
-def _implied_vol(C, S, K, r, T, tol, opt_type=option_type.CALL):
+# def _implied_vol(C, S, K, r, T, tol, opt_type=option_type.CALL):
+def _implied_vol(C, S, K, r, T, tol, opt_type=option_type):
     x0 = _inflexion_point(S, K, T, r)
     p = _option_price(S, x0, K, T, r, opt_type)
     v = _vega(S, x0, K, T, r, opt_type)
