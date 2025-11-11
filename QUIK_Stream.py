@@ -1,6 +1,7 @@
 import logging  # Выводим лог на консоль и в файл
 from datetime import datetime, UTC  # Дата и время
 from scipy.stats import norm
+import pandas as pd
 
 import implied_volatility
 import option_type
@@ -28,11 +29,11 @@ if __name__ == '__main__':  # Точка входа при запуске это
     logger = logging.getLogger('QuikPy.Accounts')  # Будем вести лог
     qp_provider = QuikPy()  # Подключение к локальному запущенному терминалу QUIK
 
-    # logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',  # Формат сообщения
-    #                     datefmt='%d.%m.%Y %H:%M:%S',  # Формат даты
-    #                     level=logging.DEBUG,  # Уровень логируемых событий NOTSET/DEBUG/INFO/WARNING/ERROR/CRITICAL
-    #                     handlers=[logging.FileHandler('QUIK_Stream.log', encoding='utf-8'), logging.StreamHandler()])  # Лог записываем в файл и выводим на консоль
-    # logging.Formatter.converter = lambda *args: datetime.now(tz=qp_provider.tz_msk).timetuple()  # В логе время указываем по МСК
+    logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',  # Формат сообщения
+                        datefmt='%d.%m.%Y %H:%M:%S',  # Формат даты
+                        level=logging.DEBUG,  # Уровень логируемых событий NOTSET/DEBUG/INFO/WARNING/ERROR/CRITICAL
+                        handlers=[logging.FileHandler('QUIK_Stream.log', encoding='utf-8'), logging.StreamHandler()])  # Лог записываем в файл и выводим на консоль
+    logging.Formatter.converter = lambda *args: datetime.now(tz=qp_provider.tz_msk).timetuple()  # В логе время указываем по МСК
 
     class_codes = qp_provider.get_classes_list()['data']  # Режимы торгов через запятую
     class_codes_list = class_codes[:-1].split(',')  # Удаляем последнюю запятую, разбиваем значения по запятой в список режимов торгов
@@ -61,6 +62,7 @@ if __name__ == '__main__':  # Точка входа при запуске это
         # Получаем информацию по инструментам в портфеле
         if firm_id == futures_firm_id:  # Для фирмы фьючерсов
             active_futures_holdings = [futuresHolding for futuresHolding in qp_provider.get_futures_holdings()['data'] if futuresHolding['totalnet'] != 0]  # Активные фьючерсные позиции
+            all_rows_table_list = []
             for active_futures_holding in active_futures_holdings:  # Пробегаемся по всем активным позициям
                 sec_code = active_futures_holding["sec_code"]  # Код тикера
                 class_code = qp_provider.get_security_class(class_codes, sec_code)['data']  # Код режима торгов из всех режимов по тикеру
@@ -104,7 +106,7 @@ if __name__ == '__main__':  # Точка входа при запуске это
 
                     # Волатильность опциона (sigma)
                     VOLATILITY = qp_provider.get_param_ex(class_code, sec_code, 'VOLATILITY', trans_id=0)['data']['param_value'] # Волатильность опциона
-                    VOLATILITY = float(VOLATILITY) / 100
+                    VOLATILITY = float(VOLATILITY)
                     # print(f'VOLATILITY - Волатильность опциона: {VOLATILITY}, тип: {type(VOLATILITY)}')
 
                     ## Теоретическая цена
@@ -122,17 +124,21 @@ if __name__ == '__main__':  # Точка входа при запуске это
                     time_to_maturity = get_time_to_maturity(EXPDATE)
                     # print(f'time_to_maturity - Время до исполнения инструмента в долях года: {time_to_maturity}, тип: {type(time_to_maturity)}')
 
-                    # Число дней до погашения
+                    # Число дней до экспирации
                     DAYS_TO_MAT_DATE = qp_provider.get_param_ex(class_code, sec_code, 'DAYS_TO_MAT_DATE', trans_id=0)['data']['param_value']
                     DAYS_TO_MAT_DATE = float(DAYS_TO_MAT_DATE)
                     # print(f'DAYS_TO_MAT_DATE - Число дней до погашения: {DAYS_TO_MAT_DATE}, тип: {type(DAYS_TO_MAT_DATE)}')
 
                     # Вычисление Vega
-                    vega = implied_volatility._vega(asset_price, VOLATILITY, STRIKE, time_to_maturity, implied_volatility._RISK_FREE_INTEREST_RATE, opt_type_converted)
+                    sigma = VOLATILITY / 100
+                    vega = implied_volatility._vega(asset_price, sigma, STRIKE, time_to_maturity, implied_volatility._RISK_FREE_INTEREST_RATE, opt_type_converted)
                     Vega = vega / 100
 
                     # Вычисление TrueVega
-                    TrueVega = Vega / (DAYS_TO_MAT_DATE ** 0.5)
+                    if DAYS_TO_MAT_DATE == 0:
+                        TrueVega = 0
+                    else:
+                        TrueVega = Vega / (DAYS_TO_MAT_DATE ** 0.5)
 
                     # Создание опциона
                     option = Option(si["sec_code"], si["base_active_seccode"], EXPDATE, STRIKE, opt_type_converted)
@@ -142,20 +148,51 @@ if __name__ == '__main__':  # Точка входа при запуске это
                     opt_volatility_bid = implied_volatility.get_iv_for_option_price(asset_price, option, BID)
                     opt_volatility_offer = implied_volatility.get_iv_for_option_price(asset_price, option, OFFER)
 
-                    print(f'opt_volatility - Волатильность опциона Last {si["sec_code"]} {option_type_str}: {opt_volatility_last}, {opt_price_str}, {TIME}')
-                    print(f'opt_volatility_bid - Волатильность опциона Bid {si["sec_code"]} {option_type_str}: {opt_volatility_bid}, {BID}')
-                    print(f'opt_volatility_offer - Волатильность опциона Ask {si["sec_code"]} {option_type_str}: {opt_volatility_offer}, {OFFER}')
-                    print(f'Vega опциона {si["sec_code"]} {option_type_str}: {Vega}')
-                    print(f'TrueVega опциона {si["sec_code"]} {option_type_str}: {TrueVega}')
-                    print('\n')
+                    # Текущие чистые позиции (totalnet)
+                    net_pos = active_futures_holding['totalnet']
+                    # print(f'net_pos - Текущие чистые позиции {si["sec_code"]}: {net_pos}, тип: {type(net_pos)}')
 
-                    logger.info(f'- Позиция {si["class_code"]}.{si["sec_code"]} ({si["short_name"]}) {active_futures_holding["totalnet"]} @ {active_futures_holding["cbplused"]}')
-                    info_portfolio = {'sec_code': si['sec_code'], 'base_active_seccode': si['base_active_seccode'], 'class_code': si['class_code'], 'exp_date': si['exp_date'], 'option_strike': si['option_strike'], 'totalnet': active_futures_holding['totalnet'], 'avrposnprice': active_futures_holding['avrposnprice']}
+                    # print(f'opt_volatility - Волатильность опциона Last {si["sec_code"]} {option_type_str}: {opt_volatility_last}, {opt_price_str}, {TIME}')
+                    # print(f'opt_volatility_bid - Волатильность опциона Bid {si["sec_code"]} {option_type_str}: {opt_volatility_bid}, {BID}')
+                    # print(f'opt_volatility_offer - Волатильность опциона Ask {si["sec_code"]} {option_type_str}: {opt_volatility_offer}, {OFFER}')
+                    # print(f'Vega опциона {si["sec_code"]} {option_type_str}: {Vega}')
+                    # print(f'TrueVega опциона {si["sec_code"]} {option_type_str}: {TrueVega}')
+                    # print('\n')
+
+                    # === СОБИРАЕМ ВСЕ СТРОКИ В СПИСОК ===
+                    # Добавляем строки
+                    all_rows_table_list.append({
+                        'ticker': si['sec_code'],
+                        'net_pos': net_pos,
+                        'strike': int(STRIKE),
+                        'option_type': option_type_str,
+                        'expdate': EXPDATE_image,
+                        'dayexp': int(DAYS_TO_MAT_DATE),
+                        'option_base': si['base_active_seccode'],
+                        'OpenDateTime': "",
+                        'OpenPrice': "",
+                        'OpenIV': "",
+                        'QuikVola': round(VOLATILITY, 2),
+                        'BidIV': round(opt_volatility_bid, 2),
+                        'AskIV': round(opt_volatility_offer, 2),
+                        'P/L': "",
+                        'P/L market': "",
+                        'Vega': round(Vega, 2),
+                        'TrueVega': round(TrueVega, 2)
+                    })
+
+                    # logger.info(f'- Позиция {si["class_code"]}.{si["sec_code"]} ({si["short_name"]}) {active_futures_holding["totalnet"]} @ {active_futures_holding["cbplused"]}')
+                    # info_portfolio = {'sec_code': si['sec_code'], 'base_active_seccode': si['base_active_seccode'], 'class_code': si['class_code'], 'exp_date': si['exp_date'], 'option_strike': si['option_strike'], 'totalnet': active_futures_holding['totalnet'], 'avrposnprice': active_futures_holding['avrposnprice']}
                     # print(info_portfolio)
 
                     # print(active_futures_holding)
                     # data_portfolio = {active_futures_holding['totalnet'], active_futures_holding['avrposnprice']}
                     # print(data_portfolio)
+
+            # print(all_rows_table_list)
+
+            df_table_quik = pd.DataFrame(all_rows_table_list)
+            print(df_table_quik)
 
             # Видео: https://www.youtube.com/watch?v=u2C7ElpXZ4k
             # Баланс = Лимит откр.поз. + Вариац.маржа + Накоплен.доход
@@ -184,6 +221,8 @@ if __name__ == '__main__':  # Точка входа при запуске это
                     si = qp_provider.get_symbol_info(class_code, sec_code)  # Спецификация тикера
                     logger.info(f'- Позиция {class_code}.{sec_code} ({si["short_name"]}) {int(firm_kind_depo_limit["currentbal"])} @ {entry_price} / {last_price}')
                 logger.info(f'- T{limit_kind}: Свободные средства {firm_money_limit["currentbal"]} {firm_money_limit["currcode"]}')
+
+        # Заявки
         firm_orders = [order for order in orders if order['firmid'] == firm_id and order['flags'] & 0b1 == 0b1]  # Активные заявки по фирме
         for firm_order in firm_orders:  # Пробегаемся по всем заявкам
             buy = firm_order['flags'] & 0b100 != 0b100  # Заявка на покупку
