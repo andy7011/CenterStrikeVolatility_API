@@ -105,7 +105,7 @@ if __name__ == '__main__':  # Точка входа при запуске это
                     # print(f'STRIKE - Страйк опциона: {STRIKE}, тип: {type(STRIKE)}')
 
                     # Волатильность опциона (sigma)
-                    VOLATILITY = qp_provider.get_param_ex(class_code, sec_code, 'VOLATILITY', trans_id=0)['data']['param_value'] # Волатильность опциона
+                    VOLATILITY = qp_provider.get_param_ex(class_code, sec_code, 'VOLATILITY', trans_id=0)['data']['param_value']
                     VOLATILITY = float(VOLATILITY)
                     # print(f'VOLATILITY - Волатильность опциона: {VOLATILITY}, тип: {type(VOLATILITY)}')
 
@@ -222,16 +222,75 @@ if __name__ == '__main__':  # Точка входа при запуске это
                     logger.info(f'- Позиция {class_code}.{sec_code} ({si["short_name"]}) {int(firm_kind_depo_limit["currentbal"])} @ {entry_price} / {last_price}')
                 logger.info(f'- T{limit_kind}: Свободные средства {firm_money_limit["currentbal"]} {firm_money_limit["currcode"]}')
 
-        # Заявки
+        # Активные заявки
         firm_orders = [order for order in orders if order['firmid'] == firm_id and order['flags'] & 0b1 == 0b1]  # Активные заявки по фирме
+        all_rows_order_list = [] # Список всех заявок
         for firm_order in firm_orders:  # Пробегаемся по всем заявкам
+            # print(firm_order)
             buy = firm_order['flags'] & 0b100 != 0b100  # Заявка на покупку
             class_code = firm_order['class_code']  # Код режима торгов
             sec_code = firm_order["sec_code"]  # Тикер
             order_price = qp_provider.quik_price_to_price(class_code, sec_code, firm_order['price'])  # Цена заявки в рублях за штуку
             si = qp_provider.get_symbol_info(class_code, sec_code)  # Спецификация тикера
+            # print(si)
+
             order_qty = firm_order['qty'] * si['lot_size']  # Кол-во в штуках
             logger.info(f'- Заявка номер {firm_order["order_num"]} {"Покупка" if buy else "Продажа"} {class_code}.{sec_code} {order_qty} @ {order_price}')
+
+            # Цена последней сделки базового актива (S)
+            asset_price = qp_provider.get_param_ex('SPBFUT', si['base_active_seccode'], 'LAST', trans_id=0)['data']['param_value']
+            asset_price = float(asset_price)
+            # print(f'asset_price - Цена последней сделки базового актива: {asset_price}, тип: {type(asset_price)}')
+
+            # Дата исполнения инструмента
+            EXPDATE_image = qp_provider.get_param_ex(class_code, sec_code, 'EXPDATE', trans_id=0)['data']['param_image']
+            EXPDATE_str = datetime.strptime(EXPDATE_image, "%d.%m.%Y").strftime("%Y-%m-%d")
+            EXPDATE = datetime.strptime(EXPDATE_str, "%Y-%m-%d")
+            # print(f'EXPDATE - Дата исполнения инструмента: {EXPDATE}, тип: {type(EXPDATE)}')
+
+            # Тип опциона
+            option_type_str = qp_provider.get_param_ex(class_code, sec_code, 'OPTIONTYPE', trans_id=0)['data']['param_image']
+            # print(f'option_type - Тип опциона: {option_type_str}')
+            opt_type_converted = option_type.PUT if option_type_str == "Put" else option_type.CALL
+
+            # Извлекаем значения даты и времени из словаря
+            year = firm_order['datetime']['year']
+            month = firm_order['datetime']['month']
+            day = firm_order['datetime']['day']
+            hour = firm_order['datetime']['hour']
+            minute = firm_order['datetime']['min']
+            second = firm_order['datetime']['sec']
+            # Формируем строку в нужном формате
+            formatted_datetime = f"{day:02d}.{month:02d}.{year} {hour:02d}:{minute:02d}:{second:02d}"
+            # print(formatted_datetime)
+
+            # Создание опциона
+            option = Option(si["sec_code"], si["base_active_seccode"], EXPDATE, si['option_strike'], opt_type_converted)
+
+            # === СОБИРАЕМ ВСЕ СТРОКИ В СПИСОК ===
+            # Добавляем строки
+            all_rows_order_list.append({
+                'datetime': formatted_datetime,
+                'order_num': firm_order["order_num"],
+                'option_base': si['base_active_seccode'],
+                'ticker': si['sec_code'],
+                'option_type': option_type_str,
+                'strike': int(si['option_strike']),
+                'expdate': si['exp_date'],
+                'operation': "Покупка" if buy else "Продажа",
+                'volume': order_qty,
+                'price': order_price,
+                'value': order_qty * order_price,
+                'volatility': round(implied_volatility.get_iv_for_option_price(asset_price, option, order_price), 2)
+            })
+        print(all_rows_order_list)
+
+        df_order_quik = pd.DataFrame(all_rows_order_list)
+        print(df_order_quik)
+
+
+
+        # Стоп заявки
         firm_stop_orders = [stopOrder for stopOrder in stop_orders if stopOrder['firmid'] == firm_id and stopOrder['flags'] & 0b1 == 0b1]  # Активные стоп заявки по фирме
         for firm_stop_order in firm_stop_orders:  # Пробегаемся по всем стоп заявкам
             buy = firm_stop_order['flags'] & 0b100 != 0b100  # Заявка на покупку
