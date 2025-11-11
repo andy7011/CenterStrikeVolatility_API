@@ -176,8 +176,8 @@ if __name__ == '__main__':  # Точка входа при запуске это
                         'QuikVola': round(VOLATILITY, 2),
                         'BidIV': round(opt_volatility_bid, 2),
                         'AskIV': round(opt_volatility_offer, 2),
-                        'P/L': "",
-                        'P/L market': "",
+                        'P/L theor': '', # round(VOLATILITY - OpenIV, 2) if net_pos > 0 else round(OpenIV - VOLATILITY, 2),
+                        'P/L market': "", # round(opt_volatility_bid - OpenIV, 2) if net_pos > 0 else round(OpenIV - opt_volatility_offer, 2),
                         'Vega': round(Vega, 2),
                         'TrueVega': round(TrueVega, 2)
                     })
@@ -190,7 +190,7 @@ if __name__ == '__main__':  # Точка входа при запуске это
                     # data_portfolio = {active_futures_holding['totalnet'], active_futures_holding['avrposnprice']}
                     # print(data_portfolio)
 
-            # print(all_rows_table_list)
+            print(all_rows_table_list)
 
             df_table_quik = pd.DataFrame(all_rows_table_list)
             print(df_table_quik)
