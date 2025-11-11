@@ -253,7 +253,7 @@ if __name__ == '__main__':  # Точка входа при запуске это
             # print(f'option_type - Тип опциона: {option_type_str}')
             opt_type_converted = option_type.PUT if option_type_str == "Put" else option_type.CALL
 
-            # Извлекаем значения даты и времени из словаря
+            # Извлекаем значения даты и времени ордера из словаря
             year = firm_order['datetime']['year']
             month = firm_order['datetime']['month']
             day = firm_order['datetime']['day']
@@ -263,6 +263,15 @@ if __name__ == '__main__':  # Точка входа при запуске это
             # Формируем строку в нужном формате
             formatted_datetime = f"{day:02d}.{month:02d}.{year} {hour:02d}:{minute:02d}:{second:02d}"
             # print(formatted_datetime)
+
+            # Форматирование строки с датой экспирации
+            exp_date_number = si['exp_date']
+            # Преобразуем число в строку
+            exp_date_str = str(exp_date_number)
+            # Преобразуем строку в объект datetime
+            exp_date = datetime.strptime(exp_date_str, "%Y%m%d")
+            # Форматируем дату в нужный формат
+            formatted_exp_date = exp_date.strftime("%d.%m.%Y")
 
             # Создание опциона
             option = Option(si["sec_code"], si["base_active_seccode"], EXPDATE, si['option_strike'], opt_type_converted)
@@ -276,7 +285,7 @@ if __name__ == '__main__':  # Точка входа при запуске это
                 'ticker': si['sec_code'],
                 'option_type': option_type_str,
                 'strike': int(si['option_strike']),
-                'expdate': si['exp_date'],
+                'expdate': formatted_exp_date,
                 'operation': "Покупка" if buy else "Продажа",
                 'volume': order_qty,
                 'price': order_price,
