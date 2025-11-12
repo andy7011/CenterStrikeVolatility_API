@@ -2,6 +2,7 @@ import logging  # Выводим лог на консоль и в файл
 from datetime import datetime, UTC  # Дата и время
 from scipy.stats import norm
 import pandas as pd
+import time  # Подписка на события по времени
 
 import implied_volatility
 import option_type
@@ -29,12 +30,16 @@ if __name__ == '__main__':  # Точка входа при запуске это
     logger = logging.getLogger('QuikPy.Accounts')  # Будем вести лог
     qp_provider = QuikPy()  # Подключение к локальному запущенному терминалу QUIK
 
-    # # Закомментировать, чтобы не было логов
-    # logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',  # Формат сообщения
-    #                     datefmt='%d.%m.%Y %H:%M:%S',  # Формат даты
-    #                     level=logging.DEBUG,  # Уровень логируемых событий NOTSET/DEBUG/INFO/WARNING/ERROR/CRITICAL
-    #                     handlers=[logging.FileHandler('QUIK_Stream.log', encoding='utf-8'), logging.StreamHandler()])  # Лог записываем в файл и выводим на консоль
-    # logging.Formatter.converter = lambda *args: datetime.now(tz=qp_provider.tz_msk).timetuple()  # В логе время указываем по МСК
+
+
+    # Закомментировать, чтобы не было логов
+    logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',  # Формат сообщения
+                        datefmt='%d.%m.%Y %H:%M:%S',  # Формат даты
+                        level=logging.DEBUG,  # Уровень логируемых событий NOTSET/DEBUG/INFO/WARNING/ERROR/CRITICAL
+                        handlers=[logging.FileHandler('QUIK_Stream.log', encoding='utf-8'), logging.StreamHandler()])  # Лог записываем в файл и выводим на консоль
+    logging.Formatter.converter = lambda *args: datetime.now(tz=qp_provider.tz_msk).timetuple()  # В логе время указываем по МСК
+
+
 
     class_codes = qp_provider.get_classes_list()['data']  # Режимы торгов через запятую
     class_codes_list = class_codes[:-1].split(',')  # Удаляем последнюю запятую, разбиваем значения по запятой в список режимов торгов
@@ -175,7 +180,7 @@ if __name__ == '__main__':  # Точка входа при запуске это
                         'OpenIV': "",
                         'QuikVola': round(VOLATILITY, 2),
                         'BidIV': round(opt_volatility_bid, 2),
-                        'AskIV': round(opt_volatility_offer, 2),
+                        'AskIV': opt_volatility_offer,
                         'P/L theor': '', # round(VOLATILITY - OpenIV, 2) if net_pos > 0 else round(OpenIV - VOLATILITY, 2),
                         'P/L market': "", # round(opt_volatility_bid - OpenIV, 2) if net_pos > 0 else round(OpenIV - opt_volatility_offer, 2),
                         'Vega': round(Vega, 2),
@@ -293,6 +298,7 @@ if __name__ == '__main__':  # Точка входа при запуске это
                 'value': order_qty * order_price,
                 'volatility': round(implied_volatility.get_iv_for_option_price(asset_price, option, order_price), 2)
             })
+
         print(all_rows_order_list)
 
         df_order_quik = pd.DataFrame(all_rows_order_list)
@@ -312,4 +318,17 @@ if __name__ == '__main__':  # Точка входа при запуске это
             logger.info(f'- Стоп заявка номер {firm_stop_order["order_num"]} {"Покупка" if buy else "Продажа"} {class_code}.{sec_code} {stop_order_qty} @ {stop_order_price}')
         i += 1  # Переходим к следующей учетной записи
 
+    # # Подписка на сделки
+    # qp_provider.on_trade = lambda data: logger.info(data)  # Обработчик получения сделки
+    # logger.info(f'Подписка на мои сделки {class_code}.{sec_code}')
+    # # sleep_sec = 10  # Кол-во секунд получения сделок
+    # # logger.info(f'Секунд моих сделок: {sleep_sec}')
+    # # time.sleep(sleep_sec)  # Ждем кол-во секунд получения сделок
+    # # logger.info(f'Отмена подписки на сделки')
+    # # qp_provider.on_all_trade = qp_provider.default_handler  # Возвращаем обработчик по умолчанию
+    #
+    # time.sleep(10)  # Ждем 10 секунд
+    #
+    # Выход
+    # qp_provider.on_trade.unsubscribe(_on_trade)  # Отменяем подписку на сделки
     qp_provider.close_connection_and_thread()  # Перед выходом закрываем соединение для запросов и поток обработки функций обратного вызова
