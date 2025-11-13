@@ -16,15 +16,6 @@ def script1(provider: QuikPy):  # 1-ый скрипт
         provider.close_connection_and_thread()  # Перед выходом закрываем соединение для запросов и поток обработки функций обратного вызова
         sys.exit()  # Выходим, дальше не продолжаем
 
-    # # Подписка на новые свечки. При первой подписке получим все свечки с начала прошлой сессии
-    # provider.on_new_candle = lambda data: logger.info(data)  # Обработчик получения новой свечки
-    # for interval in (1,):  # (1, 60, 1440) = Минутки, часовки, дневки
-    #     logger.info(
-    #         f'Подписка на интервал {interval}: {provider.subscribe_to_candles(class_code, sec_code, interval)["data"]}')
-    #     logger.info(
-    #         f'Статус подписки на интервал {interval}: {provider.is_subscribed(class_code, sec_code, interval)["data"]}')
-    # input('Enter - отмена\n')
-
     # Подписка на сделки
     provider.on_trade = lambda data: logger.info(data)  # Обработчик получения сделки
     logger.info(f'Подписка на мои сделки {class_code}.{sec_code}')
@@ -32,7 +23,7 @@ def script1(provider: QuikPy):  # 1-ый скрипт
     logger.info(f'Секунд моих сделок: {sleep_sec}')
     time.sleep(sleep_sec)  # Ждем кол-во секунд получения сделок
     # logger.info(f'Отмена подписки на сделки')
-    # qp_provider.on_all_trade = qp_provider.default_handler  # Возвращаем обработчик по умолчанию
+    qp_provider.on_trade = qp_provider.default_handler  # Возвращаем обработчик по умолчанию
 
     # time.sleep(10)  # Ждем 10 секунд
 
@@ -73,3 +64,4 @@ if __name__ == '__main__':  # Точка входа при запуске это
     input('Enter - выход\n')
     logger.info(f'Перед выходом закрываем соединение для запросов и поток обработки функций обратного вызова')
     qp_provider.close_connection_and_thread()  # Перед выходом закрываем соединение для запросов и поток обработки функций обратного вызова
+

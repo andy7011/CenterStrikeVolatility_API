@@ -318,9 +318,9 @@ if __name__ == '__main__':  # Точка входа при запуске это
             logger.info(f'- Стоп заявка номер {firm_stop_order["order_num"]} {"Покупка" if buy else "Продажа"} {class_code}.{sec_code} {stop_order_qty} @ {stop_order_price}')
         i += 1  # Переходим к следующей учетной записи
 
-    # # Подписка на сделки
-    # qp_provider.on_trade = lambda data: logger.info(data)  # Обработчик получения сделки
-    # logger.info(f'Подписка на мои сделки {class_code}.{sec_code}')
+    # Подписка на сделки
+    qp_provider.on_trade = lambda data: logger.info(data)  # Обработчик получения сделки
+    logger.info(f'Подписка на мои сделки {class_code}.{sec_code}')
     # # sleep_sec = 10  # Кол-во секунд получения сделок
     # # logger.info(f'Секунд моих сделок: {sleep_sec}')
     # # time.sleep(sleep_sec)  # Ждем кол-во секунд получения сделок
@@ -330,5 +330,5 @@ if __name__ == '__main__':  # Точка входа при запуске это
     # time.sleep(10)  # Ждем 10 секунд
     #
     # Выход
-    # qp_provider.on_trade.unsubscribe(_on_trade)  # Отменяем подписку на сделки
+    input('Enter - выход\n')
     qp_provider.close_connection_and_thread()  # Перед выходом закрываем соединение для запросов и поток обработки функций обратного вызова
