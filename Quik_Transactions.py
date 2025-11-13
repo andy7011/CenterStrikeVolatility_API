@@ -1,3 +1,4 @@
+import json
 import logging  # Выводим лог на консоль и в файл
 from sys import exit
 from datetime import datetime  # Дата и время
@@ -15,13 +16,21 @@ def _on_trans_reply(data):
     logger.info(f'Номер транзакции: {data["data"]["trans_id"]}, Номер заявки: {order_num}')
 
 
-def _on_order(data): logger.info(f'Заявка - {data}')
-
+def _on_order(data):
+    logger.info(f'Заявка - {data}')
+    order_data = json.load(data)
+    print(order_data["data"]['sec_code'])  # Тикер
+    order_num = order_data["data"]['order_num']  # Номер заявки на бирже
+    qty = order_data["data"]['qty']
+    # sec_code = data['data']['sec_code']  # Тикер
+    # order_num = data['data']['order_num']  # Номер заявки на бирже
+    # print(data)
 
 def _on_stop_order(data): logger.info(f'Стоп заявка - {data}')
 
 
 def _on_trade(data): logger.info(f'Сделка - {data}')
+    # 'trade_num'
 
 
 def _on_futures_client_holding(data): logger.info(f'OnFuturesClientHolding: {data}')
@@ -57,7 +66,6 @@ if __name__ == '__main__':  # Точка входа при запуске это
     trade_account_id = account['trade_account_id']  # Счет
     last_price = float(qp_provider.get_param_ex(class_code, sec_code, 'LAST')['data']['param_value'])  # Последняя цена сделки
     si = qp_provider.get_symbol_info(class_code, sec_code)  # Спецификация тикера
-    print(si)
     order_num = 0  # 19-и значный номер заявки на бирже / номер стоп заявки на сервере. Будет устанавливаться в обработчике события ответа на транзакцию пользователя
     trans_id = itertools.count(1)  # Номер транзакции задается пользователем. Он будет начинаться с 1 и каждый раз увеличиваться на 1
 

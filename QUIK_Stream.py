@@ -168,8 +168,8 @@ if __name__ == '__main__':  # Точка входа при запуске это
                     # print(f'TrueVega опциона {si["sec_code"]} {option_type_str}: {TrueVega}')
                     # print('\n')
 
-                    # === СОБИРАЕМ ВСЕ СТРОКИ В СПИСОК ===
-                    # Добавляем строки
+                    # === СОБИРАЕМ СТРОКИ В СПИСОК ===
+                    # Добавляем строку
                     all_rows_table_list.append({
                         'ticker': si['sec_code'],
                         'net_pos': net_pos,
@@ -198,9 +198,9 @@ if __name__ == '__main__':  # Точка входа при запуске это
                     # data_portfolio = {active_futures_holding['totalnet'], active_futures_holding['avrposnprice']}
                     # print(data_portfolio)
 
-            print(all_rows_table_list)
+            print(all_rows_table_list) # список словарей с данными по позициям
 
-            df_table_quik = pd.DataFrame(all_rows_table_list)
+            df_table_quik = pd.DataFrame(all_rows_table_list) # DataFrame с данными по позициям
             print(df_table_quik)
 
             # Видео: https://www.youtube.com/watch?v=u2C7ElpXZ4k
@@ -233,7 +233,7 @@ if __name__ == '__main__':  # Точка входа при запуске это
 
         # Активные заявки
         firm_orders = [order for order in orders if order['firmid'] == firm_id and order['flags'] & 0b1 == 0b1]  # Активные заявки по фирме
-        all_rows_order_list = [] # Список всех заявок
+        all_rows_order_list = [] # Пустой список всех заявок
         for firm_order in firm_orders:  # Пробегаемся по всем заявкам
             # print(firm_order)
             buy = firm_order['flags'] & 0b100 != 0b100  # Заявка на покупку
@@ -295,16 +295,16 @@ if __name__ == '__main__':  # Точка входа при запуске это
                 'option_type': option_type_str,
                 'strike': int(si['option_strike']),
                 'expdate': formatted_exp_date,
-                'operation': "Покупка" if buy else "Продажа",
+                'operation': "Купля" if buy else "Продажа",
                 'volume': order_qty,
                 'price': order_price,
                 'value': order_qty * order_price,
                 'volatility': round(implied_volatility.get_iv_for_option_price(asset_price, option, order_price), 2)
             })
 
-        print(all_rows_order_list)
+        print(all_rows_order_list) # Список словарей с данными о заявках
 
-        df_order_quik = pd.DataFrame(all_rows_order_list)
+        df_order_quik = pd.DataFrame(all_rows_order_list) # Создаем DataFrame с данными о заявках
         print(df_order_quik)
 
 

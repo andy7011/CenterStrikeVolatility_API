@@ -25,6 +25,15 @@ def script1(provider: QuikPy):  # 1-ый скрипт
     # # logger.info(f'Отмена подписки на сделки')
     # qp_provider.on_trade = qp_provider.default_handler  # Возвращаем обработчик по умолчанию
 
+    # Подписка на ордера
+    provider.on_order = lambda data: logger.info(data)  # Обработчик получения заявки
+    logger.info(f'Подписка на мои заявки {class_code}.{sec_code}')
+    # sleep_sec = 10  # Кол-во секунд получения сделок
+    # logger.info(f'Секунд моих сделок: {sleep_sec}')
+    # time.sleep(sleep_sec)  # Ждем кол-во секунд получения сделок
+    # # logger.info(f'Отмена подписки на заявки')
+    # qp_provider.on_order = qp_provider.default_handler  # Возвращаем обработчик по умолчанию
+
     # time.sleep(10)  # Ждем 10 секунд
 
 
