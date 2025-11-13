@@ -19,6 +19,9 @@ futures_firm_id = 'SPBFUT'  # Код фирмы для фьючерсов. Из�
     :param sigma: volatility
     :param cp: Call or Put
 '''
+# class SomeClass:
+#     def __init__(self):
+#         self.on_trade = Event()
 
 
 def get_time_to_maturity(expiration_datetime: int):
