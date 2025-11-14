@@ -2,6 +2,7 @@ import logging  # Выводим лог на консоль и в файл
 from datetime import datetime, UTC  # Дата и время
 from scipy.stats import norm
 import pandas as pd
+# import json
 import time  # Подписка на события по времени
 
 import implied_volatility
@@ -19,15 +20,73 @@ futures_firm_id = 'SPBFUT'  # Код фирмы для фьючерсов. Из�
     :param sigma: volatility
     :param cp: Call or Put
 '''
-# class SomeClass:
-#     def __init__(self):
-#         self.on_trade = Event()
 
+# Функция для форматирования даты и времени
+# из словаря вида {'hour': 10, 'year': 2025, 'day': 14, 'week_day': 5, 'ms': 199, 'mcs': 199284, 'min': 23, 'month': 11, 'sec': 49}
+# при обратном вызове on_order, on_trade в строку вида 14.11.2025 10:23:49
+def format_datetime(datetime_dict):
+    # Извлекаем значения даты и времени из словаря
+    year = datetime_dict['year']
+    month = datetime_dict['month']
+    day = datetime_dict['day']
+    hour = datetime_dict['hour']
+    minute = datetime_dict['min']
+    second = datetime_dict['sec']
+    # Формируем строку в нужном формате
+    formatted_datetime = f"{day:02d}.{month:02d}.{year} {hour:02d}:{minute:02d}:{second:02d}"
+    return formatted_datetime
 
 def get_time_to_maturity(expiration_datetime: int):
     difference = expiration_datetime - datetime.utcnow()
     seconds_in_year = 365 * 24 * 60 * 60
     return difference.total_seconds() / seconds_in_year
+
+def _on_order(data):
+    order_data = data
+    print(order_data.get('cmd'), order_data.get('data').get('class_code'))
+    # print(data)
+    if order_data.get('data').get('class_code') == 'SPBOPT':
+        buy = order_data.get('data').get('flags') & 0b100 != 0b100  # Заявка на покупку
+        Operation = "Купля" if buy else "Продажа"
+        sec_code = order_data.get('data').get('sec_code')
+        si = qp_provider.get_symbol_info('SPBOPT', sec_code)  # Спецификация тикера
+        # print(si)
+
+        # Цена последней сделки базового актива (S)
+        asset_price = qp_provider.get_param_ex('SPBFUT', si['base_active_seccode'], 'LAST', trans_id=0)['data']['param_value']
+        asset_price = float(asset_price)
+        # print(f'asset_price - Цена последней сделки базового актива: {asset_price}, тип: {type(asset_price)}')
+
+        # Дата исполнения инструмента
+        EXPDATE_image = qp_provider.get_param_ex('SPBOPT', sec_code, 'EXPDATE', trans_id=0)['data']['param_image']
+        EXPDATE_str = datetime.strptime(EXPDATE_image, "%d.%m.%Y").strftime("%Y-%m-%d")
+        EXPDATE = datetime.strptime(EXPDATE_str, "%Y-%m-%d")
+        # print(f'EXPDATE - Дата исполнения инструмента: {EXPDATE}, тип: {type(EXPDATE)}')
+
+        # Тип опциона
+        option_type_str = qp_provider.get_param_ex(class_code, sec_code, 'OPTIONTYPE', trans_id=0)['data']['param_image']  # Тип опциона
+        # print(f'option_type - Тип опциона: {option_type_str}')
+        opt_type_converted = option_type.PUT if option_type_str == "Put" else option_type.CALL
+
+        # Создание опциона
+        option = Option(order_data.get('data').get('sec_code'), si["base_active_seccode"], EXPDATE, si['option_strike'], opt_type_converted)
+
+        for item in all_rows_order_list:
+            if item.get('ticker') == order_data.get('data').get('sec_code') and item.get('operation') == Operation:
+                item['datetime'] = format_datetime(order_data.get('data').get('datetime')) # Дата и время новой заявки
+                item['order_num'] = order_data.get('data').get('order_num') # Номер новой заявки
+                item['qty'] = order_data["data"]['qty'] # Количество новой заявки
+                item['price'] = order_data['data']['price'] # Цена новой заявки
+                item['volume'] = order_data['data']['value'] # Объем новой заявки в денежных средствах
+                item['volatility'] = round(implied_volatility.get_iv_for_option_price(asset_price, option, item['price']), 2) # IV новой заявки
+                # item['time_to_maturity'] = get_time_to_maturity(item['expiration_date']) # Время до исполнения
+
+                print(item)
+
+
+def _on_trade(data): logger.info(f'Сделка - {data}')
+    # 'trade_num'
+
 
 if __name__ == '__main__':  # Точка входа при запуске этого скрипта
     logger = logging.getLogger('QuikPy.Accounts')  # Будем вести лог
@@ -244,7 +303,7 @@ if __name__ == '__main__':  # Точка входа при запуске это
             # print(si)
 
             order_qty = firm_order['qty'] * si['lot_size']  # Кол-во в штуках
-            logger.info(f'- Заявка номер {firm_order["order_num"]} {"Покупка" if buy else "Продажа"} {class_code}.{sec_code} {order_qty} @ {order_price}')
+            logger.info(f'- Заявка номер {firm_order["order_num"]} {"Купля" if buy else "Продажа"} {class_code}.{sec_code} {order_qty} @ {order_price}')
 
             # Цена последней сделки базового актива (S)
             asset_price = qp_provider.get_param_ex('SPBFUT', si['base_active_seccode'], 'LAST', trans_id=0)['data']['param_value']
@@ -262,17 +321,6 @@ if __name__ == '__main__':  # Точка входа при запуске это
             # print(f'option_type - Тип опциона: {option_type_str}')
             opt_type_converted = option_type.PUT if option_type_str == "Put" else option_type.CALL
 
-            # Извлекаем значения даты и времени ордера из словаря
-            year = firm_order['datetime']['year']
-            month = firm_order['datetime']['month']
-            day = firm_order['datetime']['day']
-            hour = firm_order['datetime']['hour']
-            minute = firm_order['datetime']['min']
-            second = firm_order['datetime']['sec']
-            # Формируем строку в нужном формате
-            formatted_datetime = f"{day:02d}.{month:02d}.{year} {hour:02d}:{minute:02d}:{second:02d}"
-            # print(formatted_datetime)
-
             # Форматирование строки с датой экспирации
             exp_date_number = si['exp_date']
             # Преобразуем число в строку
@@ -288,7 +336,7 @@ if __name__ == '__main__':  # Точка входа при запуске это
             # === СОБИРАЕМ ВСЕ СТРОКИ В СПИСОК ===
             # Добавляем строки
             all_rows_order_list.append({
-                'datetime': formatted_datetime,
+                'datetime': format_datetime(firm_order['datetime']),
                 'order_num': firm_order["order_num"],
                 'option_base': si['base_active_seccode'],
                 'ticker': si['sec_code'],
@@ -321,9 +369,13 @@ if __name__ == '__main__':  # Точка входа при запуске это
             logger.info(f'- Стоп заявка номер {firm_stop_order["order_num"]} {"Покупка" if buy else "Продажа"} {class_code}.{sec_code} {stop_order_qty} @ {stop_order_price}')
         i += 1  # Переходим к следующей учетной записи
 
-    # Подписка на сделки
-    qp_provider.on_trade = lambda data: logger.info(data)  # Обработчик получения сделки
-    logger.info(f'Подписка на мои сделки {class_code}.{sec_code}')
+    # Подписки
+    # qp_provider.on_trade = lambda data: logger.info(data)  # Обработчик получения сделки
+    # logger.info(f'Подписка на мои сделки {class_code}.{sec_code}')
+    # qp_provider.on_order = lambda data: logger.info(data)  # Обработчик получения сделки
+    # logger.info(f'Подписка на мои заявки {class_code}.{sec_code}')
+    qp_provider.on_order.subscribe(_on_order)  # Подписываемся на зявки
+    qp_provider.on_trade.subscribe(_on_trade)  # Подписываемся на сделки
     # # sleep_sec = 10  # Кол-во секунд получения сделок
     # # logger.info(f'Секунд моих сделок: {sleep_sec}')
     # # time.sleep(sleep_sec)  # Ждем кол-во секунд получения сделок
@@ -334,4 +386,6 @@ if __name__ == '__main__':  # Точка входа при запуске это
     #
     # Выход
     input('Enter - выход\n')
+    qp_provider.on_order.unsubscribe(_on_order)  # Отменяем подписку на зявки
+    qp_provider.on_trade.unsubscribe(_on_trade)  # Отменяем подписку на сделки
     qp_provider.close_connection_and_thread()  # Перед выходом закрываем соединение для запросов и поток обработки функций обратного вызова
