@@ -41,120 +41,79 @@ def get_time_to_maturity(expiration_datetime: int):
     seconds_in_year = 365 * 24 * 60 * 60
     return difference.total_seconds() / seconds_in_year
 
-def active_orders():
-    # Активные заявки
-    firm_orders = [order for order in orders if
-                   order['firmid'] == firm_id and order['flags'] & 0b1 == 0b1]  # Активные заявки по фирме
-    all_rows_order_list = []  # Пустой список всех заявок
-    for firm_order in firm_orders:  # Пробегаемся по всем заявкам
-        buy = firm_order['flags'] & 0b100 != 0b100  # Заявка на покупку
-        class_code = firm_order['class_code']  # Код режима торгов
-        sec_code = firm_order["sec_code"]  # Тикер
-        order_price = qp_provider.quik_price_to_price(class_code, sec_code,
-                                                      firm_order['price'])  # Цена заявки в рублях за штуку
-        si = qp_provider.get_symbol_info(class_code, sec_code)  # Спецификация тикера
-        # print(si)
-
-        order_qty = firm_order['qty'] * si['lot_size']  # Кол-во в штуках
-        logger.info(
-            f'- Заявка номер {firm_order["order_num"]} {"Купля" if buy else "Продажа"} {class_code}.{sec_code} {order_qty} @ {order_price}')
-
-        # Цена последней сделки базового актива (S)
-        asset_price = qp_provider.get_param_ex('SPBFUT', si['base_active_seccode'], 'LAST', trans_id=0)['data'][
-            'param_value']
-        asset_price = float(asset_price)
-        # print(f'asset_price - Цена последней сделки базового актива: {asset_price}, тип: {type(asset_price)}')
-
-        # Дата исполнения инструмента
-        EXPDATE_image = qp_provider.get_param_ex(class_code, sec_code, 'EXPDATE', trans_id=0)['data']['param_image']
-        EXPDATE_str = datetime.strptime(EXPDATE_image, "%d.%m.%Y").strftime("%Y-%m-%d")
-        EXPDATE = datetime.strptime(EXPDATE_str, "%Y-%m-%d")
-        # print(f'EXPDATE - Дата исполнения инструмента: {EXPDATE}, тип: {type(EXPDATE)}')
-
-        # Тип опциона
-        option_type_str = qp_provider.get_param_ex(class_code, sec_code, 'OPTIONTYPE', trans_id=0)['data'][
-            'param_image']
-        # print(f'option_type - Тип опциона: {option_type_str}')
-        opt_type_converted = option_type.PUT if option_type_str == "Put" else option_type.CALL
-
-        # Форматирование строки с датой экспирации
-        exp_date_number = si['exp_date']
-        # Преобразуем число в строку
-        exp_date_str = str(exp_date_number)
-        # Преобразуем строку в объект datetime
-        exp_date = datetime.strptime(exp_date_str, "%Y%m%d")
-        # Форматируем дату в нужный формат
-        formatted_exp_date = exp_date.strftime("%d.%m.%Y")
-
-        # Создание опциона
-        option = Option(si["sec_code"], si["base_active_seccode"], EXPDATE, si['option_strike'], opt_type_converted)
-
-        # === СОБИРАЕМ ВСЕ СТРОКИ В СПИСОК ===
-        # Добавляем строки
-        all_rows_order_list.append({
-            'datetime': format_datetime(firm_order['datetime']),
-            'order_num': firm_order["order_num"],
-            'option_base': si['base_active_seccode'],
-            'ticker': si['sec_code'],
-            'option_type': option_type_str,
-            'strike': int(si['option_strike']),
-            'expdate': formatted_exp_date,
-            'operation': "Купля" if buy else "Продажа",
-            'volume': order_qty,
-            'price': order_price,
-            'value': order_qty * order_price,
-            'volatility': round(implied_volatility.get_iv_for_option_price(asset_price, option, order_price), 2)
-        })
-
-    print(all_rows_order_list)  # Список словарей с данными о заявках
-
-    df_order_quik = pd.DataFrame(all_rows_order_list)  # Создаем DataFrame с данными о заявках
-    print(df_order_quik)
-
 def _on_order(data):
     order_data = data
-    print(order_data.get('cmd'), order_data.get('data').get('class_code'))
-    if not all_rows_order_list:
-        print(all_rows_order_list)
-        print('Список заявок пуст')
-        active_orders()
+    # print(order_data.get('cmd'), order_data.get('data').get('class_code'))
+    # if not all_rows_order_list:
+    #     print(all_rows_order_list)
+    #     print('Список заявок пуст')
+    #     active_orders()
     if order_data.get('data').get('class_code') == 'SPBOPT':
-        buy = order_data.get('data').get('flags') & 0b100 != 0b100  # Заявка на покупку
-        Operation = "Купля" if buy else "Продажа"
-        sec_code = order_data.get('data').get('sec_code')
-        si = qp_provider.get_symbol_info('SPBOPT', sec_code)  # Спецификация тикера
-        # print(si)
+        if order_data.get('data').get('flags') & 0b10 == 0b10: # Заявка снята
+            print("Заявка снята")
+            for item in all_rows_order_list:
+                if item['order_num'] == order_data.get('data').get('order_num'):  # Номер новой заявки
+                    all_rows_order_list.remove(item)
 
-        # Цена последней сделки базового актива (S)
-        asset_price = qp_provider.get_param_ex('SPBFUT', si['base_active_seccode'], 'LAST', trans_id=0)['data']['param_value']
-        asset_price = float(asset_price)
-        # print(f'asset_price - Цена последней сделки базового актива: {asset_price}, тип: {type(asset_price)}')
+        else:
+            print("Новая заявка")
+            buy = order_data.get('data').get('flags') & 0b100 != 0b100  # Заявка на покупку
+            Operation = "Купля" if buy else "Продажа"
+            sec_code = order_data.get('data').get('sec_code')
+            si = qp_provider.get_symbol_info('SPBOPT', sec_code)  # Спецификация тикера
+            # print(si)
 
-        # Дата исполнения инструмента
-        EXPDATE_image = qp_provider.get_param_ex('SPBOPT', sec_code, 'EXPDATE', trans_id=0)['data']['param_image']
-        EXPDATE_str = datetime.strptime(EXPDATE_image, "%d.%m.%Y").strftime("%Y-%m-%d")
-        EXPDATE = datetime.strptime(EXPDATE_str, "%Y-%m-%d")
-        # print(f'EXPDATE - Дата исполнения инструмента: {EXPDATE}, тип: {type(EXPDATE)}')
+            # Цена последней сделки базового актива (S)
+            asset_price = qp_provider.get_param_ex('SPBFUT', si['base_active_seccode'], 'LAST', trans_id=0)['data']['param_value']
+            asset_price = float(asset_price)
+            # print(f'asset_price - Цена последней сделки базового актива: {asset_price}, тип: {type(asset_price)}')
 
-        # Тип опциона
-        option_type_str = qp_provider.get_param_ex(class_code, sec_code, 'OPTIONTYPE', trans_id=0)['data']['param_image']  # Тип опциона
-        # print(f'option_type - Тип опциона: {option_type_str}')
-        opt_type_converted = option_type.PUT if option_type_str == "Put" else option_type.CALL
+            # Дата исполнения инструмента
+            EXPDATE_image = qp_provider.get_param_ex('SPBOPT', sec_code, 'EXPDATE', trans_id=0)['data']['param_image']
+            EXPDATE_str = datetime.strptime(EXPDATE_image, "%d.%m.%Y").strftime("%Y-%m-%d")
+            EXPDATE = datetime.strptime(EXPDATE_str, "%Y-%m-%d")
+            # print(f'EXPDATE - Дата исполнения инструмента: {EXPDATE}, тип: {type(EXPDATE)}')
 
-        # Создание опциона
-        option = Option(order_data.get('data').get('sec_code'), si["base_active_seccode"], EXPDATE, si['option_strike'], opt_type_converted)
+            # Тип опциона
+            option_type_str = qp_provider.get_param_ex(class_code, sec_code, 'OPTIONTYPE', trans_id=0)['data']['param_image']  # Тип опциона
+            # print(f'option_type - Тип опциона: {option_type_str}')
+            opt_type_converted = option_type.PUT if option_type_str == "Put" else option_type.CALL
 
-        for item in all_rows_order_list:
-            if item.get('ticker') == order_data.get('data').get('sec_code') and item.get('operation') == Operation:
-                item['datetime'] = format_datetime(order_data.get('data').get('datetime')) # Дата и время новой заявки
-                item['order_num'] = order_data.get('data').get('order_num') # Номер новой заявки
-                item['qty'] = order_data["data"]['qty'] # Количество новой заявки
-                item['price'] = order_data['data']['price'] # Цена новой заявки
-                item['volume'] = order_data['data']['value'] # Объем новой заявки в денежных средствах
-                item['volatility'] = round(implied_volatility.get_iv_for_option_price(asset_price, option, item['price']), 2) # IV новой заявки
-                # item['time_to_maturity'] = get_time_to_maturity(item['expiration_date']) # Время до исполнения
+            # Форматирование строки с датой экспирации
+            exp_date_number = si['exp_date']
+            # Преобразуем число в строку
+            exp_date_str = str(exp_date_number)
+            # Преобразуем строку в объект datetime
+            exp_date = datetime.strptime(exp_date_str, "%Y%m%d")
+            # Форматируем дату в нужный формат
+            formatted_exp_date = exp_date.strftime("%d.%m.%Y")
 
-                print(item)
+            order_qty = order_data.get('data').get('qty') * si['lot_size']  # Кол-во в штуках
+
+            order_price = qp_provider.quik_price_to_price('SPBOPT', sec_code, order_data.get('data').get('price'))  # Цена заявки в рублях за штуку
+
+            # Создание опциона
+            option = Option(order_data.get('data').get('sec_code'), si["base_active_seccode"], EXPDATE, si['option_strike'], opt_type_converted)
+
+            # Добавляем строки
+            all_rows_order_list.append({
+                'datetime': format_datetime(order_data.get('data').get('datetime')), # Дата и время новой заявки
+                'order_num': order_data.get('data').get('order_num'), # Номер новой заявки
+                'option_base': si['base_active_seccode'],
+                'ticker': si['sec_code'],
+                'option_type': option_type_str,
+                'strike': int(si['option_strike']),
+                'expdate': formatted_exp_date,
+                'operation': "Купля" if buy else "Продажа",
+                'volume': order_qty,
+                'price': order_price,
+                'value': order_qty * order_price,
+                'volatility': round(implied_volatility.get_iv_for_option_price(asset_price, option, order_price), 2)
+            })
+        print(all_rows_order_list)  # Список словарей с данными о заявках
+
+        df_order_quik = pd.DataFrame(all_rows_order_list)  # Создаем DataFrame с данными о заявках
+        print(df_order_quik)
 
 
 # def _on_trade(data): logger.info(f'Сделка - {data}')
@@ -364,70 +323,70 @@ if __name__ == '__main__':  # Точка входа при запуске это
                     logger.info(f'- Позиция {class_code}.{sec_code} ({si["short_name"]}) {int(firm_kind_depo_limit["currentbal"])} @ {entry_price} / {last_price}')
                 logger.info(f'- T{limit_kind}: Свободные средства {firm_money_limit["currentbal"]} {firm_money_limit["currcode"]}')
 
-        active_orders()
-        # # Активные заявки
-        # firm_orders = [order for order in orders if order['firmid'] == firm_id and order['flags'] & 0b1 == 0b1]  # Активные заявки по фирме
-        # all_rows_order_list = [] # Пустой список всех заявок
-        # for firm_order in firm_orders:  # Пробегаемся по всем заявкам
-        #     buy = firm_order['flags'] & 0b100 != 0b100  # Заявка на покупку
-        #     class_code = firm_order['class_code']  # Код режима торгов
-        #     sec_code = firm_order["sec_code"]  # Тикер
-        #     order_price = qp_provider.quik_price_to_price(class_code, sec_code, firm_order['price'])  # Цена заявки в рублях за штуку
-        #     si = qp_provider.get_symbol_info(class_code, sec_code)  # Спецификация тикера
-        #     # print(si)
-        #
-        #     order_qty = firm_order['qty'] * si['lot_size']  # Кол-во в штуках
-        #     logger.info(f'- Заявка номер {firm_order["order_num"]} {"Купля" if buy else "Продажа"} {class_code}.{sec_code} {order_qty} @ {order_price}')
-        #
-        #     # Цена последней сделки базового актива (S)
-        #     asset_price = qp_provider.get_param_ex('SPBFUT', si['base_active_seccode'], 'LAST', trans_id=0)['data']['param_value']
-        #     asset_price = float(asset_price)
-        #     # print(f'asset_price - Цена последней сделки базового актива: {asset_price}, тип: {type(asset_price)}')
-        #
-        #     # Дата исполнения инструмента
-        #     EXPDATE_image = qp_provider.get_param_ex(class_code, sec_code, 'EXPDATE', trans_id=0)['data']['param_image']
-        #     EXPDATE_str = datetime.strptime(EXPDATE_image, "%d.%m.%Y").strftime("%Y-%m-%d")
-        #     EXPDATE = datetime.strptime(EXPDATE_str, "%Y-%m-%d")
-        #     # print(f'EXPDATE - Дата исполнения инструмента: {EXPDATE}, тип: {type(EXPDATE)}')
-        #
-        #     # Тип опциона
-        #     option_type_str = qp_provider.get_param_ex(class_code, sec_code, 'OPTIONTYPE', trans_id=0)['data']['param_image']
-        #     # print(f'option_type - Тип опциона: {option_type_str}')
-        #     opt_type_converted = option_type.PUT if option_type_str == "Put" else option_type.CALL
-        #
-        #     # Форматирование строки с датой экспирации
-        #     exp_date_number = si['exp_date']
-        #     # Преобразуем число в строку
-        #     exp_date_str = str(exp_date_number)
-        #     # Преобразуем строку в объект datetime
-        #     exp_date = datetime.strptime(exp_date_str, "%Y%m%d")
-        #     # Форматируем дату в нужный формат
-        #     formatted_exp_date = exp_date.strftime("%d.%m.%Y")
-        #
-        #     # Создание опциона
-        #     option = Option(si["sec_code"], si["base_active_seccode"], EXPDATE, si['option_strike'], opt_type_converted)
-        #
-        #     # === СОБИРАЕМ ВСЕ СТРОКИ В СПИСОК ===
-        #     # Добавляем строки
-        #     all_rows_order_list.append({
-        #         'datetime': format_datetime(firm_order['datetime']),
-        #         'order_num': firm_order["order_num"],
-        #         'option_base': si['base_active_seccode'],
-        #         'ticker': si['sec_code'],
-        #         'option_type': option_type_str,
-        #         'strike': int(si['option_strike']),
-        #         'expdate': formatted_exp_date,
-        #         'operation': "Купля" if buy else "Продажа",
-        #         'volume': order_qty,
-        #         'price': order_price,
-        #         'value': order_qty * order_price,
-        #         'volatility': round(implied_volatility.get_iv_for_option_price(asset_price, option, order_price), 2)
-        #     })
-        #
-        # print(all_rows_order_list) # Список словарей с данными о заявках
-        #
-        # df_order_quik = pd.DataFrame(all_rows_order_list) # Создаем DataFrame с данными о заявках
-        # print(df_order_quik)
+        # active_orders()
+        # Активные заявки
+        firm_orders = [order for order in orders if order['firmid'] == firm_id and order['flags'] & 0b1 == 0b1]  # Активные заявки по фирме
+        all_rows_order_list = [] # Пустой список всех заявок
+        for firm_order in firm_orders:  # Пробегаемся по всем заявкам
+            buy = firm_order['flags'] & 0b100 != 0b100  # Заявка на покупку
+            class_code = firm_order['class_code']  # Код режима торгов
+            sec_code = firm_order["sec_code"]  # Тикер
+            order_price = qp_provider.quik_price_to_price(class_code, sec_code, firm_order['price'])  # Цена заявки в рублях за штуку
+            si = qp_provider.get_symbol_info(class_code, sec_code)  # Спецификация тикера
+            # print(si)
+
+            order_qty = firm_order['qty'] * si['lot_size']  # Кол-во в штуках
+            logger.info(f'- Заявка номер {firm_order["order_num"]} {"Купля" if buy else "Продажа"} {class_code}.{sec_code} {order_qty} @ {order_price}')
+
+            # Цена последней сделки базового актива (S)
+            asset_price = qp_provider.get_param_ex('SPBFUT', si['base_active_seccode'], 'LAST', trans_id=0)['data']['param_value']
+            asset_price = float(asset_price)
+            # print(f'asset_price - Цена последней сделки базового актива: {asset_price}, тип: {type(asset_price)}')
+
+            # Дата исполнения инструмента
+            EXPDATE_image = qp_provider.get_param_ex(class_code, sec_code, 'EXPDATE', trans_id=0)['data']['param_image']
+            EXPDATE_str = datetime.strptime(EXPDATE_image, "%d.%m.%Y").strftime("%Y-%m-%d")
+            EXPDATE = datetime.strptime(EXPDATE_str, "%Y-%m-%d")
+            # print(f'EXPDATE - Дата исполнения инструмента: {EXPDATE}, тип: {type(EXPDATE)}')
+
+            # Тип опциона
+            option_type_str = qp_provider.get_param_ex(class_code, sec_code, 'OPTIONTYPE', trans_id=0)['data']['param_image']
+            # print(f'option_type - Тип опциона: {option_type_str}')
+            opt_type_converted = option_type.PUT if option_type_str == "Put" else option_type.CALL
+
+            # Форматирование строки с датой экспирации
+            exp_date_number = si['exp_date']
+            # Преобразуем число в строку
+            exp_date_str = str(exp_date_number)
+            # Преобразуем строку в объект datetime
+            exp_date = datetime.strptime(exp_date_str, "%Y%m%d")
+            # Форматируем дату в нужный формат
+            formatted_exp_date = exp_date.strftime("%d.%m.%Y")
+
+            # Создание опциона
+            option = Option(si["sec_code"], si["base_active_seccode"], EXPDATE, si['option_strike'], opt_type_converted)
+
+            # === СОБИРАЕМ ВСЕ СТРОКИ В СПИСОК ===
+            # Добавляем строки
+            all_rows_order_list.append({
+                'datetime': format_datetime(firm_order['datetime']),
+                'order_num': firm_order["order_num"],
+                'option_base': si['base_active_seccode'],
+                'ticker': si['sec_code'],
+                'option_type': option_type_str,
+                'strike': int(si['option_strike']),
+                'expdate': formatted_exp_date,
+                'operation': "Купля" if buy else "Продажа",
+                'volume': order_qty,
+                'price': order_price,
+                'value': order_qty * order_price,
+                'volatility': round(implied_volatility.get_iv_for_option_price(asset_price, option, order_price), 2)
+            })
+
+        print(all_rows_order_list) # Список словарей с данными о заявках
+
+        df_order_quik = pd.DataFrame(all_rows_order_list) # Создаем DataFrame с данными о заявках
+        print(df_order_quik)
 
 
 
