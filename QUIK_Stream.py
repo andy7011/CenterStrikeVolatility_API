@@ -96,14 +96,14 @@ def _on_order(data):
             order_price = qp_provider.quik_price_to_price('SPBOPT', sec_code, order_data.get('data').get('price'))  # Цена заявки в рублях за штуку
 
             # Создание опциона
-            option = Option(order_data.get('data').get('sec_code'), si["base_active_seccode"], EXPDATE, si['option_strike'], opt_type_converted)
+            option = Option(sec_code, si["base_active_seccode"], EXPDATE, si['option_strike'], opt_type_converted)
 
             # Добавляем строку в список заявок (ордеров)
             all_rows_order_list.append({
                 'datetime': format_datetime(order_data.get('data').get('datetime')), # Дата и время новой заявки
                 'order_num': order_data.get('data').get('order_num'), # Номер новой заявки
                 'option_base': si['base_active_seccode'],
-                'ticker': si['sec_code'],
+                'ticker': sec_code,
                 'option_type': option_type_str,
                 'strike': int(si['option_strike']),
                 'expdate': formatted_exp_date,
@@ -123,8 +123,8 @@ def _on_order(data):
 # def _on_trade(data): logger.info(f'Сделка - {data}')
 def _on_trade(data):
     trade_data = data
-    print(trade_data.get('cmd'), trade_data.get('data').get('class_code'))
-    print(trade_data)
+    # print(trade_data.get('cmd'), trade_data.get('data').get('class_code'))
+    # print(trade_data)
     row_trade_list = []  # Пустой список новой сделки
     if trade_data.get('data').get('class_code') == 'SPBOPT':
         print("Новая сделка")
@@ -137,7 +137,7 @@ def _on_trade(data):
         # Цена последней сделки базового актива (S)
         asset_price = qp_provider.get_param_ex('SPBFUT', si['base_active_seccode'], 'LAST', trans_id=0)['data']['param_value']
         asset_price = float(asset_price)
-        print(f'asset_price - Цена последней сделки базового актива: {asset_price}, тип: {type(asset_price)}')
+        # print(f'asset_price - Цена последней сделки базового актива: {asset_price}, тип: {type(asset_price)}')
 
         # Дата исполнения инструмента
         EXPDATE_image = qp_provider.get_param_ex('SPBOPT', sec_code, 'EXPDATE', trans_id=0)['data']['param_image']
@@ -162,19 +162,18 @@ def _on_trade(data):
 
         trade_qty = trade_data.get('data').get('qty') * si['lot_size']  # Кол-во в штуках
 
-        trade_price = qp_provider.quik_price_to_price('SPBOPT', sec_code, trade_data.get('data').get(
-            'price'))  # Цена заявки в рублях за штуку
+        trade_price = qp_provider.quik_price_to_price('SPBOPT', sec_code, trade_data.get('data').get('price'))  # Цена заявки в рублях за штуку
 
         # Создание опциона
-        option = Option(trade_data.get('data').get('sec_code'), si["base_active_seccode"], EXPDATE, si['option_strike'],
+        option = Option(sec_code, si["base_active_seccode"], EXPDATE, si['option_strike'],
                         opt_type_converted)
 
         # Добавляем новую сделку в словарь
         row_trade_list.append({
                 'datetime': format_datetime(trade_data.get('data').get('datetime')), # Дата и время новой сделки
-                'order_num': trade_data.get('data').get('order_num'), # Номер сделки
+                'order_num': trade_data.get('data').get('trade_num'), # Номер сделки
                 'option_base': si['base_active_seccode'],
-                'ticker': si['sec_code'],
+                'ticker': sec_code,
                 'option_type': option_type_str,
                 'strike': int(si['option_strike']),
                 'expdate': formatted_exp_date,
@@ -182,9 +181,9 @@ def _on_trade(data):
                 'volume': trade_qty,
                 'price': trade_price,
                 'value': trade_qty * trade_price,
-                'volatility': round(implied_volatility.get_iv_for_option_price(asset_price, option, order_price), 2)
+                'volatility': round(implied_volatility.get_iv_for_option_price(asset_price, option, trade_price), 2)
             })
-        print(row_trade_list)  # Список новой сделки
+        # print(row_trade_list)  # Список новой сделки
 
         df_trade_quik = pd.DataFrame(row_trade_list)  # Создаем DataFrame с данными о новой сделке
         print(df_trade_quik)
