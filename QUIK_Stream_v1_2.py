@@ -246,9 +246,9 @@ def _on_order_impl(data):
             # Удаляем из нашего списка
             original_count = len(all_rows_order_list)
             all_rows_order_list = [item for item in all_rows_order_list if str(item['order_num']) != order_num]
-            removed_count = original_count - len(all_rows_order_list)
-            if removed_count > 0:
-                print(f"Удалено {removed_count} записей с order_num: {order_num}")
+            # removed_count = original_count - len(all_rows_order_list)
+            # if removed_count > 0:
+                # print(f"Удалено {removed_count} записей с order_num: {order_num}")
         else:
             print(f"{format_datetime(order_data.get('data').get('datetime'))} Новая заявка: {order_num}")
             # Добавляем в список активных ордеров
