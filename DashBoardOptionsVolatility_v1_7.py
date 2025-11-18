@@ -25,7 +25,7 @@ def get_cached_data(url):
     return get_object_from_json_endpoint_with_retry(url)
 
 
-temp_str = 'C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\шадрин\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 
@@ -384,15 +384,16 @@ def update_output_smile(value, n):
 
         # My orders data
         # Open the file using the "with" statement
-        with open(temp_obj.substitute(name_file='MyOrders.csv'), 'r') as file:
+        with open(temp_obj.substitute(name_file='QUIK_Stream_Orders.csv'), 'r', encoding='utf-8') as file:
             df_orders = pd.read_csv(file, sep=';')
-            df_orders = df_orders[(df_orders.optionbase == value)]
-            df_orders_buy = df_orders[(df_orders.optionbase == value) & (df_orders.operation == 'Купля')]
-            df_orders_sell = df_orders[(df_orders.optionbase == value) & (df_orders.operation == 'Продажа')]
-            # Converting DataFrame "df_orders" to a list "tikers" containing all the rows of column 'tiker'
-            tikers = df_orders['tiker'].tolist()
-        # Close the file explicitly file.close()
-        file.close()
+            df_orders = df_orders[(df_orders.option_base == value)]
+            print(df_orders.operation)
+            df_orders_buy = df_orders[(df_orders.option_base == value) & (df_orders.operation == 'Купля')]
+            print(df_orders_buy)
+            df_orders_sell = df_orders[(df_orders.option_base == value) & (df_orders.operation == 'Продажа')]
+            print(df_orders_sell)
+            # Converting DataFrame "df_orders" to a list "tikers" containing all the rows of column 'ticker'
+            tikers = df_orders['ticker'].tolist()
 
         # Create figure with secondary y-axis
         fig = make_subplots(specs=[[{"secondary_y": True}]])
@@ -440,7 +441,7 @@ def update_output_smile(value, n):
                                  mode='markers+text', text=df_orders_buy['volatility'], textposition='middle left',
                                  marker=dict(size=8, symbol="cross-thin", line=dict(width=1, color="darkgreen")),
                                  name='My Orders BUY',
-                                 customdata=df_orders_buy[['operation', 'optiontype', 'expdate', 'price', 'tiker']],
+                                 customdata=df_orders_buy[['operation', 'option_type', 'expdate', 'price', 'ticker']],
                                  hovertemplate="<b>%{customdata}</b><br>"
                                  ))
 
@@ -449,7 +450,7 @@ def update_output_smile(value, n):
                                  mode='markers+text', text=df_orders_sell['volatility'], textposition='middle left',
                                  marker=dict(size=8, symbol="cross-thin", line=dict(width=1, color="darkmagenta")),
                                  name='My Orders SELL',
-                                 customdata=df_orders_sell[['operation', 'optiontype', 'expdate', 'price', 'tiker']],
+                                 customdata=df_orders_sell[['operation', 'option_type', 'expdate', 'price', 'ticker']],
                                  hovertemplate="<b>%{customdata}</b><br>"
                                  ))
 
@@ -506,8 +507,8 @@ def update_output_smile(value, n):
         # Цена базового актива (вертикальная линия)
         fig.add_vline(x=base_asset_last_price, line_dash='dash', line_color='firebrick')
 
-        fig.update_layout(
-            title_text=f"Volatility smile of the option series <b>{value}<b>", uirevision="Don't change"
+        fig.update_layout(height=400,
+            title_text=f"Volatility smile, series <b>{value}<b>", uirevision="Don't change"
         )
         fig.update_layout(
             margin=dict(l=0, r=0, t=30, b=0),

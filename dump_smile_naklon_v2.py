@@ -37,8 +37,8 @@ def is_business_time():
     if now.weekday() >= 5:  # 5 - суббота, 6 - воскресенье
         return False
 
-    # Проверяем нерабочее время (23:51-8:59)
-    if (current_hour == 23 and current_minute >= 51) or \
+    # Проверяем нерабочее время (23:50-8:59)
+    if (current_hour == 23 and current_minute >= 50) or \
             (current_hour < 9):
         return False
 

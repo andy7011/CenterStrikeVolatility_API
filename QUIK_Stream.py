@@ -4,8 +4,9 @@ from scipy.stats import norm
 import pandas as pd
 from string import Template
 import csv
-# import json
 import time  # Подписка на события по времени
+import schedule
+from FinLabPy.Schedule.MOEX import Futures
 
 import implied_volatility
 import option_type
@@ -27,6 +28,9 @@ futures_firm_id = 'SPBFUT'  # Код фирмы для фьючерсов. Из�
     :param sigma: volatility
     :param cp: Call or Put
 '''
+
+def job():
+    print(f"Расписание торгов фьючерсами в {datetime.now()}")
 
 # Функция для форматирования даты и времени
 # из словаря вида {'hour': 10, 'year': 2025, 'day': 14, 'week_day': 5, 'ms': 199, 'mcs': 199284, 'min': 23, 'month': 11, 'sec': 49}
@@ -187,16 +191,21 @@ def _on_trade(data):
 
         df_trade_quik = pd.DataFrame(row_trade_list)  # Создаем DataFrame с данными о новой сделке
         print(df_trade_quik)
-        df_trade_quik.to_csv(temp_obj.substitute(name_file='QUIK_Stream_Trades.csv'), mode='a', sep=';', index=False, header=False)
-        # df_trade_quik.to_csv(temp_obj.substitute(name_file='QUIK_Stream_Trades.csv'), sep=';', index=False)
-
-
-
+        df_trade_quik.to_csv(temp_obj.substitute(name_file='QUIK_Stream_Trades.csv'), mode='a', sep=';', index=False, header=False) # Добавляем новую сделку в файл
+        # df_trade_quik.to_csv(temp_obj.substitute(name_file='QUIK_Stream_Trades.csv'), sep=';', index=False) # Очищает старый файл, записывает новую сделку
 
 
 if __name__ == '__main__':  # Точка входа при запуске этого скрипта
     logger = logging.getLogger('QuikPy.Accounts')  # Будем вести лог
     qp_provider = QuikPy()  # Подключение к локальному запущенному терминалу QUIK
+
+    futures_schedule = Futures()
+
+    # Запуск в начале каждой торговой сессии
+    for session in futures_schedule.sessions:
+        schedule.every().day.at(session.start.strftime("%H:%M")).do(job)
+
+    print("Планировщик запущен. Ожидание торговых сессий...")
 
     # Закомментировать, чтобы не было логов
     logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',  # Формат сообщения
@@ -478,20 +487,13 @@ if __name__ == '__main__':  # Точка входа при запуске это
         i += 1  # Переходим к следующей учетной записи
 
     # Подписки
-    # qp_provider.on_trade = lambda data: logger.info(data)  # Обработчик получения сделки
-    # logger.info(f'Подписка на мои сделки {class_code}.{sec_code}')
-    # qp_provider.on_order = lambda data: logger.info(data)  # Обработчик получения сделки
-    # logger.info(f'Подписка на мои заявки {class_code}.{sec_code}')
     qp_provider.on_order.subscribe(_on_order)  # Подписываемся на зявки
     qp_provider.on_trade.subscribe(_on_trade)  # Подписываемся на сделки
-    # # sleep_sec = 10  # Кол-во секунд получения сделок
-    # # logger.info(f'Секунд моих сделок: {sleep_sec}')
-    # # time.sleep(sleep_sec)  # Ждем кол-во секунд получения сделок
-    # # logger.info(f'Отмена подписки на сделки')
-    # # qp_provider.on_all_trade = qp_provider.default_handler  # Возвращаем обработчик по умолчанию
-    #
-    # time.sleep(10)  # Ждем 10 секунд
-    #
+
+    # Основной цикл
+    while True:
+        time.sleep(1)
+
     # Выход
     input('Enter - выход\n')
     qp_provider.on_order.unsubscribe(_on_order)  # Отменяем подписку на зявки
