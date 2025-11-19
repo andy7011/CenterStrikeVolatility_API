@@ -50,7 +50,7 @@ def format_datetime(datetime_dict):
 def get_time_to_maturity(expiration_datetime: int):
     difference = expiration_datetime - datetime.utcnow()
     seconds_in_year = 365 * 24 * 60 * 60
-    return difference.total_seconds() / seconds_in_year
+    return (difference.total_seconds() + 67800) / seconds_in_year # Добавляем 67800 секунд (18 ч. 50 мин.), чтобы учесть время в последний день экспирации
 
 def _on_order(data):
     order_data = data
@@ -356,16 +356,14 @@ if __name__ == '__main__':  # Точка входа при запуске это
                         'OpenIV': "",
                         'QuikVola': round(VOLATILITY, 2),
                         'BidIV': round(opt_volatility_bid, 2),
+                        'LastIV': opt_volatility_last,
                         'AskIV': opt_volatility_offer,
                         'P/L theor': '', # round(VOLATILITY - OpenIV, 2) if net_pos > 0 else round(OpenIV - VOLATILITY, 2),
-                        'P/L market': "", # round(opt_volatility_bid - OpenIV, 2) if net_pos > 0 else round(OpenIV - opt_volatility_offer, 2),
+                        'P/L last': '', # round(opt_volatility_last - OpenIV, 2) if net_pos > 0 else round(OpenIV - opt_volatility_last, 2),
+                        'P/L market': '', # round(opt_volatility_bid - OpenIV, 2) if net_pos > 0 else round(OpenIV - opt_volatility_offer, 2),
                         'Vega': round(Vega, 2),
                         'TrueVega': round(TrueVega, 2)
                     })
-
-                    # logger.info(f'- Позиция {si["class_code"]}.{si["sec_code"]} ({si["short_name"]}) {active_futures_holding["totalnet"]} @ {active_futures_holding["cbplused"]}')
-                    # info_portfolio = {'sec_code': si['sec_code'], 'base_active_seccode': si['base_active_seccode'], 'class_code': si['class_code'], 'exp_date': si['exp_date'], 'option_strike': si['option_strike'], 'totalnet': active_futures_holding['totalnet'], 'avrposnprice': active_futures_holding['avrposnprice']}
-                    # print(info_portfolio)
 
                     # print(active_futures_holding)
                     # data_portfolio = {active_futures_holding['totalnet'], active_futures_holding['avrposnprice']}
@@ -375,6 +373,7 @@ if __name__ == '__main__':  # Точка входа при запуске это
 
             df_table_quik = pd.DataFrame(all_rows_table_list) # DataFrame с данными по позициям
             print(df_table_quik)
+            # Далее запись df_table_quik в файл QUIK_MyPos.csv
 
 
 
