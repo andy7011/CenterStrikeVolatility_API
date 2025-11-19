@@ -1,5 +1,5 @@
 import logging  # Выводим лог на консоль и в файл
-from datetime import datetime  # Дата и время
+from datetime import datetime, UTC  # Дата и время
 from scipy.stats import norm
 import pandas as pd
 from string import Template
@@ -13,7 +13,7 @@ from QuikPy import QuikPy  # Работа с QUIK из Python через LUA с�
 from option import Option
 
 # Конфигурация для работы с файлами
-temp_str = 'C:\\Users\\шадрин\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 futures_firm_id = 'SPBFUT'  # Код фирмы для фьючерсов
@@ -25,6 +25,8 @@ active_orders_set = set()
 def job():
     """Функция для выполнения по расписанию"""
     print(f"Расписание торгов фьючерсами в {datetime.now()}")
+
+from datetime import datetime, UTC
 
 def get_time_to_maturity(expiration_datetime: int):
     difference = expiration_datetime - datetime.utcnow()
@@ -142,8 +144,8 @@ def sync_portfolio_positions():
                     if class_code == "SPBOPT":  # Берем только опционы
                         si = qp_provider.get_symbol_info(class_code, sec_code)  # Спецификация тикера
 
-                        # # Текущие чистые позиции (totalnet)
-                        # net_pos = active_futures_holding['totalnet']
+                        # Текущие чистые позиции (totalnet)
+                        net_pos = active_futures_holding['totalnet']
                         # print(f'net_pos - Текущие чистые позиции {si["sec_code"]}: {net_pos}, тип: {type(net_pos)}')
 
                         # Тип опциона
@@ -152,6 +154,17 @@ def sync_portfolio_positions():
                             continue
                         option_type_str = option_type_response['data']['param_image']
                         opt_type_converted = option_type.PUT if option_type_str == "Put" else option_type.CALL
+
+                        # Время последней сделки Last
+                        TIME = qp_provider.get_param_ex(class_code, sec_code, 'TIME', trans_id=0)['data']['param_image']
+                        # print(f'TIME - Время последней сделки: {TIME}')
+
+                        # Время последней сделки Last
+                        time_response = qp_provider.get_param_ex(class_code, sec_code, 'TIME', trans_id=0)
+                        last_time = ""
+                        if time_response and time_response.get('data') and time_response['data'].get('param_image'):
+                            last_time = time_response['data']['param_image']
+                        # print(f'last_time - Время последней сделки: {last_time}')
 
                         # Цена последней сделки по опциону (LAST)
                         opt_price_response = qp_provider.get_param_ex(class_code, sec_code, 'LAST', trans_id=0)
@@ -162,6 +175,7 @@ def sync_portfolio_positions():
                                 opt_price = float(opt_price_response['data']['param_value'])
                             except ValueError:
                                 opt_price = 0.0
+                        # print(f'opt_price - Цена последней сделки по опциону: {opt_price}, тип: {type(opt_price)}')
 
                         # Цена опциона BID
                         bid_response = qp_provider.get_param_ex(class_code, sec_code, 'BID', trans_id=0)
@@ -180,12 +194,6 @@ def sync_portfolio_positions():
                                 offer_price = float(offer_response['data']['param_value'])
                             except ValueError:
                                 offer_price = 0.0
-
-                        # Время последней сделки Last
-                        time_response = qp_provider.get_param_ex(class_code, sec_code, 'TIME', trans_id=0)
-                        last_time = ""
-                        if time_response and time_response.get('data') and time_response['data'].get('param_image'):
-                            last_time = time_response['data']['param_image']
 
                         # Цена последней сделки базового актива (S)
                         asset_price_response = qp_provider.get_param_ex('SPBFUT', si['base_active_seccode'], 'LAST',
@@ -270,7 +278,7 @@ def sync_portfolio_positions():
                             TrueVega = Vega / (DAYS_TO_MAT_DATE ** 0.5)
 
                         # Создание опциона
-                        option = Option(si["sec_code"], si["base_active_seccode"], EXPDATE, STRIKE,
+                        option = Option(si["sec_code"], si["base_active_seccode"], EXPDATE, strike_price,
                                         opt_type_converted)
 
                         # Вычисление Implied Volatility Last, Bid, Offer
@@ -303,14 +311,14 @@ def sync_portfolio_positions():
                             'OpenDateTime': "",
                             'OpenPrice': 0,
                             'OpenIV': 0,
-                            'time_last': last_time,
+                            'time_last': TIME,
                             'price_last': opt_price,
                             'bid': bid_price,
                             'ask': offer_price,
-                            'QuikVola': volatility,
+                            'QuikVola': VOLATILITY,
                             'bidIV': round(opt_volatility_bid, 2),
-                            'lastIV': opt_volatility_last,
-                            'askIV': opt_volatility_offer,
+                            'lastIV': round(opt_volatility_last, 2) if opt_volatility_last is not None else 0,
+                            'askIV': round(opt_volatility_offer, 2),
                             'P/L theor': 0, # round(VOLATILITY - OpenIV, 2) if net_pos > 0 else round(OpenIV - VOLATILITY, 2),
                             'P/L last': 0, # round(opt_volatility_last - OpenIV, 2) if net_pos > 0 else round(OpenIV - opt_volatility_last, 2),
                             'P/L market': '', # round(opt_volatility_bid - OpenIV, 2) if net_pos > 0 else round(OpenIV - opt_volatility_offer, 2),
@@ -442,7 +450,7 @@ def sync_orders_worker():
     """Фоновый поток для периодической синхронизации ордеров и позиций портфеля"""
     while True:
         try:
-            time.sleep(30)  # Проверяем каждые 30 секунд
+            time.sleep(10)  # Проверяем каждые 10 секунд
             sync_active_orders()
             sync_portfolio_positions()  # Добавляем синхронизацию позиций портфеля
         except Exception as e:
@@ -641,8 +649,9 @@ if __name__ == '__main__':  # Точка входа при запуске это
     # Подключение к QUIK
     qp_provider = QuikPy()
 
-    # Сразу выполняем синхронизацию активных ордеров
+    # Сразу выполняем синхронизацию активных ордеров и инструментов портфеля
     sync_active_orders()
+    sync_portfolio_positions()
 
     # Запускаем поток синхронизации
     start_sync_thread()
