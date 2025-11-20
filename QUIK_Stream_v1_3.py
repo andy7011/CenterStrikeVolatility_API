@@ -13,7 +13,7 @@ from QuikPy import QuikPy  # Работа с QUIK из Python через LUA с�
 from option import Option
 
 # Конфигурация для работы с файлами
-temp_str = 'C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\шадрин\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 futures_firm_id = 'SPBFUT'  # Код фирмы для фьючерсов
@@ -144,9 +144,9 @@ def sync_portfolio_positions():
                     if class_code == "SPBOPT":  # Берем только опционы
                         si = qp_provider.get_symbol_info(class_code, sec_code)  # Спецификация тикера
 
-                        # Текущие чистые позиции (totalnet)
-                        net_pos = active_futures_holding['totalnet']
-                        # print(f'net_pos - Текущие чистые позиции {si["sec_code"]}: {net_pos}, тип: {type(net_pos)}')
+                        # # Текущие чистые позиции (totalnet)
+                        # net_pos = active_futures_holding['totalnet']
+                        # # print(f'net_pos - Текущие чистые позиции {si["sec_code"]}: {net_pos}, тип: {type(net_pos)}')
 
                         # Тип опциона
                         option_type_response = qp_provider.get_param_ex(class_code, sec_code, 'OPTIONTYPE', trans_id=0)
@@ -286,44 +286,56 @@ def sync_portfolio_positions():
                         opt_volatility_bid = implied_volatility.get_iv_for_option_price(asset_price, option, bid_price)
                         opt_volatility_offer = implied_volatility.get_iv_for_option_price(asset_price, option, offer_price)
 
-                        # Расчет теоретической волатильности
-                        theoretical_volatility = 0.0
-                        if asset_price > 0 and opt_price > 0 and strike_price > 0:
-                            try:
-                                # Создание опциона для расчета волатильности
-                                exp_date_for_option = datetime.strptime(expdate_str_formatted,
-                                                                        "%d.%m.%Y") if expdate_str_formatted else datetime.now()
-                                option = Option(sec_code, si["base_active_seccode"], exp_date_for_option, strike_price,
-                                                opt_type_converted)
-                                theoretical_volatility = round(
-                                    implied_volatility.get_iv_for_option_price(asset_price, option, opt_price), 2)
-                            except Exception:
-                                theoretical_volatility = 0.0
+                        # # Расчет теоретической волатильности
+                        # theoretical_volatility = 0.0
+                        # if asset_price > 0 and opt_price > 0 and strike_price > 0:
+                        #     try:
+                        #         # Создание опциона для расчета волатильности
+                        #         exp_date_for_option = datetime.strptime(expdate_str_formatted,
+                        #                                                 "%d.%m.%Y") if expdate_str_formatted else datetime.now()
+                        #         option = Option(sec_code, si["base_active_seccode"], exp_date_for_option, strike_price,
+                        #                         opt_type_converted)
+                        #         theoretical_volatility = round(
+                        #             implied_volatility.get_iv_for_option_price(asset_price, option, opt_price), 2)
+                        #     except Exception:
+                        #         theoretical_volatility = 0.0
 
+                        net_pos = active_futures_holding['totalnet']
+                        # OpenDateTime, OpenPrice, OpenIV = calculate_open_data_open_price_open_iv(sec_code, net_pos)
+                        open_data_result = calculate_open_data_open_price_open_iv(sec_code, net_pos)
+                        # Проверяем, что функция вернула корректные данные
+                        if open_data_result is not None and len(open_data_result) > 2:
+                            open_datetime = open_data_result[0]
+                            open_price = open_data_result[1] if open_data_result[1] is not None else 0.0
+                            open_iv = open_data_result[2] if open_data_result[2] is not None else 0.0
+                        else:
+                            open_datetime = ""
+                            open_price = 0.0
+                            open_iv = 0.0
                         # Добавляем данные в список
                         portfolio_positions.append({
-                            'sec_code': sec_code,
-                            'net_pos': active_futures_holding['totalnet'],
+                            'ticker': sec_code,
+                            'net_pos': net_pos,
                             'strike': strike_price,
                             'option_type': option_type_str,
                             'expdate': formatted_exp_date,
                             'option_base': si['base_active_seccode'],
-                            'OpenDateTime': "",
-                            'OpenPrice': 0,
-                            'OpenIV': 0,
+                            'OpenDateTime': open_datetime,
+                            'OpenPrice': round(open_price, 2) if open_price is not None else open_price,
+                            'OpenIV': round(open_iv, 2) if open_iv is not None else open_iv,
                             'time_last': TIME,
-                            'price_last': opt_price,
                             'bid': bid_price,
+                            'last': opt_price,
                             'ask': offer_price,
                             'QuikVola': VOLATILITY,
-                            'bidIV': round(opt_volatility_bid, 2),
+                            'bidIV': round(opt_volatility_bid, 2) if opt_volatility_bid is not None else 0,
                             'lastIV': round(opt_volatility_last, 2) if opt_volatility_last is not None else 0,
-                            'askIV': round(opt_volatility_offer, 2),
-                            'P/L theor': 0, # round(VOLATILITY - OpenIV, 2) if net_pos > 0 else round(OpenIV - VOLATILITY, 2),
-                            'P/L last': 0, # round(opt_volatility_last - OpenIV, 2) if net_pos > 0 else round(OpenIV - opt_volatility_last, 2),
-                            'P/L market': '', # round(opt_volatility_bid - OpenIV, 2) if net_pos > 0 else round(OpenIV - opt_volatility_offer, 2),
-                            'Vega': round(Vega, 2),
-                            'TrueVega': round(TrueVega, 2)
+                            'askIV': round(opt_volatility_offer, 2) if opt_volatility_offer is not None else 0,
+                            'P/L theor': round(VOLATILITY - open_iv, 2) if net_pos > 0 else round(open_iv - VOLATILITY, 2),
+                            'P/L last': round(opt_volatility_last - open_iv, 2) if net_pos > 0 else round(open_iv - opt_volatility_last, 2),
+                            'P/L market': round(opt_volatility_bid - open_iv, 2) if net_pos > 0 else round(open_iv - opt_volatility_offer, 2),
+                            'Vega': round(Vega * net_pos, 2),
+                            'TrueVega': round(TrueVega * net_pos, 2)
                         })
 
         # Сохраняем в CSV файл
@@ -334,8 +346,8 @@ def sync_portfolio_positions():
         else:
             # Создаем пустой файл с заголовками
             empty_df = pd.DataFrame(columns=[
-                'sec_code', 'net_pos', 'strike', 'option_type', 'expdate', 'option_base',
-                 'OpenDateTime', 'OpenPrice', 'OpenIV', 'time_last', 'price_last', 'bid', 'ask',
+                'ticker', 'net_pos', 'strike', 'option_type', 'expdate', 'option_base',
+                 'OpenDateTime', 'OpenPrice', 'OpenIV', 'time_last', 'bid', 'last', 'ask',
                 'QuikVola', 'bidIV', 'lastIV', 'askIV', 'P/L theor', 'P/L last', 'P/L market',
                 'Vega', 'TrueVega'
             ])
@@ -344,6 +356,90 @@ def sync_portfolio_positions():
 
     except Exception as e:
         print(f"Ошибка при синхронизации позиций портфеля: {e}")
+
+
+
+def calculate_open_data_open_price_open_iv(sec_code, net_pos):
+    """
+    Вычисляет дату открытия позиции, цену и волатильность для заданного инструмента,
+    как средневзвешенные по объёму первых сделок до достижения нужного объёма.
+
+    :param sec_code: Код инструмента
+    :param net_pos: Текущая позиция (отрицательная для короткой позиции)
+    :return: tuple(OpenDateTime, OpenPrice, OpenIV)
+    """
+
+    try:
+        # Чтение CSV файла
+        df = pd.read_csv(temp_obj.substitute(name_file='QUIK_Stream_Trades.csv'), delimiter=';')
+
+        # Фильтрация по инструменту
+        instrument_df = df[df['ticker'] == sec_code].copy()
+
+        if instrument_df.empty:
+            print(f"Предупреждение: Нет данных для инструмента {sec_code}")
+            return None, None, None
+
+        # Преобразование datetime
+        instrument_df['datetime'] = pd.to_datetime(instrument_df['datetime'], format='%d.%m.%Y %H:%M:%S')
+
+        # Сортировка по дате
+        instrument_df = instrument_df.sort_values('datetime')
+
+        # Определение направления позиции
+        if net_pos > 0:
+            open_trades = instrument_df[instrument_df['operation'] == 'Купля']
+        else:
+            open_trades = instrument_df[instrument_df['operation'] == 'Продажа']
+
+        if open_trades.empty:
+            print(f"Предупреждение: Нет сделок открытия для инструмента {sec_code}")
+            return None, None, None
+
+        # Целевой объём
+        required_volume = abs(net_pos)
+        cumulative_volume = 0
+        selected_trades = []
+
+        # Накапливаем сделки до достижения нужного объёма
+        for _, trade in open_trades.iterrows():
+            volume = trade['volume']
+            if cumulative_volume + volume <= required_volume:
+                selected_trades.append(trade)
+                cumulative_volume += volume
+            else:
+                # Добавляем частичную сделку
+                remaining_volume = required_volume - cumulative_volume
+                partial_trade = trade.copy()
+                partial_trade['volume'] = remaining_volume
+                selected_trades.append(partial_trade)
+                break
+
+        if not selected_trades:
+            print(f"Предупреждение: Недостаточно сделок для инструмента {sec_code}")
+            return None, None, None
+
+        # Создаём DataFrame из выбранных сделок
+        selected_df = pd.DataFrame(selected_trades)
+
+        # Дата первой сделки
+        OpenDateTime = selected_df.iloc[0]['datetime'].strftime('%d.%m.%Y %H:%M:%S')
+
+        # Средневзвешенные значения
+        total_volume = selected_df['volume'].sum()
+        OpenPrice = (selected_df['price'] * selected_df['volume']).sum() / total_volume
+        OpenIV = (selected_df['volatility'] * selected_df['volume']).sum() / total_volume
+
+        return OpenDateTime, OpenPrice, OpenIV
+
+    except Exception as e:
+        print(f"Ошибка при вычислении данных открытия для {sec_code}: {e}")
+        return None, None, None
+
+
+
+# Пример использования:
+# OpenDateTime, OpenPrice, OpenIV = calculate_open_data_open_price_open_iv("RI97500BX5", -10)
 
 
 def _add_order_to_list_from_data(order_data):

@@ -95,7 +95,7 @@ def get_object_from_json_endpoint_with_retry(url, method='GET', params={}, max_d
 # app = dash.Dash(__name__)
 
 # My positions data
-with open(temp_obj.substitute(name_file='MyPos.csv'), 'r') as file:
+with open(temp_obj.substitute(name_file='QUIK_MyPos.csv'), 'r') as file:
     df_table = pd.read_csv(file, sep=';')
 # Close the file explicitly file.close()
 file.close()
@@ -172,14 +172,16 @@ tab4_content = [html.Div(id='intermediate-value', style={'display': 'none'}),
         dash_table.DataTable(id='table', data=df_table.to_dict('records'), page_size=20,
                              style_table={'max-width': '50px'},
                              style_data_conditional=[
-                                 {
-                                     'if': {
-                                         'filter_query': '{P/L} > 1',
-                                         'column_id': 'P/L'
-                                     },
-                                     'backgroundColor': '#3D9970',
-                                     'color': 'white'
-                                 }
+                                 {'if': {'filter_query': '{P/L theor} > 1', 'column_id': 'P/L theor'}, 'backgroundColor': '#3D9970', 'color': 'white'},
+                                {'if': {'filter_query': '{P/L last} > 1', 'column_id': 'P/L last'}, 'backgroundColor': '#3D9970', 'color': 'white'},
+                                {'if': {'filter_query': '{P/L market} > 1', 'column_id': 'P/L market'}, 'backgroundColor': '#3D9970', 'color': 'white'},
+                                {'if': {'column_id': 'time_last'}, 'backgroundColor': 'white', 'color': '#DAA520'},
+                                {'if': {'column_id': 'bid'}, 'backgroundColor': 'white', 'color': '#3D9970'},
+                                {'if': {'column_id': 'last'}, 'backgroundColor': 'white', 'color': '#DAA520'},
+                                {'if': {'column_id': 'ask'}, 'backgroundColor': 'white', 'color': '#FF0000'},
+                                {'if': {'filter_query': '{bidIV} > 0', 'column_id': 'bidIV'}, 'backgroundColor': 'white', 'color': '#3D9970'},
+                                {'if': {'filter_query': '{lastIV} > 0', 'column_id': 'lastIV'}, 'backgroundColor': 'white', 'color': '#DAA520'},
+                                {'if': {'filter_query': '{askIV} > 0', 'column_id': 'askIV'}, 'backgroundColor': 'white', 'color': '#FF0000'}
                              ])]
 
 app = dash.Dash(external_stylesheets=[dbc.themes.BOOTSTRAP])
@@ -368,17 +370,19 @@ def update_output_smile(value, n):
 
         # My positions data
         # Open the file using the "with" statement
-        with open(temp_obj.substitute(name_file='MyPos.csv'), 'r') as file:
+        with open(temp_obj.substitute(name_file='QUIK_MyPos.csv'), 'r') as file:
             df_table = pd.read_csv(file, sep=';')
-            # df_table = df_table[(df_table.optionbase == value)
-            df_table_buy = df_table[(df_table.optionbase == value) & (df_table.net_pos > 0)]
-            df_table_sell = df_table[(df_table.optionbase == value) & (df_table.net_pos < 0)]
+            # df_table = df_table[(df_table.option_base == value)
+            df_table_buy = df_table[(df_table.option_base == value) & (df_table.net_pos > 0) & (df_table.OpenIV > 0)]
+            # print(df_table_buy)
+            df_table_sell = df_table[(df_table.option_base == value) & (df_table.net_pos < 0) & (df_table.OpenIV > 0)]
+            # print(df_table_sell)
             MyPos_ticker_list = []
             for i in range(len(df_table)):
                 MyPos_ticker_list.append(df_table['ticker'][i])
             # DataFrame для отрисовки баланса TrueVega
             df_table_base = df_table
-            df_table_base = df_table_base[df_table_base.optionbase == value]
+            df_table_base = df_table_base[df_table_base.option_base == value]
         # Close the file explicitly file.close()
         file.close()
 
@@ -387,11 +391,10 @@ def update_output_smile(value, n):
         with open(temp_obj.substitute(name_file='QUIK_Stream_Orders.csv'), 'r', encoding='utf-8') as file:
             df_orders = pd.read_csv(file, sep=';')
             df_orders = df_orders[(df_orders.option_base == value)]
-            print(df_orders.operation)
             df_orders_buy = df_orders[(df_orders.option_base == value) & (df_orders.operation == 'Купля')]
-            print(df_orders_buy)
+            # print(df_orders_buy)
             df_orders_sell = df_orders[(df_orders.option_base == value) & (df_orders.operation == 'Продажа')]
-            print(df_orders_sell)
+            # print(df_orders_sell)
             # Converting DataFrame "df_orders" to a list "tikers" containing all the rows of column 'ticker'
             tikers = df_orders['ticker'].tolist()
 
@@ -411,7 +414,7 @@ def update_output_smile(value, n):
                                  mode='markers+text', text=df_table_buy['OpenIV'], textposition='middle left',
                                  marker=dict(size=11, symbol="star-triangle-up-open", color='darkgreen'),
                                  name='My Pos Buy',
-                                 customdata=df_table_buy[['optiontype', 'net_pos', 'expdate', 'ticker']],
+                                 customdata=df_table_buy[['option_type', 'net_pos', 'expdate', 'ticker']],
                                  hovertemplate="<b>%{customdata}</b>"
                                  ))
 
@@ -432,7 +435,7 @@ def update_output_smile(value, n):
                                  mode='markers+text', text=df_table_sell['OpenIV'], textposition='middle left',
                                  marker=dict(size=11, symbol="star-triangle-down-open", color='darkmagenta'),
                                  name='My Pos Sell',
-                                 customdata=df_table_sell[['optiontype', 'net_pos', 'expdate', 'ticker']],
+                                 customdata=df_table_sell[['option_type', 'net_pos', 'expdate', 'ticker']],
                                  hovertemplate="<b>%{customdata}</b><br>"
                                  ))
 
@@ -507,7 +510,7 @@ def update_output_smile(value, n):
         # Цена базового актива (вертикальная линия)
         fig.add_vline(x=base_asset_last_price, line_dash='dash', line_color='firebrick')
 
-        fig.update_layout(height=400,
+        fig.update_layout(height=450,
             title_text=f"Volatility smile, series <b>{value}<b>", uirevision="Don't change"
         )
         fig.update_layout(
@@ -801,9 +804,9 @@ def update_output_history_naklon(dropdown_value, slider_value, n):
      Input('dropdown-selection', 'value')],
     prevent_initial_call=True)
 def updateTable(n, value):
-    df_pos = pd.read_csv(temp_obj.substitute(name_file='MyPos.csv'), sep=';')
+    df_pos = pd.read_csv(temp_obj.substitute(name_file='QUIK_MyPos.csv'), sep=';')
     # Фильтрация строк по базовому активу
-    df_pos = df_pos[df_pos['optionbase'] == value]
+    df_pos = df_pos[df_pos['option_base'] == value]
 
     return df_pos.to_dict('records')
 
@@ -816,9 +819,9 @@ def updateTable(n, value):
     prevent_initial_call=True
 )
 def updateGauge(n, value):
-    df_pos = pd.read_csv(temp_obj.substitute(name_file='MyPos.csv'), sep=';')
+    df_pos = pd.read_csv(temp_obj.substitute(name_file='QUIK_MyPos.csv'), sep=';')
     # Фильтрация строк по базовому активу
-    df_pos = df_pos[df_pos['optionbase'] == value]
+    df_pos = df_pos[df_pos['option_base'] == value]
 
     # TrueVega
     tv_sum_positive = df_pos.loc[df_pos['net_pos'] > 0, 'TrueVega'].sum()
