@@ -1,4 +1,4 @@
-import schedule
+# import schedule
 import time
 import requests
 from datetime import datetime, timedelta
@@ -22,7 +22,7 @@ from app.supported_base_asset import MAP
 """
 
 # Конфигурация для работы с файлами
-temp_str = 'C:\\Users\\шадрин\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 last_price_lifetime = 60 * 15  # время жизни последней цены last_price для расчетов (15 минут в секундах)

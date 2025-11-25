@@ -12,7 +12,7 @@ from QuikPy import QuikPy  # Работа с QUIK из Python через LUA с�
 from option import Option
 
 # Конфигурация для работы с файлами
-temp_str = 'C:\\Users\\шадрин\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 futures_firm_id = 'SPBFUT'  # Код фирмы для фьючерсов
@@ -387,7 +387,7 @@ def calculate_open_data_open_price_open_iv(sec_code, net_pos):
 
     try:
         # Чтение CSV файла
-        df = pd.read_csv(temp_obj.substitute(name_file='QUIK_Stream_Trades.csv'), delimiter=';')
+        df = pd.read_csv(temp_obj.substitute(name_file='QUIK_Stream_Trades.csv'), encoding='utf-8', delimiter=';')
 
         # Фильтрация по инструменту
         instrument_df = df[df['ticker'] == sec_code].copy()
@@ -400,7 +400,7 @@ def calculate_open_data_open_price_open_iv(sec_code, net_pos):
         instrument_df['datetime'] = pd.to_datetime(instrument_df['datetime'], format='%d.%m.%Y %H:%M:%S')
 
         # Сортировка по дате
-        instrument_df = instrument_df.sort_values('datetime')
+        instrument_df = instrument_df.sort_values('datetime', ascending=False)
 
         # Определение направления позиции
         if net_pos > 0:
@@ -420,16 +420,20 @@ def calculate_open_data_open_price_open_iv(sec_code, net_pos):
         # Накапливаем сделки до достижения нужного объёма
         for _, trade in open_trades.iterrows():
             volume = trade['volume']
+            if volume <= 0:
+                continue  # Пропускаем сделки с volume = 0
             if cumulative_volume + volume <= required_volume:
                 selected_trades.append(trade)
                 cumulative_volume += volume
             else:
                 # Добавляем частичную сделку
-                remaining_volume = required_volume - cumulative_volume
-                partial_trade = trade.copy()
-                partial_trade['volume'] = remaining_volume
-                selected_trades.append(partial_trade)
-                break
+                if volume <= 0:
+                    continue  # Пропускаем сделки с volume = 0
+                    remaining_volume = required_volume - cumulative_volume
+                    partial_trade = trade.copy()
+                    partial_trade['volume'] = remaining_volume
+                    selected_trades.append(partial_trade)
+                    break
 
         if not selected_trades:
             print(f"Предупреждение: Недостаточно сделок для инструмента {sec_code}")
@@ -438,8 +442,8 @@ def calculate_open_data_open_price_open_iv(sec_code, net_pos):
         # Создаём DataFrame из выбранных сделок
         selected_df = pd.DataFrame(selected_trades)
 
-        # Дата первой сделки
-        OpenDateTime = selected_df.iloc[0]['datetime'].strftime('%d.%m.%Y %H:%M:%S')
+        # Дата первой сделки (самой старой сделки, она в конце списка)
+        OpenDateTime = selected_df.iloc[-1]['datetime'].strftime('%d.%m.%Y %H:%M:%S')
 
         # Средневзвешенные значения
         total_volume = selected_df['volume'].sum()

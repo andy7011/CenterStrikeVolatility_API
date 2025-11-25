@@ -1,11 +1,12 @@
 import logging  # Выводим лог на консоль и в файл
 from datetime import datetime, UTC  # Дата и время
-import pytz
 from scipy.stats import norm
 import pandas as pd
 from string import Template
 import threading
 import time  # Подписка на события по времени
+from FinLabPy.Schedule.MOEX import Futures
+
 import implied_volatility
 import option_type
 from QuikPy import QuikPy  # Работа с QUIK из Python через LUA скрипты QUIK#
@@ -20,20 +21,15 @@ futures_firm_id = 'SPBFUT'  # Код фирмы для фьючерсов
 # Глобальная переменная для хранения активных ордеров
 active_orders_set = set()
 
-def get_time_to_maturity(expiration_datetime):
-    # Если expiration_datetime - это datetime объект, конвертируем в timestamp
-    if isinstance(expiration_datetime, datetime):
-        expiration_timestamp = expiration_datetime.timestamp()
-    else:
-        expiration_timestamp = expiration_datetime
 
-    # Создаем timezone-aware datetime для текущего времени
-    # now = datetime.now(UTC)
-    moscow_tz = pytz.timezone('Europe/Moscow')
-    now = datetime.now(moscow_tz)
-    # Преобразуем expiration_timestamp в datetime с UTC временной зоной
-    expiration_dt = datetime.fromtimestamp(expiration_timestamp, tz=moscow_tz)
-    difference = expiration_dt - now
+def job():
+    """Функция для выполнения по расписанию"""
+    print(f"Расписание торгов фьючерсами в {datetime.now()}")
+
+from datetime import datetime, UTC
+
+def get_time_to_maturity(expiration_datetime: int):
+    difference = expiration_datetime - datetime.utcnow()
     seconds_in_year = 365 * 24 * 60 * 60
     return (difference.total_seconds() + 67800) / seconds_in_year # Добавляем 67800 секунд (18 ч. 50 мин.), чтобы учесть время в последний день экспирации
 
@@ -199,16 +195,6 @@ def sync_portfolio_positions():
                             except ValueError:
                                 offer_price = 0.0
 
-                        # Цена опциона THEORPRICE
-                        theor_response = qp_provider.get_param_ex(class_code, sec_code, 'THEORPRICE', trans_id=0)
-                        theor_price = 0.0
-                        if theor_response and theor_response.get('data') and theor_response['data'].get(
-                                'param_value'):
-                            try:
-                                theor_price = float(theor_response['data']['param_value'])
-                            except ValueError:
-                                theor_price = 0.0
-
                         # Цена последней сделки базового актива (S)
                         asset_price_response = qp_provider.get_param_ex('SPBFUT', si['base_active_seccode'], 'LAST',
                                                                         trans_id=0)
@@ -341,7 +327,6 @@ def sync_portfolio_positions():
                             'bid': bid_price,
                             'last': opt_price,
                             'ask': offer_price,
-                            'theor': theor_price,
                             'QuikVola': VOLATILITY,
                             'bidIV': round(opt_volatility_bid, 2) if opt_volatility_bid is not None else 0,
                             'lastIV': round(opt_volatility_last, 2) if opt_volatility_last is not None else 0,
@@ -362,7 +347,7 @@ def sync_portfolio_positions():
             # Создаем пустой файл с заголовками
             empty_df = pd.DataFrame(columns=[
                 'ticker', 'net_pos', 'strike', 'option_type', 'expdate', 'option_base',
-                 'OpenDateTime', 'OpenPrice', 'OpenIV', 'time_last', 'bid', 'last', 'ask', 'theor',
+                 'OpenDateTime', 'OpenPrice', 'OpenIV', 'time_last', 'bid', 'last', 'ask',
                 'QuikVola', 'bidIV', 'lastIV', 'askIV', 'P/L theor', 'P/L last', 'P/L market',
                 'Vega', 'TrueVega'
             ])
