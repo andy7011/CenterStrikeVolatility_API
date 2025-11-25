@@ -136,7 +136,7 @@ def sync_portfolio_positions():
         futures_holdings_response = qp_provider.get_futures_holdings()
         if futures_holdings_response and futures_holdings_response.get('data'):
             active_futures_holdings = [futuresHolding for futuresHolding in futures_holdings_response['data']
-                                       if futuresHolding['totalnet'] != 0]  # Активные фьючерсные позиции
+                                      if futuresHolding['totalnet'] != 0]  # Активные фьючерсные позиции
 
             for active_futures_holding in active_futures_holdings:
                 sec_code = active_futures_holding["sec_code"]
@@ -148,59 +148,58 @@ def sync_portfolio_positions():
                     if class_code == "SPBOPT":  # Берем только опционы
                         si = qp_provider.get_symbol_info(class_code, sec_code)  # Спецификация тикера
 
-                        # # Текущие чистые позиции (totalnet)
-                        # net_pos = active_futures_holding['totalnet']
-                        # # print(f'net_pos - Текущие чистые позиции {si["sec_code"]}: {net_pos}, тип: {type(net_pos)}')
-
                         # Тип опциона
                         option_type_response = qp_provider.get_param_ex(class_code, sec_code, 'OPTIONTYPE', trans_id=0)
                         if not option_type_response or not option_type_response.get('data'):
                             continue
                         option_type_str = option_type_response['data']['param_image']
                         opt_type_converted = option_type.PUT if option_type_str == "Put" else option_type.CALL
-
-                        # Время последней сделки Last
-                        TIME = qp_provider.get_param_ex(class_code, sec_code, 'TIME', trans_id=0)['data']['param_image']
-                        # print(f'TIME - Время последней сделки: {TIME}')
+                        # print(f"Опцион: {sec_code}, тип: {opt_type_converted}")
 
                         # Время последней сделки Last
                         time_response = qp_provider.get_param_ex(class_code, sec_code, 'TIME', trans_id=0)
                         last_time = ""
                         if time_response and time_response.get('data') and time_response['data'].get('param_image'):
                             last_time = time_response['data']['param_image']
-                        # print(f'last_time - Время последней сделки: {last_time}')
+                        # print(f"Время последней сделки: {last_time}")
 
                         # Цена последней сделки по опциону (LAST)
                         opt_price_response = qp_provider.get_param_ex(class_code, sec_code, 'LAST', trans_id=0)
                         opt_price = 0.0
-                        if opt_price_response and opt_price_response.get('data') and opt_price_response['data'].get(
-                                'param_value'):
-                            try:
-                                opt_price = float(opt_price_response['data']['param_value'])
-                            except ValueError:
-                                opt_price = 0.0
-                        # print(f'opt_price - Цена последней сделки по опциону: {opt_price}, тип: {type(opt_price)}')
+                        if opt_price_response and opt_price_response.get('data'):
+                            param_value = opt_price_response['data'].get('param_value')
+                            if param_value is not None and param_value != '':
+                                try:
+                                    opt_price = float(param_value)
+                                except ValueError:
+                                    opt_price = 0.0
+                        # print(f"Цена последней сделки по опциону: {opt_price}")
 
                         # Цена опциона BID
                         bid_response = qp_provider.get_param_ex(class_code, sec_code, 'BID', trans_id=0)
                         bid_price = 0.0
-                        if bid_response and bid_response.get('data') and bid_response['data'].get('param_value'):
-                            try:
-                                bid_price = float(bid_response['data']['param_value'])
-                            except ValueError:
-                                bid_price = 0.0
+                        if bid_response and bid_response.get('data'):
+                            param_value = bid_response['data'].get('param_value')
+                            if param_value is not None and param_value != '':
+                                try:
+                                    bid_price = float(param_value)
+                                except ValueError:
+                                    bid_price = 0.0
 
                         # Цена опциона OFFER (или ASK)
                         offer_response = qp_provider.get_param_ex(class_code, sec_code, 'OFFER', trans_id=0)
                         offer_price = 0.0
-                        if offer_response and offer_response.get('data') and offer_response['data'].get('param_value'):
-                            try:
-                                offer_price = float(offer_response['data']['param_value'])
-                            except ValueError:
-                                offer_price = 0.0
+                        if offer_response and offer_response.get('data'):
+                            param_value = offer_response['data'].get('param_value')
+                            if param_value is not None and param_value != '':
+                                try:
+                                    offer_price = float(param_value)
+                                except ValueError:
+                                    offer_price = 0.0
 
                         # Цена опциона THEORPRICE
-                        theor_response = qp_provider.get_param_ex(class_code, sec_code, 'THEORPRICE', trans_id=0)
+                        theor_response = qp_provider.get_param_ex(class_code, sec_code, 'THEORPRICE',
+                                                                  trans_id=0)
                         theor_price = 0.0
                         if theor_response and theor_response.get('data') and theor_response['data'].get(
                                 'param_value'):
@@ -210,15 +209,15 @@ def sync_portfolio_positions():
                                 theor_price = 0.0
 
                         # Цена последней сделки базового актива (S)
-                        asset_price_response = qp_provider.get_param_ex('SPBFUT', si['base_active_seccode'], 'LAST',
-                                                                        trans_id=0)
+                        asset_price_response = qp_provider.get_param_ex('SPBFUT', si['base_active_seccode'], 'LAST', trans_id=0)
                         asset_price = 0.0
-                        if asset_price_response and asset_price_response.get('data') and asset_price_response[
-                            'data'].get('param_value'):
-                            try:
-                                asset_price = float(asset_price_response['data']['param_value'])
-                            except ValueError:
-                                asset_price = 0.0
+                        if asset_price_response and asset_price_response.get('data'):
+                            param_value = asset_price_response['data'].get('param_value')
+                            if param_value is not None and param_value != '':
+                                try:
+                                    asset_price = float(param_value)
+                                except ValueError:
+                                    asset_price = 0.0
 
                         # Страйк опциона (K)
                         strike_response = qp_provider.get_param_ex(class_code, sec_code, 'STRIKE', trans_id=0)
@@ -296,23 +295,22 @@ def sync_portfolio_positions():
                                         opt_type_converted)
 
                         # Вычисление Implied Volatility Last, Bid, Offer
-                        opt_volatility_last = implied_volatility.get_iv_for_option_price(asset_price, option, opt_price)
-                        opt_volatility_bid = implied_volatility.get_iv_for_option_price(asset_price, option, bid_price)
-                        opt_volatility_offer = implied_volatility.get_iv_for_option_price(asset_price, option, offer_price)
+                        # opt_volatility_last = implied_volatility.get_iv_for_option_price(asset_price, option, opt_price)
+                        # # print(f'opt_volatility_last - Implied Volatility Last: {opt_volatility_last}, тип: {type(opt_volatility_last)}')
 
-                        # # Расчет теоретической волатильности
-                        # theoretical_volatility = 0.0
-                        # if asset_price > 0 and opt_price > 0 and strike_price > 0:
-                        #     try:
-                        #         # Создание опциона для расчета волатильности
-                        #         exp_date_for_option = datetime.strptime(expdate_str_formatted,
-                        #                                                 "%d.%m.%Y") if expdate_str_formatted else datetime.now()
-                        #         option = Option(sec_code, si["base_active_seccode"], exp_date_for_option, strike_price,
-                        #                         opt_type_converted)
-                        #         theoretical_volatility = round(
-                        #             implied_volatility.get_iv_for_option_price(asset_price, option, opt_price), 2)
-                        #     except Exception:
-                        #         theoretical_volatility = 0.0
+                        # Волатильность опциона IMPLIED_VOLATILITY (IV) - через расчет по цене опциона
+                        opt_volatility_last = 0.0
+                        if opt_price > 0:
+                            opt_volatility_last = implied_volatility.get_iv_for_option_price(asset_price, option,
+                                                                                             opt_price)
+                            if opt_volatility_last is None:
+                                opt_volatility_last = 0.0
+                        # print(f"Волатильность опциона IMPLIED_VOLATILITY (IV) - через расчет по цене опциона: {opt_volatility_last}")
+
+                        opt_volatility_bid = implied_volatility.get_iv_for_option_price(asset_price, option, bid_price)
+                        # print(f'opt_volatility_bid - Implied Volatility Bid: {opt_volatility_bid}, тип: {type(opt_volatility_bid)}')
+                        opt_volatility_offer = implied_volatility.get_iv_for_option_price(asset_price, option, offer_price)
+                        # print(f'opt_volatility_offer - Implied Volatility Offer: {opt_volatility_offer}, тип: {type(opt_volatility_offer)}')
 
                         net_pos = active_futures_holding['totalnet']
                         # OpenDateTime, OpenPrice, OpenIV = calculate_open_data_open_price_open_iv(sec_code, net_pos)
@@ -326,6 +324,8 @@ def sync_portfolio_positions():
                             open_datetime = ""
                             open_price = 0.0
                             open_iv = 0.0
+
+
                         # Добавляем данные в список
                         portfolio_positions.append({
                             'ticker': sec_code,
@@ -337,7 +337,7 @@ def sync_portfolio_positions():
                             'OpenDateTime': open_datetime,
                             'OpenPrice': round(open_price, 2) if open_price is not None else open_price,
                             'OpenIV': round(open_iv, 2) if open_iv is not None else open_iv,
-                            'time_last': TIME,
+                            'time_last': last_time,
                             'bid': bid_price,
                             'last': opt_price,
                             'ask': offer_price,
@@ -347,12 +347,13 @@ def sync_portfolio_positions():
                             'lastIV': round(opt_volatility_last, 2) if opt_volatility_last is not None else 0,
                             'askIV': round(opt_volatility_offer, 2) if opt_volatility_offer is not None else 0,
                             'P/L theor': round(VOLATILITY - open_iv, 2) if net_pos > 0 else round(open_iv - VOLATILITY, 2),
-                            'P/L last': round(opt_volatility_last - open_iv, 2) if net_pos > 0 else round(open_iv - opt_volatility_last, 2),
+                            # 'P/L last': round(opt_volatility_last - open_iv, 2) if net_pos > 0 else round(open_iv - opt_volatility_last, 2),
+                            'P/L last': 0 if opt_volatility_last == 0 else (round(opt_volatility_last - open_iv, 2) if net_pos > 0 else round(open_iv - opt_volatility_last, 2)),
                             'P/L market': round(opt_volatility_bid - open_iv, 2) if net_pos > 0 else round(open_iv - opt_volatility_offer, 2),
                             'Vega': round(Vega * net_pos, 2),
                             'TrueVega': round(TrueVega * net_pos, 2)
                         })
-
+                        # print(portfolio_positions)
         # Сохраняем в CSV файл
         if portfolio_positions:
             df_portfolio = pd.DataFrame(portfolio_positions)

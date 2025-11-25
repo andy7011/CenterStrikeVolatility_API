@@ -171,7 +171,18 @@ tab4_content = [# Таблица моих позиций
     html.Div(id='intermediate-value', style={'display': 'none'}),
         dash_table.DataTable(id='table', data=df_table.to_dict('records'), page_size=20,
                              style_table={'max-width': '50px'},
+                            # Стиль для заголовков (жирный шрифт)
+                                style_header={
+                                    'fontWeight': 'bold',
+                                    'backgroundColor': 'rgb(230, 230, 230)',
+                                    'textAlign': 'center'
+                                },
                              style_data_conditional=[
+                                {
+                                            'if': {'filter_query': '{ticker} = "Итого"'},
+                                            'fontWeight': 'bold',
+                                            'backgroundColor': 'rgb(240, 240, 240)'
+                                        },
                                  {'if': {'filter_query': '{P/L theor} > 1', 'column_id': 'P/L theor'}, 'backgroundColor': '#3D9970', 'color': 'white'},
                                 {'if': {'filter_query': '{P/L last} > 1', 'column_id': 'P/L last'}, 'backgroundColor': '#3D9970', 'color': 'white'},
                                 {'if': {'filter_query': '{P/L market} > 1', 'column_id': 'P/L market'}, 'backgroundColor': '#3D9970', 'color': 'white'},
@@ -838,6 +849,7 @@ def update_output_history_naklon(dropdown_value, slider_value, n):
 
     return fig
 
+
 # Callback to update the table "MyPos Table"
 @app.callback(
     Output('table', 'data', allow_duplicate=True),
@@ -849,7 +861,44 @@ def updateTable(n, value):
     # Фильтрация строк по базовому активу
     df_pos = df_pos[df_pos['option_base'] == value]
 
-    return df_pos.to_dict('records')
+    # Вычисление итогов по колонке net_pos
+    total_net_pos = df_pos['net_pos'].sum()
+    total_theor = df_pos['theor'].sum()
+    total_last = df_pos['last'].sum()
+
+    # Раздельное вычисление total_bid и total_ask для weighted_pl_market
+    total_bid = df_pos[df_pos['net_pos'] > 0]['bid'].sum()
+    total_ask = df_pos[df_pos['net_pos'] < 0]['ask'].sum()
+    total_market = total_bid + total_ask
+
+    # Проверка на существование колонок перед вычислением
+    weighted_pl_theor = (df_pos['P/L theor'] * df_pos['theor']).sum() / total_theor if 'P/L theor' in df_pos.columns and total_theor != 0 else 0
+    weighted_pl_last = (df_pos['P/L last'] * df_pos['last']).sum() / total_last if 'P/L last' in df_pos.columns and total_last != 0 else 0
+
+    # Расчет weighted_pl_market с разными весами для положительных и отрицательных позиций
+    weighted_pl_market_pos = (df_pos[df_pos['net_pos'] > 0]['P/L market'] * df_pos[df_pos['net_pos'] > 0]['bid']).sum()
+    weighted_pl_market_neg = (df_pos[df_pos['net_pos'] < 0]['P/L market'] * df_pos[df_pos['net_pos'] < 0]['ask']).sum()
+    weighted_pl_market = (weighted_pl_market_pos + weighted_pl_market_neg) / total_market if total_market != 0 else 0
+
+    # Вычисление сумм по Vega и TrueVega
+    total_vega = df_pos['Vega'].sum() if 'Vega' in df_pos.columns else 0
+    total_true_vega = df_pos['TrueVega'].sum() if 'TrueVega' in df_pos.columns else 0
+
+    # Создание строки итогов
+    total_row = {col: '' for col in df_pos.columns}
+    total_row['ticker'] = 'Итого'
+    total_row['net_pos'] = total_net_pos
+    total_row['P/L theor'] = round(weighted_pl_theor, 2)
+    total_row['P/L last'] = round(weighted_pl_last, 2)
+    total_row['P/L market'] = round(weighted_pl_market, 2)
+    total_row['Vega'] = round(total_vega, 2)
+    total_row['TrueVega'] = round(total_true_vega, 2)
+
+    # Добавление строки итогов к данным
+    df_pos_with_total = pd.concat([df_pos, pd.DataFrame([total_row])], ignore_index=True)
+
+    return df_pos_with_total.to_dict('records')
+
 
 # Callback to update the table "MyTrades Table"
 @app.callback(
