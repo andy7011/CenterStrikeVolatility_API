@@ -111,6 +111,11 @@ with open(temp_obj.substitute(name_file='QUIK_Stream_Trades.csv'), 'r') as file:
     df_trades = pd.read_csv(file, encoding='UTF-8', sep=';')
 file.close()
 
+# My positions history data
+with open(temp_obj.substitute(name_file='MyPosHistory.csv'), 'r') as file:
+    df_MyPosTilt = pd.read_csv(file, encoding='UTF-8', sep=';')
+file.close()
+
 
 def get_object_from_json_endpoint(url, method='GET', params={}):
     response = requests.request(method, url, params=params)
@@ -661,9 +666,9 @@ def update_output_MyPosTilt(dropdown_value, slider_value, n):
 
     # ДАННЫЕ ИЗ DAMP/csv
     # MyPosTilt.csv history data options volatility
-    with open(temp_obj.substitute(name_file='MyPosTilt.csv'), 'r') as file:
+    with open(temp_obj.substitute(name_file='MyPosHistory.csv'), 'r') as file:
         df_MyPosTilt = pd.read_csv(file, sep=';')
-        df_MyPosTilt = df_MyPosTilt[(df_MyPosTilt.optionbase == dropdown_value)]
+        df_MyPosTilt = df_MyPosTilt[(df_MyPosTilt.option_base == dropdown_value)]
         # df_MyPosTilt = df_MyPosTilt.tail(limit * len(df_MyPosTilt['expiration_datetime'].unique()) * 2) # глубина истории по количеству серий
 
         df_MyPosTilt['DateTime'] = pd.to_datetime(df_MyPosTilt['DateTime'],
@@ -678,36 +683,44 @@ def update_output_MyPosTilt(dropdown_value, slider_value, n):
     # Create figure with secondary y-axis
     fig = make_subplots(specs=[[{"secondary_y": True}]])
 
-    # График истории моей позиции (из CSV MyPosTilt.csv)
-    for d_exp in sorted(df_MyPosTilt['expdate'].unique()):
-        dff = df_MyPosTilt[df_MyPosTilt.expdate == d_exp]
-        fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['MyPosTilt'],
-                                 legendgroup="group",  # this can be any string, not just "group"
-                                 legendgrouptitle_text="MyPosTilt",
+    # График истории моей позиции (из MyPosHistory.cs)
+    for pos in sorted(df_MyPosTilt['pos'].unique()):
+        dff = df_MyPosTilt[df_MyPosTilt.pos == pos]
+        fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['mypos'], visible='legendonly',
+                                 legendgroup=pos,  # this can be any string, not just "group"
+                                 legendgrouptitle_text=pos,
                                  mode='lines+text',
                                  line=dict(dash='dot'),
-                                 name=d_exp), secondary_y=True, )
-    # fig.update_layout(legend_title_text=radiobutton_value)
+                                 name='MyPos'), secondary_y=True, )
 
-    # График истории наклона моей позиции ПО ценам из стакана (из CSV MyPosTilt.csv)
-    for d_exp in sorted(df_MyPosTilt['expdate'].unique()):
-        dff = df_MyPosTilt[df_MyPosTilt.expdate == d_exp]
-        fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['RealTilt'],
-                                 legendgroup="group1",  # this can be any string, not just "group"
-                                 legendgrouptitle_text="RealTilt",
+    # График истории моей позиции ПО теоретической цене из MyPosHistory
+    for pos in sorted(df_MyPosTilt['pos'].unique()):
+        dff = df_MyPosTilt[df_MyPosTilt.pos == pos]
+        fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['last'],
+                                 legendgroup=pos,  # this can be any string, not just "group"
+                                 legendgrouptitle_text=pos,
                                  mode='lines+text',
-                                 name=d_exp), secondary_y=True, )
-    # fig.update_layout(legend_title_text=radiobutton_value)
+                                 name='Last'), secondary_y=True, )
 
-    # График истории наклона моей позиции по БИРЖЕВОЙ волатильности QuikTilt (из CSV MyPosTilt.csv)
-    for d_exp in sorted(df_MyPosTilt['expdate'].unique()):
-        dff = df_MyPosTilt[df_MyPosTilt.expdate == d_exp]
-        fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['QuikTilt'],
-                                 legendgroup="group2",
-                                 legendgrouptitle_text="QuikTilt",
+    # График истории моей позиции по цене LAST (из MyPosHistory.csv)
+    for pos in sorted(df_MyPosTilt['pos'].unique()):
+        dff = df_MyPosTilt[df_MyPosTilt.pos == pos]
+        fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['theor'],
+                                 legendgroup=pos,
+                                 legendgrouptitle_text=pos,
                                  mode='lines+text',
                                  line=dict(color='gray', width=1, dash='dot'),
-                                 name=d_exp), secondary_y=True, )
+                                 name='Theor'), secondary_y=True, )
+
+    # График истории моей позиции ПО рынку из MyPosHistory
+    for pos in sorted(df_MyPosTilt['pos'].unique()):
+        dff = df_MyPosTilt[df_MyPosTilt.pos == pos]
+        fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['market'], visible='legendonly',
+                                 legendgroup=pos,  # this can be any string, not just "group"
+                                 legendgrouptitle_text=pos,
+                                 mode='lines+text',
+                                 name='Market'), secondary_y=True, )
+
     fig.update_layout(legend=dict(groupclick="toggleitem"))
 
     # График истории цены базового актива
