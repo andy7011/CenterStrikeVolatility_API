@@ -19,6 +19,7 @@ import time
 import random
 from functools import lru_cache
 
+
 @lru_cache(maxsize=None)
 def get_cached_data(url):
     return get_object_from_json_endpoint_with_retry(url)
@@ -159,81 +160,87 @@ df['expiration_date'] = df['_expiration_datetime'].dt.strftime('%d.%m.%Y')
 # Tabs content
 tab1_content = [dcc.Graph(id='MyPosTiltHistory', style={'margin-top': 10})]
 tab2_content = [dcc.Graph(id='naklon_history', style={'margin-top': 10})]
-tab3_content = [# График истории
-                dcc.Graph(id='plot_history', style={'margin-top': 10}),
-                dcc.RadioItems(options=['Call', 'Put'],
-                               value='Call',
-                               inline=True,
-                               style=dict(display='flex', justifyContent='right'),
-                               id='my-radio-buttons-final'),
-            ]
-tab4_content = [# Таблица моих позиций
+tab3_content = [  # График истории
+    dcc.Graph(id='plot_history', style={'margin-top': 10}),
+    dcc.RadioItems(options=['Call', 'Put'],
+                   value='Call',
+                   inline=True,
+                   style=dict(display='flex', justifyContent='right'),
+                   id='my-radio-buttons-final'),
+]
+tab4_content = [  # Таблица моих позиций
     html.Div(id='intermediate-value', style={'display': 'none'}),
-        dash_table.DataTable(id='table', data=df_table.to_dict('records'), page_size=20,
-                             style_table={'max-width': '50px'},
-                            # Стиль для заголовков (жирный шрифт)
-                                style_header={
-                                    'fontWeight': 'bold',
-                                    'backgroundColor': 'rgb(230, 230, 230)',
-                                    'textAlign': 'center'
-                                },
-                             style_data_conditional=[
-                                {
-                                            'if': {'filter_query': '{ticker} = "Итого"'},
-                                            'fontWeight': 'bold',
-                                            'backgroundColor': 'rgb(240, 240, 240)'
-                                        },
-                                 {'if': {'filter_query': '{P/L theor} > 1', 'column_id': 'P/L theor'}, 'backgroundColor': '#3D9970', 'color': 'white'},
-                                {'if': {'filter_query': '{P/L last} > 1', 'column_id': 'P/L last'}, 'backgroundColor': '#3D9970', 'color': 'white'},
-                                {'if': {'filter_query': '{P/L market} > 1', 'column_id': 'P/L market'}, 'backgroundColor': '#3D9970', 'color': 'white'},
-                                {'if': {'column_id': 'time_last'}, 'backgroundColor': 'white', 'color': '#DAA520'},
-                                {'if': {'column_id': 'bid'}, 'backgroundColor': 'white', 'color': '#3D9970'},
-                                {'if': {'column_id': 'last'}, 'backgroundColor': 'white', 'color': '#DAA520'},
-                                {'if': {'column_id': 'ask'}, 'backgroundColor': 'white', 'color': '#FF0000'},
-                                {'if': {'filter_query': '{bidIV} > 0', 'column_id': 'bidIV'}, 'backgroundColor': 'white', 'color': '#3D9970'},
-                                {'if': {'filter_query': '{lastIV} > 0', 'column_id': 'lastIV'}, 'backgroundColor': 'white', 'color': '#DAA520'},
-                                {'if': {'filter_query': '{askIV} > 0', 'column_id': 'askIV'}, 'backgroundColor': 'white', 'color': '#FF0000'}
-                             ])]
-tab5_content = [# Таблица моих сделок
+    dash_table.DataTable(id='table', data=df_table.to_dict('records'), page_size=20,
+                         style_table={'max-width': '50px'},
+                         # Стиль для заголовков (жирный шрифт)
+                         style_header={
+                             'fontWeight': 'bold',
+                             'backgroundColor': 'rgb(230, 230, 230)',
+                             'textAlign': 'center'
+                         },
+                         style_data_conditional=[
+                             {
+                                 'if': {'filter_query': '{ticker} = "Итого"'},
+                                 'fontWeight': 'bold',
+                                 'backgroundColor': 'rgb(240, 240, 240)'
+                             },
+                             {'if': {'filter_query': '{P/L theor} > 1', 'column_id': 'P/L theor'},
+                              'backgroundColor': '#3D9970', 'color': 'white'},
+                             {'if': {'filter_query': '{P/L last} > 1', 'column_id': 'P/L last'},
+                              'backgroundColor': '#3D9970', 'color': 'white'},
+                             {'if': {'filter_query': '{P/L market} > 1', 'column_id': 'P/L market'},
+                              'backgroundColor': '#3D9970', 'color': 'white'},
+                             {'if': {'column_id': 'time_last'}, 'backgroundColor': 'white', 'color': '#DAA520'},
+                             {'if': {'column_id': 'bid'}, 'backgroundColor': 'white', 'color': '#3D9970'},
+                             {'if': {'column_id': 'last'}, 'backgroundColor': 'white', 'color': '#DAA520'},
+                             {'if': {'column_id': 'ask'}, 'backgroundColor': 'white', 'color': '#FF0000'},
+                             {'if': {'filter_query': '{bidIV} > 0', 'column_id': 'bidIV'}, 'backgroundColor': 'white',
+                              'color': '#3D9970'},
+                             {'if': {'filter_query': '{lastIV} > 0', 'column_id': 'lastIV'}, 'backgroundColor': 'white',
+                              'color': '#DAA520'},
+                             {'if': {'filter_query': '{askIV} > 0', 'column_id': 'askIV'}, 'backgroundColor': 'white',
+                              'color': '#FF0000'}
+                         ])]
+tab5_content = [  # Таблица моих сделок
     html.Div(id='intermediate-value1', style={'display': 'none'}),
-        dash_table.DataTable(id='trades', data=df_trades.to_dict('records'), page_size=14,
-                             style_table={'max-width': '50px'},
-                                style_data_conditional=[
-                                    {
-                                        'if': {
-                                            'filter_query': '{operation} eq "Купля"'
-                                        },
-                                        'backgroundColor': 'white',
-                                        'color': '#3D9970'
-                                    },
-                                    {
-                                        'if': {
-                                            'filter_query': '{operation} eq "Продажа"'
-                                        },
-                                        'backgroundColor': 'white',
-                                        'color': '#FF0000'
-                                    },]
-                             )]
-tab6_content = [# Таблица моих ордеров
-    html.Div(id='intermediate-value2', style={'display': 'none'}),
-        dash_table.DataTable(id='orders', data=df_orders.to_dict('records'), page_size=14,
-                             style_table={'max-width': '50px'},
-                             style_data_conditional=[
-                                 {
-                                     'if': {
-                                         'filter_query': '{operation} eq "Купля"'
-                                     },
-                                     'backgroundColor': 'white',
-                                     'color': '#3D9970'
+    dash_table.DataTable(id='trades', data=df_trades.to_dict('records'), page_size=14,
+                         style_table={'max-width': '50px'},
+                         style_data_conditional=[
+                             {
+                                 'if': {
+                                     'filter_query': '{operation} eq "Купля"'
                                  },
-                                 {
-                                     'if': {
-                                         'filter_query': '{operation} eq "Продажа"'
-                                     },
-                                     'backgroundColor': 'white',
-                                     'color': '#FF0000'
-                                 }, ]
-                             )]
+                                 'backgroundColor': 'white',
+                                 'color': '#3D9970'
+                             },
+                             {
+                                 'if': {
+                                     'filter_query': '{operation} eq "Продажа"'
+                                 },
+                                 'backgroundColor': 'white',
+                                 'color': '#FF0000'
+                             }, ]
+                         )]
+tab6_content = [  # Таблица моих ордеров
+    html.Div(id='intermediate-value2', style={'display': 'none'}),
+    dash_table.DataTable(id='orders', data=df_orders.to_dict('records'), page_size=14,
+                         style_table={'max-width': '50px'},
+                         style_data_conditional=[
+                             {
+                                 'if': {
+                                     'filter_query': '{operation} eq "Купля"'
+                                 },
+                                 'backgroundColor': 'white',
+                                 'color': '#3D9970'
+                             },
+                             {
+                                 'if': {
+                                     'filter_query': '{operation} eq "Продажа"'
+                                 },
+                                 'backgroundColor': 'white',
+                                 'color': '#FF0000'
+                             }, ]
+                         )]
 
 app = dash.Dash(external_stylesheets=[dbc.themes.BOOTSTRAP])
 app.layout = html.Div(children=[
@@ -287,19 +294,16 @@ app.layout = html.Div(children=[
 
     ], style={'display': 'flex', 'flexDirection': 'row'}),
 
-
-
     html.Div(children=[
 
         dbc.Tabs([
-                    dbc.Tab(tab1_content, label='MyPos history'),
-                    dbc.Tab(tab2_content, label='Наклон улыбки'),
-                    dbc.Tab(tab3_content, label='Volatility history'),
-                    dbc.Tab(tab4_content, label='MyPos table'),
-                    dbc.Tab(tab5_content, label='MyTrades table'),
-                    dbc.Tab(tab6_content, label='MyOrders table'),
-                ]),
-
+            dbc.Tab(tab1_content, label='MyPos history'),
+            dbc.Tab(tab2_content, label='Наклон улыбки'),
+            dbc.Tab(tab3_content, label='Volatility history'),
+            dbc.Tab(tab4_content, label='MyPos table'),
+            dbc.Tab(tab5_content, label='MyTrades table'),
+            dbc.Tab(tab6_content, label='MyOrders table'),
+        ]),
 
         # Интервал обновления данных
         dcc.Interval(
@@ -307,28 +311,27 @@ app.layout = html.Div(children=[
             interval=1000 * 10,
             n_intervals=0),
 
-
-
         # Слайдер
-                dcc.Slider(0, 28,
-                           id='my_slider',
-                           step=None,
-                           marks={
-                               1: '0.5d',
-                               2: '1d',
-                               4: '2d',
-                               6: '3d',
-                               10: '5d',
-                               14: '7d',
-                               20: '10d',
-                               28: '14d'
-                           },
-                           value=6
-                           ),
-                html.Div(id='slider-output-1'),
+        dcc.Slider(0, 28,
+                   id='my_slider',
+                   step=None,
+                   marks={
+                       1: '0.5d',
+                       2: '1d',
+                       4: '2d',
+                       6: '3d',
+                       10: '5d',
+                       14: '7d',
+                       20: '10d',
+                       28: '14d'
+                   },
+                   value=6
+                   ),
+        html.Div(id='slider-output-1'),
     ])
 ])
 
+# --- CALLBACKS ---
 
 # Callback to update the table
 @app.callback(Output('intermediate-value', 'children'),
@@ -532,8 +535,8 @@ def update_output_smile(value, n):
         fig.add_vline(x=base_asset_last_price, line_dash='dash', line_color='firebrick')
 
         fig.update_layout(height=450,
-            title_text=f"Volatility smile, series <b>{value}<b>", uirevision="Don't change"
-        )
+                          title_text=f"Volatility smile, series <b>{value}<b>", uirevision="Don't change"
+                          )
         fig.update_layout(
             margin=dict(l=0, r=0, t=30, b=0),
         )
@@ -633,6 +636,7 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
 
     return fig
 
+
 # Callback to update the line-graph history MyPosTilt data (обновление данных графика истории моей позиции)
 @app.callback(Output('MyPosTiltHistory', 'figure', allow_duplicate=True),
               [Input('dropdown-selection', 'value'),
@@ -663,7 +667,7 @@ def update_output_MyPosTilt(dropdown_value, slider_value, n):
         # df_MyPosTilt = df_MyPosTilt.tail(limit * len(df_MyPosTilt['expiration_datetime'].unique()) * 2) # глубина истории по количеству серий
 
         df_MyPosTilt['DateTime'] = pd.to_datetime(df_MyPosTilt['DateTime'],
-                                                           format='%Y-%m-%d %H:%M:%S')
+                                                  format='%Y-%m-%d %H:%M:%S')
         df_MyPosTilt.index = pd.DatetimeIndex(df_MyPosTilt['DateTime'])
         # df_MyPosTilt = df_MyPosTilt[(df_vol_history.type == radiobutton_value)]
         df_MyPosTilt = df_MyPosTilt[(df_MyPosTilt.DateTime > limit_time)]
@@ -674,7 +678,7 @@ def update_output_MyPosTilt(dropdown_value, slider_value, n):
     # Create figure with secondary y-axis
     fig = make_subplots(specs=[[{"secondary_y": True}]])
 
-    # График истории наклона моей позиции (из CSV MyPosTilt.csv)
+    # График истории моей позиции (из CSV MyPosTilt.csv)
     for d_exp in sorted(df_MyPosTilt['expdate'].unique()):
         dff = df_MyPosTilt[df_MyPosTilt.expdate == d_exp]
         fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['MyPosTilt'],
@@ -729,6 +733,7 @@ def update_output_MyPosTilt(dropdown_value, slider_value, n):
     )
 
     return fig
+
 
 # Callback to update the line-graph history 'naklon' data (обновление данных графика истории наклона улыбки)
 @app.callback(Output('naklon_history', 'figure', allow_duplicate=True),
@@ -883,8 +888,10 @@ def updateTable(n, value):
     weighted_pl_market = (weighted_pl_market_pos + weighted_pl_market_neg) / total_weight if total_weight != 0 else 0
 
     # Проверка на существование колонок перед вычислением
-    weighted_pl_theor = (df_pos['P/L theor'] * weights_theor).sum() / total_weight_theor if 'P/L theor' in df_pos.columns and total_weight_theor != 0 else 0
-    weighted_pl_last = (df_pos['P/L last'] * weights_last).sum() / total_weight_last if 'P/L theor' in df_pos.columns and total_weight_last != 0 else 0
+    weighted_pl_theor = (df_pos[
+                             'P/L theor'] * weights_theor).sum() / total_weight_theor if 'P/L theor' in df_pos.columns and total_weight_theor != 0 else 0
+    weighted_pl_last = (df_pos[
+                            'P/L last'] * weights_last).sum() / total_weight_last if 'P/L theor' in df_pos.columns and total_weight_last != 0 else 0
 
     # # Расчет weighted_pl_market с разными весами для положительных и отрицательных позиций
     # # Для положительных позиций (net_pos > 0) используем bid как вес
@@ -933,6 +940,7 @@ def updateTrades(n, value):
 
     return df_trades.to_dict('records')
 
+
 # Callback to update the table "MyOrders Table"
 @app.callback(
     Output('orders', 'data', allow_duplicate=True),
@@ -945,6 +953,7 @@ def updateOrders(n, value):
     df_orders = df_orders[df_orders['option_base'] == value]
 
     return df_orders.to_dict('records')
+
 
 # Callback to update the graph-gauge Спидометр TrueVega
 @app.callback(
@@ -967,6 +976,7 @@ def updateGauge(n, value):
     else:
         value = (abs(tv_sum_positive) / (abs(tv_sum_positive) + abs(tv_sum_negative))) * 10
     return value
+
 
 if __name__ == '__main__':
     app.run(debug=False)  # Run the Dash app

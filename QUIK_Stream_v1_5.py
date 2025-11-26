@@ -19,6 +19,24 @@ futures_firm_id = 'SPBFUT'  # Код фирмы для фьючерсов
 
 # Глобальная переменная для хранения активных ордеров
 active_orders_set = set()
+df_portfolio = pd.DataFrame()  # Глобальный датафрейм для хранения позиций портфеля
+
+# Add the is_business_time function
+def is_business_time():
+    """Проверяет, находится ли текущее время в рабочих часах."""
+    now = datetime.now()
+    current_hour = now.hour
+    current_minute = now.minute
+
+    # Проверяем выходные дни
+    if now.weekday() >= 5:  # 5 - суббота, 6 - воскресенье
+        return False
+
+    # Проверяем нерабочее время (23:50-9:00)
+    if (current_hour == 23 and current_minute >= 50) or (current_hour < 9):
+        return False
+
+    return True
 
 def get_time_to_maturity(expiration_datetime):
     # Если expiration_datetime - это datetime объект, конвертируем в timestamp
@@ -123,11 +141,14 @@ def sync_active_orders():
 
 def sync_portfolio_positions():
     """Синхронизация позиций в портфеле"""
-    global qp_provider
+    global qp_provider, df_portfolio
 
     try:
         # Получаем информацию по инструментам в портфеле
         portfolio_positions = []
+
+        # Создаем пустой список для хранения данных
+        portfolio_data = []
 
         # Получаем все классы инструментов
         class_codes = qp_provider.get_classes_list()['data']
@@ -353,7 +374,7 @@ def sync_portfolio_positions():
                             'Vega': round(Vega * net_pos, 2),
                             'TrueVega': round(TrueVega * net_pos, 2)
                         })
-                        # print(portfolio_positions)
+                        # print(f'portfolio_positions: {portfolio_positions}')
         # Сохраняем в CSV файл
         if portfolio_positions:
             df_portfolio = pd.DataFrame(portfolio_positions)
@@ -370,10 +391,153 @@ def sync_portfolio_positions():
             empty_df.to_csv(temp_obj.substitute(name_file='QUIK_MyPos.csv'),
                             sep=';', encoding='utf-8', index=False)
 
+        # print(f'Данные портфеля до сохранения: {df_portfolio}')
+        # # Когда все данные собраны, создаем датафрейм
+        # if portfolio_data:
+        #     df_portfolio = pd.DataFrame(portfolio_positions)
+        # else:
+        #     df_portfolio = pd.DataFrame()
+        # print(f'Данные портфеля после синхронизации: {df_portfolio}')
+        # # print(df_portfolio)
+
     except Exception as e:
         print(f"Ошибка при синхронизации позиций портфеля: {e}")
 
 
+def MyPosHistorySave():
+    """Периодически сохраняет историю позиций в CSV файл"""
+    global temp_obj, df_portfolio
+    print("Запуск функции сохранения истории позиций в файл MyPosHistorySave")
+    while True:
+        try:
+            # Проверяем рабочее время
+            if not is_business_time():
+                time.sleep(30)
+                continue
+
+            # Получаем данные портфеля
+            sync_portfolio_positions()
+
+            # print(f'Данные портфеля MyPosHistorySave: {df_portfolio}')
+
+            # Проверяем, что df_portfolio существует и не пуст
+            if 'df_portfolio' not in globals() or df_portfolio.empty:
+                time.sleep(30)
+                continue
+
+            # Создаем копию датафрейма для обработки
+            df = df_portfolio.copy()
+
+            # Конвертируем net_pos в числовой формат, если нужно
+            df['net_pos'] = pd.to_numeric(df['net_pos'], errors='coerce')
+            df['TrueVega'] = pd.to_numeric(df['TrueVega'], errors='coerce')
+            df['QuikVola'] = pd.to_numeric(df['QuikVola'], errors='coerce')
+            df['lastIV'] = pd.to_numeric(df['lastIV'], errors='coerce')
+            df['bidIV'] = pd.to_numeric(df['bidIV'], errors='coerce')
+            df['askIV'] = pd.to_numeric(df['askIV'], errors='coerce')
+            df['OpenIV'] = pd.to_numeric(df['OpenIV'], errors='coerce')
+
+            # Удаляем строки с NaN в ключевых столбцах
+            df = df.dropna(subset=['net_pos', 'TrueVega'])
+            # Подготавливаем список строк для записи в CSV
+            rows_to_write = []
+
+            # Группируем по option_base
+            grouped = df.groupby('option_base')
+
+            # Обрабатываем каждую группу (тикера) отдельно
+            for option_base, group_data in grouped:
+                # Разделяем на long и short позиции внутри группы
+                long_positions = group_data[group_data['net_pos'] > 0]
+                short_positions = group_data[group_data['net_pos'] < 0]
+
+                # Вычисляем средневзвешенные значения для long позиций
+                if not long_positions.empty and long_positions['TrueVega'].abs().sum() != 0:
+                    # Используем TrueVega как веса
+                    weights_long = long_positions['TrueVega'].abs()
+                    total_weight_long = weights_long.sum()
+
+                    # Средневзвешенные значения
+                    theor_long = (long_positions['QuikVola'] * weights_long).sum() / total_weight_long
+                    last_long = (long_positions['lastIV'] * weights_long).sum() / total_weight_long
+                    bid_long = (long_positions['bidIV'] * weights_long).sum() / total_weight_long
+                    ask_long = (long_positions['askIV'] * weights_long).sum() / total_weight_long
+                    open_long = (long_positions['OpenIV'] * weights_long).sum() / total_weight_long
+
+                    # Создаем строку для long позиций
+                    long_row = {
+                        'DateTime': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        'option_base': option_base,
+                        'pos': 'long',
+                        'theor': round(theor_long, 2),
+                        'last': round(last_long, 2),
+                        'market': round(bid_long, 2),
+                        'mypos': round(open_long, 2)
+                    }
+                    rows_to_write.append(long_row)
+
+                # Вычисляем средневзвешенные значения для short позиций
+                if not short_positions.empty and short_positions['TrueVega'].abs().sum() != 0:
+                    # Используем TrueVega как веса
+                    weights_short = short_positions['TrueVega'].abs()
+                    total_weight_short = weights_short.sum()
+
+                    # Средневзвешенные значения
+                    theor_short = (short_positions['QuikVola'] * weights_short).sum() / total_weight_short
+                    last_short = (short_positions['lastIV'] * weights_short).sum() / total_weight_short
+                    bid_short = (short_positions['bidIV'] * weights_short).sum() / total_weight_short
+                    ask_short = (short_positions['askIV'] * weights_short).sum() / total_weight_short
+                    open_short = (short_positions['OpenIV'] * weights_short).sum() / total_weight_short
+
+                    # Создаем строку для short позиций
+                    short_row = {
+                        'DateTime': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        'option_base': option_base,
+                        'pos': 'short',
+                        'theor': round(theor_short, 2),
+                        'last': round(last_short, 2),
+                        'market': round(ask_short, 2),
+                        'mypos': round(open_short, 2)
+                    }
+                    rows_to_write.append(short_row)
+
+            # Записываем данные в CSV файл
+            if rows_to_write:
+                # Определяем имя файла
+                filename = temp_obj.substitute(name_file='MyPosHistory.csv')
+
+                # Создаем DataFrame и записываем в CSV
+                df_history = pd.DataFrame(rows_to_write)
+
+                # Проверяем, существует ли файл
+                try:
+                    with open(filename, 'r') as f:
+                        file_exists = True
+                except FileNotFoundError:
+                    file_exists = False
+
+                # Записываем в файл (добавляем или создаем новый)
+                with open(filename, 'a', newline='', encoding='utf-8') as f:
+                    if file_exists:
+                        df_history.to_csv(f, index=False, sep=';', header=False)
+                    else:
+                        df_history.to_csv(f, index=False, sep=';')
+
+            # Ждем 30 секунд перед следующей итерацией
+            time.sleep(30)
+
+        except Exception as e:
+            print(f"Ошибка в MyPosHistorySave: {e}")
+            time.sleep(30)
+            continue
+
+# Запуск функции в отдельном потоке
+def start_mypos_history_save():
+    """Запускает поток для периодического сохранения истории позиций"""
+    history_thread = threading.Thread(target=MyPosHistorySave, daemon=True)
+    history_thread.start()
+    print("Поток сохранения истории позиций запущен")
+    return history_thread
 
 def calculate_open_data_open_price_open_iv(sec_code, net_pos):
     """
@@ -750,6 +914,10 @@ def _on_trade_impl(data):
 
 
 if __name__ == '__main__':  # Точка входа при запуске этого скрипта
+    if not is_business_time():
+        print("Текущее время находится в нерабочих часах или выходной день")
+        exit()  # Используем exit() вместо return вне функции
+
     # Настройка логирования
     logger = logging.getLogger('QuikPy.Accounts')
     logging.basicConfig(
@@ -764,6 +932,9 @@ if __name__ == '__main__':  # Точка входа при запуске это
 
     # Подключение к QUIK
     qp_provider = QuikPy()
+
+    # Запуск сохранения истории позиций
+    start_mypos_history_save()
 
     # Сразу выполняем синхронизацию активных ордеров и инструментов портфеля
     sync_active_orders()
