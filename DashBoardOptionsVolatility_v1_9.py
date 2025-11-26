@@ -25,7 +25,7 @@ def get_cached_data(url):
     return get_object_from_json_endpoint_with_retry(url)
 
 
-temp_str = 'C:\\Users\\шадрин\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 
