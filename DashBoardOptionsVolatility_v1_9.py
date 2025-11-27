@@ -19,15 +19,12 @@ import time
 import random
 from functools import lru_cache
 
-
 @lru_cache(maxsize=None)
 def get_cached_data(url):
     return get_object_from_json_endpoint_with_retry(url)
 
-
 temp_str = 'C:\\Users\\шадрин\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
-
 
 def utc_to_msk_datetime(dt, tzinfo=False):
     """Перевод времени из UTC в московское
@@ -618,7 +615,7 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
 
     # График истории цены базового актива
     fig.add_trace(go.Scatter(x=df_BaseAssetPrice['DateTime'], y=df_BaseAssetPrice['last_price'], mode='lines+text',
-                             name=dropdown_value, line=dict(color='gray', width=3, dash='dashdot')),
+                             name=dropdown_value, line=dict(color='gray', width=2, dash='dashdot')),
                   secondary_y=False, )
 
     # Убираем неторговое время
@@ -632,7 +629,7 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
     fig.update_layout(xaxis_title=None)
 
     fig.update_layout(
-        title_text=f'The history of the volatility of the central strike of the option series <b>{dropdown_value}<b>',
+        title_text=f'Central strike volatility history, put or call option series <b>{dropdown_value}<b>',
         uirevision="Don't change"
     )
     fig.update_layout(
@@ -738,11 +735,12 @@ def update_output_MyPosTilt(dropdown_value, slider_value, n):
 
     fig.update_layout(xaxis_title=None)
 
+    # fig.update_layout(
+    #     title_text=f'Наклон моей позиции, option series <b>{dropdown_value}<b>', uirevision="Don't change"
+    # )
+    fig.update_layout(uirevision="Don't change")
     fig.update_layout(
-        title_text=f'Наклон моей позиции, option series <b>{dropdown_value}<b>', uirevision="Don't change"
-    )
-    fig.update_layout(
-        margin=dict(l=0, r=0, t=30, b=0),
+        margin=dict(l=0, r=0, t=0, b=0),
     )
 
     return fig
@@ -826,15 +824,15 @@ def update_output_history_naklon(dropdown_value, slider_value, n):
 
     fig.update_layout(xaxis_title=None)
 
+    # fig.update_layout(
+    #     title_text=f'"Наклон улыбки" of the option series <b>{dropdown_value}<b>', uirevision="Don't change"
+    # )
+    fig.update_layout(uirevision="Don't change")
     fig.update_layout(
-        title_text=f'"Наклон улыбки" of the option series <b>{dropdown_value}<b>', uirevision="Don't change"
-    )
-    fig.update_layout(
-        margin=dict(l=0, r=0, t=30, b=0),
+        margin=dict(l=0, r=0, t=0, b=0),
     )
 
     return fig
-
 
 # Callback to update the table "MyPos Table"
 @app.callback(
@@ -847,78 +845,50 @@ def updateTable(n, value):
     # Фильтрация строк по базовому активу
     df_pos = df_pos[df_pos['option_base'] == value]
 
+    # Создаем копию для расчетов, заменяя нулевые значения last на theor
+    df_calc = df_pos.copy()
+    df_calc['last_for_calc'] = df_calc['last'].where(df_calc['last'] != 0, df_calc['theor'])
+
     # Вычисление итогов по колонке net_pos
     total_net_pos = df_pos['net_pos'].sum()
     total_theor = df_pos['theor'].sum()
-    # total_theor = (df_pos['theor'] * df_pos['net_pos']).sum()
     total_last = df_pos['last'].sum()
 
     # Theor
-    weights_theor = df_pos['theor'] * abs(df_pos['net_pos'])
+    weights_theor = df_calc['theor'] * abs(df_calc['net_pos'])
     total_weight_theor = weights_theor.sum()
 
-    # Last
-    weights_last = df_pos['last'] * abs(df_pos['net_pos'])
+    # Last (с заменой нулевых значений)
+    weights_last = df_calc['last_for_calc'] * abs(df_calc['net_pos'])
     total_weight_last = weights_last.sum()
-
-    # # Market
-    # # Раздельное вычисление total_weight_bid и total_weight_ask для weighted_pl_market
-    # # Для положительных значений net_pos (длинные позиции)
-    # mask_long = df_pos['net_pos'] > 0
-    # weights_bid = df_pos.loc[mask_long, 'bid'] * df_pos.loc[mask_long, 'net_pos']
-    # total_weight_bid = weights_bid.sum()
-    #
-    # # Для отрицательных значений net_pos (короткие позиции)
-    # mask_short = df_pos['net_pos'] < 0
-    # weights_ask = df_pos.loc[mask_short, 'ask'] * abs(df_pos.loc[mask_short, 'net_pos'])
-    # total_weight_ask = weights_ask.sum()
-    #
-    # # Раздельное вычисление total_bid и total_ask для weighted_pl_market
-    # total_bid = df_pos[df_pos['net_pos'] > 0]['bid'].sum()
-    # total_ask = df_pos[df_pos['net_pos'] < 0]['ask'].sum()
-    # total_market = total_bid + total_ask
 
     # Market
     # Раздельное вычисление total_weight_bid и total_weight_ask для weighted_pl_market
     # Для положительных значений net_pos (длинные позиции)
-    mask_long = df_pos['net_pos'] > 0
-    weights_bid = df_pos.loc[mask_long, 'bid'] * df_pos.loc[mask_long, 'net_pos']
+    mask_long = df_calc['net_pos'] > 0
+    weights_bid = df_calc.loc[mask_long, 'bid'] * df_calc.loc[mask_long, 'net_pos']
     total_weight_bid = weights_bid.sum()
 
     # Для отрицательных значений net_pos (короткие позиции)
-    mask_short = df_pos['net_pos'] < 0
-    weights_ask = df_pos.loc[mask_short, 'ask'] * abs(df_pos.loc[mask_short, 'net_pos'])
+    mask_short = df_calc['net_pos'] < 0
+    weights_ask = df_calc.loc[mask_short, 'ask'] * abs(df_calc.loc[mask_short, 'net_pos'])
     total_weight_ask = weights_ask.sum()
 
     # Расчет weighted_pl_market с использованием тех же масок
-    weighted_pl_market_pos = (df_pos.loc[mask_long, 'P/L market'] * df_pos.loc[mask_long, 'bid'] * df_pos.loc[
+    weighted_pl_market_pos = (df_calc.loc[mask_long, 'P/L market'] * df_calc.loc[mask_long, 'bid'] * df_calc.loc[
         mask_long, 'net_pos']).sum()
-    weighted_pl_market_neg = (df_pos.loc[mask_short, 'P/L market'] * df_pos.loc[mask_short, 'ask'] * abs(
-        df_pos.loc[mask_short, 'net_pos'])).sum()
+    weighted_pl_market_neg = (df_calc.loc[mask_short, 'P/L market'] * df_calc.loc[mask_short, 'ask'] * abs(
+        df_calc.loc[mask_short, 'net_pos'])).sum()
 
     # Общий взвешенный P/L market
     total_weight = total_weight_bid + total_weight_ask
     weighted_pl_market = (weighted_pl_market_pos + weighted_pl_market_neg) / total_weight if total_weight != 0 else 0
 
     # Проверка на существование колонок перед вычислением
-    weighted_pl_theor = (df_pos[
-                             'P/L theor'] * weights_theor).sum() / total_weight_theor if 'P/L theor' in df_pos.columns and total_weight_theor != 0 else 0
-    weighted_pl_last = (df_pos[
-                            'P/L last'] * weights_last).sum() / total_weight_last if 'P/L theor' in df_pos.columns and total_weight_last != 0 else 0
-
-    # # Расчет weighted_pl_market с разными весами для положительных и отрицательных позиций
-    # # Для положительных позиций (net_pos > 0) используем bid как вес
-    # weighted_pl_market_pos = (df_pos[df_pos['net_pos'] > 0]['P/L market'] *
-    #                           df_pos[df_pos['net_pos'] > 0]['bid'] *
-    #                           df_pos[df_pos['net_pos'] > 0]['net_pos']).sum()
-    #
-    # # Для отрицательных позиций (net_pos < 0) используем ask как вес
-    # weighted_pl_market_neg = (df_pos[df_pos['net_pos'] < 0]['P/L market'] *
-    #                           df_pos[df_pos['net_pos'] < 0]['ask'] *
-    #                           abs(df_pos[df_pos['net_pos'] < 0]['net_pos'])).sum()
-    #
-    # # Общий взвешенный P/L market
-    # weighted_pl_market = (weighted_pl_market_pos + weighted_pl_market_neg) / total_market if total_market != 0 else 0
+    weighted_pl_theor = (df_calc[
+                             'P/L theor'] * weights_theor).sum() / total_weight_theor if 'P/L theor' in df_calc.columns and total_weight_theor != 0 else 0
+    weighted_pl_last = (df_calc[
+                            'P/L last'] * weights_last).sum() / total_weight_last if 'P/L last' in df_calc.columns and total_weight_last != 0 else 0
 
     # Вычисление сумм по Vega и TrueVega
     total_vega = df_pos['Vega'].sum() if 'Vega' in df_pos.columns else 0

@@ -21,22 +21,45 @@ futures_firm_id = 'SPBFUT'  # Код фирмы для фьючерсов
 active_orders_set = set()
 df_portfolio = pd.DataFrame()  # Глобальный датафрейм для хранения позиций портфеля
 
-# Add the is_business_time function
-def is_business_time():
-    """Проверяет, находится ли текущее время в рабочих часах."""
-    now = datetime.now()
-    current_hour = now.hour
-    current_minute = now.minute
+def wait_for_business_time():
+    """Ждет наступления рабочего времени, проверяя каждые 30 секунд."""
+    while True:
+        now = datetime.now()
+        current_hour = now.hour
+        current_minute = now.minute
 
-    # Проверяем выходные дни
-    if now.weekday() >= 5:  # 5 - суббота, 6 - воскресенье
-        return False
+        # Проверяем выходные дни
+        if now.weekday() >= 5:  # 5 - суббота, 6 - воскресенье
+            print("Выходной день. Повторная проверка через 30 секунд...")
+            time.sleep(30)
+            continue
 
-    # Проверяем нерабочее время (23:50-9:00)
-    if (current_hour == 23 and current_minute >= 50) or (current_hour < 9):
-        return False
+        # Проверяем нерабочее время (23:50-9:00)
+        if (current_hour == 23 and current_minute >= 50) or (current_hour < 9):
+            print("Нерабочее время. Повторная проверка через 30 секунд...")
+            time.sleep(30)
+            continue
 
-    return True
+        # Если рабочее время - выходим из функции
+        print("Рабочее время наступило!")
+        return
+
+# # Add the is_business_time function
+# def is_business_time():
+#     """Проверяет, находится ли текущее время в рабочих часах."""
+#     now = datetime.now()
+#     current_hour = now.hour
+#     current_minute = now.minute
+#
+#     # Проверяем выходные дни
+#     if now.weekday() >= 5:  # 5 - суббота, 6 - воскресенье
+#         return False
+#
+#     # Проверяем нерабочее время (23:50-9:00)
+#     if (current_hour == 23 and current_minute >= 50) or (current_hour < 9):
+#         return False
+#
+#     return True
 
 def get_time_to_maturity(expiration_datetime):
     # Если expiration_datetime - это datetime объект, конвертируем в timestamp
@@ -410,15 +433,14 @@ def MyPosHistorySave():
     print("Запуск функции сохранения истории позиций в файл MyPosHistorySave")
     while True:
         try:
-            # Проверяем рабочее время
-            if not is_business_time():
-                time.sleep(30)
-                continue
+            # # Проверяем рабочее время
+            # if not is_business_time():
+            #     print("Текущее время находится в нерабочих часах или выходной день")
+            #     time.sleep(30)
+            #     return
 
             # Получаем данные портфеля
             sync_portfolio_positions()
-
-            # print(f'Данные портфеля MyPosHistorySave: {df_portfolio}')
 
             # Проверяем, что df_portfolio существует и не пуст
             if 'df_portfolio' not in globals() or df_portfolio.empty:
@@ -914,9 +936,11 @@ def _on_trade_impl(data):
 
 
 if __name__ == '__main__':  # Точка входа при запуске этого скрипта
-    if not is_business_time():
-        print("Текущее время находится в нерабочих часах или выходной день")
-        exit()  # Используем exit() вместо return вне функции
+    # if not is_business_time():
+    #     print("Текущее время находится в нерабочих часах или выходной день")
+    #     exit()  # Используем exit() вместо return вне функции
+
+    wait_for_business_time()  # Ждем рабочего времени
 
     # Настройка логирования
     logger = logging.getLogger('QuikPy.Accounts')
