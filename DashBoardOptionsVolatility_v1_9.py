@@ -195,16 +195,13 @@ tab4_content = [  # Таблица моих позиций
                               'backgroundColor': '#3D9970', 'color': 'white'},
                              {'if': {'filter_query': '{P/L market} > 1', 'column_id': 'P/L market'},
                               'backgroundColor': '#3D9970', 'color': 'white'},
-                             {'if': {'column_id': 'time_last'}, 'backgroundColor': 'white', 'color': '#DAA520'},
-                             {'if': {'column_id': 'bid'}, 'backgroundColor': 'white', 'color': '#3D9970'},
-                             {'if': {'column_id': 'last'}, 'backgroundColor': 'white', 'color': '#DAA520'},
-                             {'if': {'column_id': 'ask'}, 'backgroundColor': 'white', 'color': '#FF0000'},
-                             {'if': {'filter_query': '{bidIV} > 0', 'column_id': 'bidIV'}, 'backgroundColor': 'white',
-                              'color': '#3D9970'},
-                             {'if': {'filter_query': '{lastIV} > 0', 'column_id': 'lastIV'}, 'backgroundColor': 'white',
-                              'color': '#DAA520'},
-                             {'if': {'filter_query': '{askIV} > 0', 'column_id': 'askIV'}, 'backgroundColor': 'white',
-                              'color': '#FF0000'}
+                             {'if': {'column_id': 'time_last'}, 'color': '#DAA520'},
+                             {'if': {'column_id': 'bid'}, 'color': '#3D9970'},
+                             {'if': {'column_id': 'last'}, 'color': '#DAA520'},
+                             {'if': {'column_id': 'ask'}, 'color': '#FF0000'},
+                             {'if': {'filter_query': '{bidIV} >= 0', 'column_id': 'bidIV'}, 'color': '#3D9970'},
+                             {'if': {'filter_query': '{lastIV} >= 0', 'column_id': 'lastIV'}, 'color': '#DAA520'},
+                             {'if': {'filter_query': '{askIV} >= 0', 'column_id': 'askIV'}, 'color': '#FF0000'}
                          ])]
 tab5_content = [  # Таблица моих сделок
     html.Div(id='intermediate-value1', style={'display': 'none'}),
@@ -847,6 +844,10 @@ def updateTable(n, value):
     # Фильтрация строк по базовому активу
     df_pos = df_pos[df_pos['option_base'] == value]
 
+    # Замена нулевых и NaN значений 'P/L last' на значения 'P/L theor'
+    df_pos['P/L last'] = df_pos['P/L last'].replace(0, pd.NA)  # Заменяем 0 на NaN
+    df_pos['P/L last'] = df_pos['P/L last'].fillna(df_pos['P/L theor'])  # Заменяем NaN на значения из P/L theor
+
     # Вычисление итогов по колонке net_pos
     total_net_pos = df_pos['net_pos'].sum()
     total_theor = df_pos['theor'].sum()
@@ -860,23 +861,6 @@ def updateTable(n, value):
     # Last
     weights_last = df_pos['last'] * abs(df_pos['net_pos'])
     total_weight_last = weights_last.sum()
-
-    # # Market
-    # # Раздельное вычисление total_weight_bid и total_weight_ask для weighted_pl_market
-    # # Для положительных значений net_pos (длинные позиции)
-    # mask_long = df_pos['net_pos'] > 0
-    # weights_bid = df_pos.loc[mask_long, 'bid'] * df_pos.loc[mask_long, 'net_pos']
-    # total_weight_bid = weights_bid.sum()
-    #
-    # # Для отрицательных значений net_pos (короткие позиции)
-    # mask_short = df_pos['net_pos'] < 0
-    # weights_ask = df_pos.loc[mask_short, 'ask'] * abs(df_pos.loc[mask_short, 'net_pos'])
-    # total_weight_ask = weights_ask.sum()
-    #
-    # # Раздельное вычисление total_bid и total_ask для weighted_pl_market
-    # total_bid = df_pos[df_pos['net_pos'] > 0]['bid'].sum()
-    # total_ask = df_pos[df_pos['net_pos'] < 0]['ask'].sum()
-    # total_market = total_bid + total_ask
 
     # Market
     # Раздельное вычисление total_weight_bid и total_weight_ask для weighted_pl_market
@@ -904,21 +888,7 @@ def updateTable(n, value):
     weighted_pl_theor = (df_pos[
                              'P/L theor'] * weights_theor).sum() / total_weight_theor if 'P/L theor' in df_pos.columns and total_weight_theor != 0 else 0
     weighted_pl_last = (df_pos[
-                            'P/L last'] * weights_last).sum() / total_weight_last if 'P/L theor' in df_pos.columns and total_weight_last != 0 else 0
-
-    # # Расчет weighted_pl_market с разными весами для положительных и отрицательных позиций
-    # # Для положительных позиций (net_pos > 0) используем bid как вес
-    # weighted_pl_market_pos = (df_pos[df_pos['net_pos'] > 0]['P/L market'] *
-    #                           df_pos[df_pos['net_pos'] > 0]['bid'] *
-    #                           df_pos[df_pos['net_pos'] > 0]['net_pos']).sum()
-    #
-    # # Для отрицательных позиций (net_pos < 0) используем ask как вес
-    # weighted_pl_market_neg = (df_pos[df_pos['net_pos'] < 0]['P/L market'] *
-    #                           df_pos[df_pos['net_pos'] < 0]['ask'] *
-    #                           abs(df_pos[df_pos['net_pos'] < 0]['net_pos'])).sum()
-    #
-    # # Общий взвешенный P/L market
-    # weighted_pl_market = (weighted_pl_market_pos + weighted_pl_market_neg) / total_market if total_market != 0 else 0
+                            'P/L last'] * weights_last).sum() / total_weight_last if 'P/L last' in df_pos.columns and total_weight_last != 0 else 0
 
     # Вычисление сумм по Vega и TrueVega
     total_vega = df_pos['Vega'].sum() if 'Vega' in df_pos.columns else 0
