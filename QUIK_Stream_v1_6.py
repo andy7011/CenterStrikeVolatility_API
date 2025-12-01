@@ -1,0 +1,1047 @@
+import logging  # Выводим лог на консоль и в файл
+from datetime import datetime, UTC  # Дата и время
+import pytz
+from scipy.stats import norm
+import pandas as pd
+import csv
+from string import Template
+import threading
+import time  # Подписка на события по времени
+import implied_volatility
+import option_type
+from QuikPy.QuikPy import QuikPy  # Работа с QUIK из Python через LUA скрипты QUIK#
+from model.option import Option
+
+pd.set_option('future.no_silent_downcasting', True)
+
+# Конфигурация для работы с файлами
+temp_str = 'C:\\Users\\шадрин\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_obj = Template(temp_str)
+
+futures_firm_id = 'SPBFUT'  # Код фирмы для фьючерсов
+
+# Глобальные переменные
+active_orders_set = set()
+df_portfolio = pd.DataFrame()  # Глобальный датафрейм для хранения позиций портфеля
+all_rows_order_list = []  # Список для хранения всех заявок
+qp_provider = None  # Глобальная ссылка на провайдер QUIK
+order_handler = None
+trade_handler = None
+
+class_code = 'SPBOPT'  # Глобальная переменная для класса опционов
+
+
+def wait_for_business_time():
+    """Ждет наступления рабочего времени, проверяя каждые 30 секунд."""
+    global is_working_time
+    is_working_time = False  # Инициализация переменной
+
+    while True:
+        now = datetime.now()
+        current_hour = now.hour
+        current_minute = now.minute
+
+        # Проверяем выходные дни
+        if now.weekday() >= 5:  # 5 - суббота, 6 - воскресенье
+            if is_working_time:
+                print("Рабочее время закончилось - выходной день")
+                is_working_time = False
+                stop_main_functions()
+            time.sleep(30)
+            continue
+
+        # Проверяем нерабочее время (23:50-9:00)
+        if (current_hour == 23 and current_minute >= 50) or (current_hour < 9):
+            if is_working_time:
+                print("Рабочее время закончилось")
+                is_working_time = False
+                stop_main_functions()
+            time.sleep(30)
+            continue
+
+        # Если рабочее время
+        if not is_working_time:
+            print("Рабочее время наступило!")
+            is_working_time = True
+            start_main_functions()
+
+        time.sleep(30)
+
+
+def start_main_functions():
+    """Запуск основных функций программы"""
+    global qp_provider, order_handler, trade_handler, is_working_time
+
+    try:
+        # Подключение к QUIK
+        qp_provider = QuikPy()
+
+        # Запуск сохранения истории позиций
+        start_mypos_history_save()
+
+        # Сразу выполняем синхронизацию активных ордеров и инструментов портфеля
+        sync_active_orders()
+        sync_portfolio_positions()
+
+        # Запускаем поток синхронизации
+        start_sync_thread()
+
+        # Создаем обработчики событий
+        order_handler = OrderHandler()
+        trade_handler = TradeHandler()
+
+        # Подписка на события через объекты с методом trigger
+        qp_provider.on_order = order_handler
+        qp_provider.on_trade = trade_handler
+
+        print("Основные функции запущены")
+
+    except Exception as e:
+        print(f"Ошибка при запуске основных функций: {e}")
+
+
+def stop_main_functions():
+    """Остановка основных функций программы"""
+    global qp_provider, is_working_time
+
+    try:
+        if qp_provider:
+            qp_provider.close_connection_and_thread()
+            qp_provider = None
+        print("Основные функции остановлены")
+    except Exception as e:
+        print(f"Ошибка при остановке основных функций: {e}")
+
+
+def main_loop():
+    """Основной цикл программы"""
+    try:
+        print("Сервис запущен. Нажмите Ctrl+C для остановки.")
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("Остановка сервиса...")
+        stop_main_functions()
+        print("Сервис остановлен")
+
+
+def get_time_to_maturity(expiration_datetime):
+    # Если expiration_datetime - это datetime объект, конвертируем в timestamp
+    if isinstance(expiration_datetime, datetime):
+        expiration_timestamp = expiration_datetime.timestamp()
+    else:
+        expiration_timestamp = expiration_datetime
+
+    # Создаем timezone-aware datetime для текущего времени
+    # now = datetime.now(UTC)
+    moscow_tz = pytz.timezone('Europe/Moscow')
+    now = datetime.now(moscow_tz)
+    # Преобразуем expiration_timestamp в datetime с UTC временной зоной
+    expiration_dt = datetime.fromtimestamp(expiration_timestamp, tz=moscow_tz)
+    difference = expiration_dt - now
+    seconds_in_year = 365 * 24 * 60 * 60
+    return (difference.total_seconds() + 67800) / seconds_in_year # Добавляем 67800 секунд (18 ч. 50 мин.), чтобы учесть время в последний день экспирации
+
+# Функция для форматирования даты и времени
+def format_datetime(datetime_dict):
+    """Форматирует дату и время из словаря в строку"""
+    year = datetime_dict['year']
+    month = datetime_dict['month']
+    day = datetime_dict['day']
+    hour = datetime_dict['hour']
+    minute = datetime_dict['min']
+    second = datetime_dict['sec']
+    formatted_datetime = f"{day:02d}.{month:02d}.{year} {hour:02d}:{minute:02d}:{second:02d}"
+    return formatted_datetime
+
+class OrderHandler:
+    """Класс для обработки событий по заявкам"""
+
+    def trigger(self, data):
+        _on_order_impl(data)
+
+
+class TradeHandler:
+    """Класс для обработки событий по сделкам"""
+
+    def trigger(self, data):
+        _on_trade_impl(data)
+
+
+def sync_active_orders():
+    global active_orders_set, all_rows_order_list, qp_provider
+
+    try:
+        # Получаем все ордера с биржи
+        orders_response = qp_provider.get_all_orders()
+        if orders_response and orders_response.get('data'):
+            current_active_orders = set()
+            # Создаем словарь order_num -> order_data для активных ордеров
+            current_orders_dict = {}
+
+            for order in orders_response['data']:
+                if order.get('class_code') == 'SPBOPT':
+                    # Проверяем, что ордер активен (бит 0 установлен) и не снят (бит 1 не установлен)
+                    if (order.get('flags') & 0b1 == 0b1) and (order.get('flags') & 0b10 != 0b10):
+                        order_num = str(order.get('order_num'))
+                        current_active_orders.add(order_num)
+                        current_orders_dict[order_num] = order
+
+            # Находим ордера, которые были удалены с биржи или стали неактивными
+            orders_to_remove = active_orders_set - current_active_orders
+
+            # Удаляем неактивные ордера из нашего списка
+            if orders_to_remove:
+                original_count = len(all_rows_order_list)
+                all_rows_order_list = [item for item in all_rows_order_list
+                                       if str(item['order_num']) not in orders_to_remove]
+                removed_count = original_count - len(all_rows_order_list)
+                if removed_count > 0:
+                    print(f"Удалено {removed_count} неактивных ордеров: {orders_to_remove}")
+
+            # Добавляем новые активные ордера, которых нет в нашем списке
+            existing_order_nums = {str(item['order_num']) for item in all_rows_order_list}
+            new_orders_to_add = current_active_orders - existing_order_nums
+
+            for order_num in new_orders_to_add:
+                order_data = current_orders_dict[order_num]
+                # Добавляем ордер в список (передаем сам order_data, не order_data.get('data'))
+                _add_order_to_list_from_data(order_data)
+                print(f"Добавлен активный ордер при синхронизации: {order_num}")
+
+            # Обновляем список активных ордеров
+            active_orders_set = current_active_orders
+
+            # Сохраняем в файл
+            _save_orders_to_csv()
+
+    except Exception as e:
+        print(f"Ошибка при синхронизации ордеров: {e}")
+
+
+def sync_portfolio_positions():
+    """Синхронизация позиций в портфеле"""
+    global qp_provider, df_portfolio
+
+    try:
+        portfolio_info = []
+        portfolio_positions = []
+        # Получаем информацию по инструментам в портфеле
+        # Получаем все классы инструментов
+        class_codes = qp_provider.get_classes_list()['data']  # Режимы торгов через запятую
+        class_codes_list = class_codes[:-1].split(',')  # Удаляем последнюю запятую, разбиваем значения по запятой в список режимов торгов
+        trade_accounts = qp_provider.get_trade_accounts()['data']  # Все торговые счета
+        money_limits = qp_provider.get_money_limits()['data']  # Все денежные лимиты (остатки на счетах)
+
+        i = 0  # Номер учетной записи
+        for trade_account in trade_accounts:  # Пробегаемся по всем счетам (Коды клиента/Фирма/Счет)
+            trade_account_class_codes = trade_account['class_codes'][1:-1].split('|')  # Режимы торгов счета. Удаляем первую и последнюю вертикальную черту, разбиваем значения по вертикальной черте
+            intersection_class_codes = list(set(trade_account_class_codes).intersection(class_codes_list))  # Режимы торгов, которые есть и в списке и в торговом счете
+            firm_id = trade_account['firmid']  # Фирма
+            trade_account_id = trade_account['trdaccid']  # Счет
+            client_code = next((moneyLimit['client_code'] for moneyLimit in money_limits if moneyLimit['firmid'] == firm_id), None)  # Код клиента
+            if firm_id == futures_firm_id:  # Для фирмы фьючерсов
+                active_futures_holdings = [futuresHolding for futuresHolding in
+                                           qp_provider.get_futures_holdings()['data'] if
+                                           futuresHolding['totalnet'] != 0]  # Активные фьючерсные позиции
+                futures_limit = qp_provider.get_futures_limit(firm_id, trade_account_id, 0, qp_provider.currency)['data']  # Фьючерсные лимиты по денежным средствам (limit_type=0)
+                varmargin = futures_limit['varmargin']  # Вариационная маржа
+                accruedint = futures_limit['accruedint']  # Накопленный доход
+                ts_comission = futures_limit['ts_comission']  # ТС комиссия
+                pl_day = varmargin + accruedint  # Дневной P/L
+                cbplimit = futures_limit['cbplimit']  # Лимит открытых позиций
+                cbplused = futures_limit['cbplused']  # Текущие чистые позиции
+                cbplplanned = futures_limit['cbplplanned']  # Плановые чистые позиции
+                money = cbplused + cbplplanned - ts_comission  # Деньги
+                GM = (cbplused / money) * 100
+
+                # Добавляем данные в список
+                portfolio_info.append({
+                    'VM': round(varmargin, 2),
+                    'PL day': round(pl_day, 2),
+                    'Comiss': round(ts_comission, 2),
+                    'GM': (f'{GM:.0f} %')
+                })
+                # print(f'portfolio_info: {portfolio_info}')
+                with open(temp_obj.substitute(name_file='QUIK_MyPortfolioInfo.csv'), "w", newline="",
+                          encoding="utf-8") as file:
+                    writer = csv.writer(file, delimiter=':')
+                    for item in portfolio_info:
+                        # Если хотите записать значения словаря отдельно
+                        for key, value in item.items():
+                            writer.writerow([key, value])
+
+        # Получаем позиции по фьючерсам
+        futures_holdings_response = qp_provider.get_futures_holdings()
+        if futures_holdings_response and futures_holdings_response.get('data'):
+            active_futures_holdings = [futuresHolding for futuresHolding in futures_holdings_response['data']
+                                      if futuresHolding['totalnet'] != 0]  # Активные фьючерсные позиции
+
+            for active_futures_holding in active_futures_holdings:
+                sec_code = active_futures_holding["sec_code"]
+                class_code_result = qp_provider.get_security_class(class_codes, sec_code)
+
+                if class_code_result and class_code_result.get('data'):
+                    class_code = class_code_result['data']
+
+                    if class_code == "SPBOPT":  # Берем только опционы
+                        si = qp_provider.get_symbol_info(class_code, sec_code)  # Спецификация тикера
+
+                        # Тип опциона
+                        option_type_response = qp_provider.get_param_ex(class_code, sec_code, 'OPTIONTYPE', trans_id=0)
+                        if not option_type_response or not option_type_response.get('data'):
+                            continue
+                        option_type_str = option_type_response['data']['param_image']
+                        opt_type_converted = option_type.PUT if option_type_str == "Put" else option_type.CALL
+                        # print(f"Опцион: {sec_code}, тип: {opt_type_converted}")
+
+                        # Время последней сделки Last
+                        time_response = qp_provider.get_param_ex(class_code, sec_code, 'TIME', trans_id=0)
+                        last_time = ""
+                        if time_response and time_response.get('data') and time_response['data'].get('param_image'):
+                            last_time = time_response['data']['param_image']
+                        # print(f"Время последней сделки: {last_time}")
+
+                        # Цена последней сделки по опциону (LAST)
+                        opt_price_response = qp_provider.get_param_ex(class_code, sec_code, 'LAST', trans_id=0)
+                        opt_price = 0.0
+                        if opt_price_response and opt_price_response.get('data'):
+                            param_value = opt_price_response['data'].get('param_value')
+                            if param_value is not None and param_value != '':
+                                try:
+                                    opt_price = float(param_value)
+                                except ValueError:
+                                    opt_price = 0.0
+                        # print(f"Цена последней сделки по опциону: {opt_price}")
+
+                        # Цена опциона BID
+                        bid_response = qp_provider.get_param_ex(class_code, sec_code, 'BID', trans_id=0)
+                        bid_price = 0.0
+                        if bid_response and bid_response.get('data'):
+                            param_value = bid_response['data'].get('param_value')
+                            if param_value is not None and param_value != '':
+                                try:
+                                    bid_price = float(param_value)
+                                except ValueError:
+                                    bid_price = 0.0
+
+                        # Цена опциона OFFER (или ASK)
+                        offer_response = qp_provider.get_param_ex(class_code, sec_code, 'OFFER', trans_id=0)
+                        offer_price = 0.0
+                        if offer_response and offer_response.get('data'):
+                            param_value = offer_response['data'].get('param_value')
+                            if param_value is not None and param_value != '':
+                                try:
+                                    offer_price = float(param_value)
+                                except ValueError:
+                                    offer_price = 0.0
+
+                        # Цена опциона THEORPRICE
+                        theor_response = qp_provider.get_param_ex(class_code, sec_code, 'THEORPRICE',
+                                                                  trans_id=0)
+                        theor_price = 0.0
+                        if theor_response and theor_response.get('data') and theor_response['data'].get(
+                                'param_value'):
+                            try:
+                                theor_price = float(theor_response['data']['param_value'])
+                            except ValueError:
+                                theor_price = 0.0
+
+                        # Цена последней сделки базового актива (S)
+                        asset_price_response = qp_provider.get_param_ex('SPBFUT', si['base_active_seccode'], 'LAST', trans_id=0)
+                        asset_price = 0.0
+                        if asset_price_response and asset_price_response.get('data'):
+                            param_value = asset_price_response['data'].get('param_value')
+                            if param_value is not None and param_value != '':
+                                try:
+                                    asset_price = float(param_value)
+                                except ValueError:
+                                    asset_price = 0.0
+
+                        # Страйк опциона (K)
+                        strike_response = qp_provider.get_param_ex(class_code, sec_code, 'STRIKE', trans_id=0)
+                        strike_price = 0.0
+                        if strike_response and strike_response.get('data') and strike_response['data'].get(
+                                'param_value'):
+                            try:
+                                strike_price = float(strike_response['data']['param_value'])
+                            except ValueError:
+                                strike_price = 0.0
+
+                        # Волатильность опциона (sigma)
+                        VOLATILITY = qp_provider.get_param_ex(class_code, sec_code, 'VOLATILITY', trans_id=0)['data']['param_value']
+                        VOLATILITY = float(VOLATILITY)
+                        # print(f'VOLATILITY - Волатильность опциона: {VOLATILITY}, тип: {type(VOLATILITY)}')
+
+                        # Дата исполнения инструмента
+                        EXPDATE_image = qp_provider.get_param_ex(class_code, sec_code, 'EXPDATE', trans_id=0)['data'][
+                            'param_image']
+                        EXPDATE_str = datetime.strptime(EXPDATE_image, "%d.%m.%Y").strftime("%Y-%m-%d")
+                        EXPDATE = datetime.strptime(EXPDATE_str, "%Y-%m-%d")
+                        # print(f'EXPDATE - Дата исполнения инструмента: {EXPDATE}, тип: {type(EXPDATE)}')
+
+                        # Дата исполнения инструмента
+                        expdate_response = qp_provider.get_param_ex(class_code, sec_code, 'EXPDATE', trans_id=0)
+                        expdate_str_formatted = ""
+                        if expdate_response and expdate_response.get('data') and expdate_response['data'].get(
+                                'param_image'):
+                            try:
+                                expdate_image = expdate_response['data']['param_image']
+                                expdate_dt = datetime.strptime(expdate_image, "%d.%m.%Y")
+                                expdate_str_formatted = expdate_dt.strftime("%d.%m.%Y")
+                            except ValueError:
+                                expdate_str_formatted = ""
+
+                        # Форматирование строки с датой экспирации из спецификации
+                        exp_date_number = si.get('exp_date', 0)
+                        formatted_exp_date = ""
+                        if exp_date_number:
+                            try:
+                                exp_date_str = str(exp_date_number)
+                                exp_date = datetime.strptime(exp_date_str, "%Y%m%d")
+                                formatted_exp_date = exp_date.strftime("%d.%m.%Y")
+                            except ValueError:
+                                formatted_exp_date = ""
+
+                        # Время до исполнения инструмента в долях года
+                        time_to_maturity = get_time_to_maturity(EXPDATE)
+                        # print(f'time_to_maturity - Время до исполнения инструмента в долях года: {time_to_maturity}, тип: {type(time_to_maturity)}')
+
+                        # Вычисление Vega
+                        sigma = VOLATILITY / 100
+                        vega = implied_volatility._vega(asset_price, sigma, strike_price, time_to_maturity,
+                                                        implied_volatility._RISK_FREE_INTEREST_RATE,
+                                                        opt_type_converted)
+                        Vega = vega / 100
+
+                        # Число дней до экспирации
+                        DAYS_TO_MAT_DATE = \
+                        qp_provider.get_param_ex(class_code, sec_code, 'DAYS_TO_MAT_DATE', trans_id=0)['data'][
+                            'param_value']
+                        DAYS_TO_MAT_DATE = float(DAYS_TO_MAT_DATE)
+                        # print(f'DAYS_TO_MAT_DATE - Число дней до погашения: {DAYS_TO_MAT_DATE}, тип: {type(DAYS_TO_MAT_DATE)}')
+
+                        # Вычисление TrueVega
+                        if DAYS_TO_MAT_DATE == 0:
+                            TrueVega = 0
+                        else:
+                            TrueVega = Vega / (DAYS_TO_MAT_DATE ** 0.5)
+
+                        # Создание опциона
+                        option = Option(si["sec_code"], si["base_active_seccode"], EXPDATE, strike_price,
+                                        opt_type_converted)
+
+                        # Вычисление Implied Volatility Last, Bid, Offer
+                        # opt_volatility_last = implied_volatility.get_iv_for_option_price(asset_price, option, opt_price)
+                        # # print(f'opt_volatility_last - Implied Volatility Last: {opt_volatility_last}, тип: {type(opt_volatility_last)}')
+
+                        # Волатильность опциона IMPLIED_VOLATILITY (IV) - через расчет по цене опциона
+                        opt_volatility_last = 0.0
+                        if opt_price > 0:
+                            opt_volatility_last = implied_volatility.get_iv_for_option_price(asset_price, option,
+                                                                                             opt_price)
+                            if opt_volatility_last is None:
+                                opt_volatility_last = 0.0
+                        # print(f"Волатильность опциона IMPLIED_VOLATILITY (IV) - через расчет по цене опциона: {opt_volatility_last}")
+
+                        opt_volatility_bid = implied_volatility.get_iv_for_option_price(asset_price, option, bid_price)
+                        # print(f'opt_volatility_bid - Implied Volatility Bid: {opt_volatility_bid}, тип: {type(opt_volatility_bid)}')
+                        opt_volatility_offer = implied_volatility.get_iv_for_option_price(asset_price, option, offer_price)
+                        # print(f'opt_volatility_offer - Implied Volatility Offer: {opt_volatility_offer}, тип: {type(opt_volatility_offer)}')
+
+                        net_pos = active_futures_holding['totalnet']
+                        # OpenDateTime, OpenPrice, OpenIV = calculate_open_data_open_price_open_iv(sec_code, net_pos)
+                        open_data_result = calculate_open_data_open_price_open_iv(sec_code, net_pos)
+                        # Проверяем, что функция вернула корректные данные
+                        if open_data_result is not None and len(open_data_result) > 2:
+                            open_datetime = open_data_result[0]
+                            open_price = open_data_result[1] if open_data_result[1] is not None else 0.0
+                            open_iv = open_data_result[2] if open_data_result[2] is not None else 0.0
+                        else:
+                            open_datetime = ""
+                            open_price = 0.0
+                            open_iv = 0.0
+
+
+                        # Добавляем данные в список
+                        portfolio_positions.append({
+                            'ticker': sec_code,
+                            'net_pos': net_pos,
+                            'strike': strike_price,
+                            'option_type': option_type_str,
+                            'expdate': formatted_exp_date,
+                            'option_base': si['base_active_seccode'],
+                            'OpenDateTime': open_datetime,
+                            'OpenPrice': round(open_price, 2) if open_price is not None else open_price,
+                            'OpenIV': round(open_iv, 2) if open_iv is not None else open_iv,
+                            'time_last': last_time,
+                            'bid': bid_price,
+                            'last': opt_price,
+                            'ask': offer_price,
+                            'theor': theor_price,
+                            'QuikVola': VOLATILITY,
+                            'bidIV': round(opt_volatility_bid, 2) if opt_volatility_bid is not None else 0,
+                            'lastIV': round(opt_volatility_last, 2) if opt_volatility_last is not None else 0,
+                            'askIV': round(opt_volatility_offer, 2) if opt_volatility_offer is not None else 0,
+                            'P/L theor': round(VOLATILITY - open_iv, 2) if net_pos > 0 else round(open_iv - VOLATILITY, 2),
+                            # 'P/L last': round(opt_volatility_last - open_iv, 2) if net_pos > 0 else round(open_iv - opt_volatility_last, 2),
+                            'P/L last': 0 if opt_volatility_last == 0 else (round(opt_volatility_last - open_iv, 2) if net_pos > 0 else round(open_iv - opt_volatility_last, 2)),
+                            'P/L market': round(opt_volatility_bid - open_iv, 2) if net_pos > 0 else round(open_iv - opt_volatility_offer, 2),
+                            'Vega': round(Vega * net_pos, 2),
+                            'TrueVega': round(TrueVega * net_pos, 2)
+                        })
+                        # print(f'portfolio_positions: {portfolio_positions}')
+        # Сохраняем в CSV файл
+        if portfolio_positions:
+            df_portfolio = pd.DataFrame(portfolio_positions)
+            df_portfolio.to_csv(temp_obj.substitute(name_file='QUIK_MyPos.csv'),
+                                sep=';', encoding='utf-8', index=False)
+        else:
+            # Создаем пустой файл с заголовками
+            empty_df = pd.DataFrame(columns=[
+                'ticker', 'net_pos', 'strike', 'option_type', 'expdate', 'option_base',
+                 'OpenDateTime', 'OpenPrice', 'OpenIV', 'time_last', 'bid', 'last', 'ask', 'theor',
+                'QuikVola', 'bidIV', 'lastIV', 'askIV', 'P/L theor', 'P/L last', 'P/L market',
+                'Vega', 'TrueVega'
+            ])
+            empty_df.to_csv(temp_obj.substitute(name_file='QUIK_MyPos.csv'),
+                            sep=';', encoding='utf-8', index=False)
+
+    except Exception as e:
+        print(f"Ошибка при синхронизации позиций портфеля: {e}")
+
+
+def MyPosHistorySave():
+    """Периодически сохраняет историю позиций в CSV файл"""
+    global temp_obj, df_portfolio
+    print("Запуск функции сохранения истории позиций в файл MyPosHistorySave")
+    while True:
+        try:
+
+            # Получаем данные портфеля
+            sync_portfolio_positions()
+
+            # Проверяем, что df_portfolio существует и не пуст
+            if 'df_portfolio' not in globals() or df_portfolio.empty:
+                time.sleep(30)
+                continue
+
+            # Создаем копию датафрейма для обработки
+            df = df_portfolio.copy()
+
+            # Конвертируем net_pos в числовой формат, если нужно
+            df['net_pos'] = pd.to_numeric(df['net_pos'], errors='coerce')
+            df['TrueVega'] = pd.to_numeric(df['TrueVega'], errors='coerce')
+            df['QuikVola'] = pd.to_numeric(df['QuikVola'], errors='coerce')
+            df['lastIV'] = pd.to_numeric(df['lastIV'], errors='coerce')
+            df['bidIV'] = pd.to_numeric(df['bidIV'], errors='coerce')
+            df['askIV'] = pd.to_numeric(df['askIV'], errors='coerce')
+            df['OpenIV'] = pd.to_numeric(df['OpenIV'], errors='coerce')
+
+            # Удаляем строки с NaN в ключевых столбцах
+            df = df.dropna(subset=['net_pos', 'TrueVega'])
+            # Подготавливаем список строк для записи в CSV
+            rows_to_write = []
+
+            # Группируем по option_base
+            grouped = df.groupby('option_base')
+
+            tradingstatus_ticker = df['option_base'].unique()[0]
+            # print(f'tradingstatus_ticker: {tradingstatus_ticker}')
+
+            # Проверка статуса торговой сессии (1 - открыта, 0 - закрыта)
+            # request_status = qp_provider.param_request('SPBFUT', tradingstatus_ticker, 'TRADINGSTATUS', trans_id=0)['data'] # Функция заказывает получение параметров Quik
+            # print(f'request_status: {request_status}')
+            tradingstatus = qp_provider.get_param_ex('SPBFUT', tradingstatus_ticker, 'TRADINGSTATUS', trans_id=0)['data']['param_value']
+            # print(f'Статус торговой сессии tradingstatus: {tradingstatus}')
+            if tradingstatus == 0:
+                print('Торговая сессия закрыта!')
+                return
+            else:
+                # Обрабатываем каждую группу (тикера) отдельно
+                for option_base, group_data in grouped:
+                    # Разделяем на long и short позиции внутри группы
+                    long_positions = group_data[group_data['net_pos'] > 0]
+                    short_positions = group_data[group_data['net_pos'] < 0]
+
+                    # Вычисляем средневзвешенные значения для long позиций
+                    if not long_positions.empty and long_positions['TrueVega'].abs().sum() != 0:
+                        # Используем TrueVega как веса
+                        weights_long = long_positions['TrueVega'].abs()
+                        total_weight_long = weights_long.sum()
+
+                        # Заменяем нулевые значения 'lastIV' на 'QuikVola' (theor)
+                        lastIV_corrected = long_positions['lastIV'].replace(0, pd.NA).fillna(long_positions['QuikVola'])
+
+                        # Средневзвешенные значения
+                        theor_long = (long_positions['QuikVola'] * weights_long).sum() / total_weight_long
+                        last_long = (lastIV_corrected * weights_long).sum() / total_weight_long
+                        bid_long = (long_positions['bidIV'] * weights_long).sum() / total_weight_long
+                        ask_long = (long_positions['askIV'] * weights_long).sum() / total_weight_long
+                        open_long = (long_positions['OpenIV'] * weights_long).sum() / total_weight_long
+
+                        # Создаем строку для long позиций
+                        long_row = {
+                            'DateTime': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                            'option_base': option_base,
+                            'pos': 'long',
+                            'theor': round(theor_long, 2),
+                            'last': round(last_long, 2),
+                            'market': round(bid_long, 2),
+                            'mypos': round(open_long, 2)
+                        }
+                        rows_to_write.append(long_row)
+
+                    # Вычисляем средневзвешенные значения для short позиций
+                    if not short_positions.empty and short_positions['TrueVega'].abs().sum() != 0:
+                        # Используем TrueVega как веса
+                        weights_short = short_positions['TrueVega'].abs()
+                        total_weight_short = weights_short.sum()
+
+                        # Заменяем нулевые значения 'lastIV' на 'QuikVola' (theor)
+                        lastIV_corrected = short_positions['lastIV'].replace(0, pd.NA).fillna(
+                            short_positions['QuikVola']).infer_objects(copy=False)
+                        # lastIV_corrected = short_positions['lastIV'].replace(0, pd.NA).fillna(short_positions['QuikVola'])
+                        # # lastIV_corrected = short_positions['lastIV'].replace(0, pd.NA).fillna(short_positions['QuikVola'])
+                        # lastIV_corrected = short_positions['lastIV'].replace(0, pd.NA).fillna(
+                        #     short_positions['QuikVola']).infer_objects(copy=False)
+
+                        # Средневзвешенные значения
+                        theor_short = (short_positions['QuikVola'] * weights_short).sum() / total_weight_short
+                        last_short = (lastIV_corrected * weights_short).sum() / total_weight_short
+                        bid_short = (short_positions['bidIV'] * weights_short).sum() / total_weight_short
+                        ask_short = (short_positions['askIV'] * weights_short).sum() / total_weight_short
+                        open_short = (short_positions['OpenIV'] * weights_short).sum() / total_weight_short
+
+                        # Создаем строку для short позиций
+                        short_row = {
+                            'DateTime': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                            'option_base': option_base,
+                            'pos': 'short',
+                            'theor': round(theor_short, 2),
+                            'last': round(last_short, 2),
+                            'market': round(ask_short, 2),
+                            'mypos': round(open_short, 2)
+                        }
+                        rows_to_write.append(short_row)
+
+                # Записываем данные в CSV файл
+                if rows_to_write:
+                    # Определяем имя файла
+                    filename = temp_obj.substitute(name_file='MyPosHistory.csv')
+
+                    # Создаем DataFrame и записываем в CSV
+                    df_history = pd.DataFrame(rows_to_write)
+
+                    # Проверяем, существует ли файл
+                    try:
+                        with open(filename, 'r') as f:
+                            file_exists = True
+                    except FileNotFoundError:
+                        file_exists = False
+
+                    # Записываем в файл (добавляем или создаем новый)
+                    with open(filename, 'a', newline='', encoding='utf-8') as f:
+                        if file_exists:
+                            df_history.to_csv(f, index=False, sep=';', header=False)
+                        else:
+                            df_history.to_csv(f, index=False, sep=';')
+
+            # Ждем 30 секунд перед следующей итерацией
+            time.sleep(30)
+
+        except Exception as e:
+            print(f"Ошибка в MyPosHistorySave: {e}")
+            time.sleep(30)
+            continue
+
+# Запуск функции в отдельном потоке
+def start_mypos_history_save():
+    """Запускает поток для периодического сохранения истории позиций"""
+    history_thread = threading.Thread(target=MyPosHistorySave, daemon=True)
+    history_thread.start()
+    print("Поток сохранения истории позиций запущен")
+    return history_thread
+
+def calculate_open_data_open_price_open_iv(sec_code, net_pos):
+    """
+    Вычисляет дату открытия позиции, цену и волатильность для заданного инструмента,
+    как средневзвешенные по объёму первых сделок до достижения нужного объёма.
+
+    :param sec_code: Код инструмента
+    :param net_pos: Текущая позиция (отрицательная для короткой позиции)
+    :return: tuple(OpenDateTime, OpenPrice, OpenIV)
+    """
+
+    try:
+        # Чтение CSV файла
+        df = pd.read_csv(temp_obj.substitute(name_file='QUIK_Stream_Trades.csv'), encoding='utf-8', delimiter=';')
+
+        # Фильтрация по инструменту
+        instrument_df = df[df['ticker'] == sec_code].copy()
+
+        if instrument_df.empty:
+            print(f"Предупреждение: Нет данных для инструмента {sec_code}")
+            return None, None, None
+
+        # Преобразование datetime
+        instrument_df['datetime'] = pd.to_datetime(instrument_df['datetime'], format='%d.%m.%Y %H:%M:%S')
+
+        # Сортировка по дате
+        instrument_df = instrument_df.sort_values('datetime', ascending=False)
+
+        # Определение направления позиции
+        if net_pos > 0:
+            open_trades = instrument_df[instrument_df['operation'] == 'Купля']
+        else:
+            open_trades = instrument_df[instrument_df['operation'] == 'Продажа']
+
+        if open_trades.empty:
+            print(f"Предупреждение: Нет сделок открытия для инструмента {sec_code}")
+            return None, None, None
+
+        # Целевой объём
+        required_volume = abs(net_pos)
+        cumulative_volume = 0
+        selected_trades = []
+
+        # Накапливаем сделки до достижения нужного объёма
+        for _, trade in open_trades.iterrows():
+            volume = trade['volume']
+            if volume <= 0:
+                continue  # Пропускаем сделки с volume = 0
+            if cumulative_volume + volume <= required_volume:
+                selected_trades.append(trade)
+                cumulative_volume += volume
+            else:
+                # Добавляем частичную сделку
+                if volume <= 0:
+                    continue  # Пропускаем сделки с volume = 0
+                    remaining_volume = required_volume - cumulative_volume
+                    partial_trade = trade.copy()
+                    partial_trade['volume'] = remaining_volume
+                    selected_trades.append(partial_trade)
+                    break
+
+        if not selected_trades:
+            print(f"Предупреждение: Недостаточно сделок для инструмента {sec_code}")
+            return None, None, None
+
+        # Создаём DataFrame из выбранных сделок
+        selected_df = pd.DataFrame(selected_trades)
+
+        # Дата первой сделки (самой старой сделки, она в конце списка)
+        OpenDateTime = selected_df.iloc[-1]['datetime'].strftime('%d.%m.%Y %H:%M:%S')
+
+        # Средневзвешенные значения
+        total_volume = selected_df['volume'].sum()
+        OpenPrice = (selected_df['price'] * selected_df['volume']).sum() / total_volume
+        OpenIV = (selected_df['volatility'] * selected_df['volume']).sum() / total_volume
+
+        return OpenDateTime, OpenPrice, OpenIV
+
+    except Exception as e:
+        print(f"Ошибка при вычислении данных открытия для {sec_code}: {e}")
+        return None, None, None
+
+
+
+# Пример использования:
+# OpenDateTime, OpenPrice, OpenIV = calculate_open_data_open_price_open_iv("RI97500BX5", -10)
+
+
+def _add_order_to_list_from_data(order_data):
+    """Добавление ордера в список на основе данных ордера"""
+    global all_rows_order_list, qp_provider
+
+    try:
+        order_num = str(order_data.get('order_num'))
+
+        # Проверяем, нет ли уже такой заявки в списке
+        existing_order = next((item for item in all_rows_order_list if str(item['order_num']) == order_num), None)
+        if existing_order:
+            print(f"Заявка с order_num {order_num} уже существует, пропускаем")
+            return
+
+        # Определяем тип операции
+        buy = order_data.get('flags') & 0b100 != 0b100  # Заявка на покупку
+        operation = "Купля" if buy else "Продажа"
+
+        # Получаем информацию о ценной бумаге
+        sec_code = order_data.get('sec_code')
+        si = qp_provider.get_symbol_info('SPBOPT', sec_code)  # Спецификация тикера
+
+        # Получаем цену базового актива
+        asset_price_data = qp_provider.get_param_ex('SPBFUT', si['base_active_seccode'], 'LAST', trans_id=0)
+        if not asset_price_data or not asset_price_data.get('data'):
+            print(f"Не удалось получить цену базового актива для {si['base_active_seccode']}")
+            return
+
+        asset_price = float(asset_price_data['data']['param_value'])
+
+        # Получаем дату экспирации
+        expdate_data = qp_provider.get_param_ex('SPBOPT', sec_code, 'EXPDATE', trans_id=0)
+        if not expdate_data or not expdate_data.get('data'):
+            print(f"Не удалось получить дату экспирации для {sec_code}")
+            return
+
+        expdate_image = expdate_data['data']['param_image']
+        expdate_str = datetime.strptime(expdate_image, "%d.%m.%Y").strftime("%Y-%m-%d")
+        expdate = datetime.strptime(expdate_str, "%Y-%m-%d")
+
+        # Определяем тип опциона
+        option_type_data = qp_provider.get_param_ex('SPBOPT', sec_code, 'OPTIONTYPE', trans_id=0)
+        if not option_type_data or not option_type_data.get('data'):
+            print(f"Не удалось получить тип опциона для {sec_code}")
+            return
+
+        option_type_str = option_type_data['data']['param_image']
+        opt_type_converted = option_type.PUT if option_type_str == "Put" else option_type.CALL
+
+        # Форматируем дату экспирации
+        exp_date_number = si['exp_date']
+        exp_date_str = str(exp_date_number)
+        exp_date = datetime.strptime(exp_date_str, "%Y%m%d")
+        formatted_exp_date = exp_date.strftime("%d.%m.%Y")
+
+        # Вычисляем количество и цену
+        order_qty = order_data.get('qty') * si['lot_size']
+        order_price = qp_provider.quik_price_to_price('SPBOPT', sec_code, order_data.get('price'))
+
+        # Создаем опцион для расчета волатильности
+        option = Option(sec_code, si["base_active_seccode"], expdate, si['option_strike'], opt_type_converted)
+
+        # Добавляем заявку в список
+        all_rows_order_list.append({
+            'datetime': format_datetime(order_data.get('datetime')),
+            'order_num': order_num,
+            'option_base': si['base_active_seccode'],
+            'ticker': sec_code,
+            'option_type': option_type_str,
+            'strike': int(si['option_strike']),
+            'expdate': formatted_exp_date,
+            'operation': operation,
+            'volume': order_qty,
+            'price': order_price,
+            'value': order_qty * order_price,
+            'volatility': round(implied_volatility.get_iv_for_option_price(asset_price, option, order_price), 2)
+        })
+
+    except Exception as e:
+        print(f"Ошибка при добавлении ордера {order_data.get('order_num')}: {e}")
+
+
+def _save_orders_to_csv():
+    """Сохранение ордеров в CSV"""
+    if all_rows_order_list:
+        df_order_quik = pd.DataFrame(all_rows_order_list)
+        df_order_quik.to_csv(temp_obj.substitute(name_file='QUIK_Stream_Orders.csv'),
+                             sep=';', encoding='utf-8', index=False)
+    else:
+        empty_df = pd.DataFrame(columns=['datetime', 'order_num', 'option_base', 'ticker',
+                                         'option_type', 'strike', 'expdate', 'operation',
+                                         'volume', 'price', 'value', 'volatility'])
+        empty_df.to_csv(temp_obj.substitute(name_file='QUIK_Stream_Orders.csv'),
+                        sep=';', encoding='utf-8', index=False)
+
+
+def _add_order_to_list(order_data):
+    """Добавление ордера в список (логика как в _on_order_impl)"""
+    _add_order_to_list_from_data(order_data.get('data'))
+
+
+def sync_orders_worker():
+    """Фоновый поток для периодической синхронизации ордеров и позиций портфеля"""
+    while True:
+        try:
+            time.sleep(10)  # Проверяем каждые 10 секунд
+            sync_active_orders()
+            sync_portfolio_positions()  # Добавляем синхронизацию позиций портфеля
+        except Exception as e:
+            print(f"Ошибка в потоке синхронизации: {e}")
+            time.sleep(5)  # При ошибке ждем 5 секунд перед повтором
+
+# Запуск потока синхронизации при старте
+def start_sync_thread():
+    sync_thread = threading.Thread(target=sync_orders_worker, daemon=True)
+    sync_thread.start()
+    print("Поток синхронизации ордеров и позиций портфеля запущен")
+
+
+# Обновленная функция _on_order_impl
+def _on_order_impl(data):
+    """Реализация обработчика событий по заявкам"""
+    global all_rows_order_list, qp_provider, class_code, active_orders_set
+
+    order_data = data
+
+    # Проверяем, что это опцион
+    if order_data.get('data').get('class_code') == 'SPBOPT':
+        order_num = str(order_data.get('data').get('order_num'))
+
+        # Проверяем, что ордер активен (бит 0 установлен) и не снят (бит 1 не установлен)
+        if (order_data.get('data').get('flags') & 0b1 != 0b1) or (order_data.get('data').get('flags') & 0b10 == 0b10):
+            print(f"{format_datetime(order_data.get('data').get('datetime'))} Заявка снята: {order_num}")
+            # Удаляем из списка активных ордеров
+            active_orders_set.discard(order_num)
+            # Удаляем из нашего списка
+            original_count = len(all_rows_order_list)
+            all_rows_order_list = [item for item in all_rows_order_list if str(item['order_num']) != order_num]
+            # removed_count = original_count - len(all_rows_order_list)
+            # if removed_count > 0:
+                # print(f"Удалено {removed_count} записей с order_num: {order_num}")
+        else:
+            print(f"{format_datetime(order_data.get('data').get('datetime'))} Новая заявка: {order_num}")
+            # Добавляем в список активных ордеров
+            active_orders_set.add(order_num)
+
+            # Определяем тип операции
+            buy = order_data.get('data').get('flags') & 0b100 != 0b100  # Заявка на покупку
+            operation = "Купля" if buy else "Продажа"
+
+            # Получаем информацию о ценной бумаге
+            sec_code = order_data.get('data').get('sec_code')
+            si = qp_provider.get_symbol_info('SPBOPT', sec_code)  # Спецификация тикера
+
+            # Получаем цену базового актива
+            asset_price = qp_provider.get_param_ex('SPBFUT', si['base_active_seccode'], 'LAST', trans_id=0)['data'][
+                'param_value']
+            asset_price = float(asset_price)
+
+            # Получаем дату экспирации
+            expdate_image = qp_provider.get_param_ex('SPBOPT', sec_code, 'EXPDATE', trans_id=0)['data']['param_image']
+            expdate_str = datetime.strptime(expdate_image, "%d.%m.%Y").strftime("%Y-%m-%d")
+            expdate = datetime.strptime(expdate_str, "%Y-%m-%d")
+
+            # Определяем тип опциона
+            option_type_str = qp_provider.get_param_ex('SPBOPT', sec_code, 'OPTIONTYPE', trans_id=0)['data'][
+                'param_image']
+            opt_type_converted = option_type.PUT if option_type_str == "Put" else option_type.CALL
+
+            # Форматируем дату экспирации
+            exp_date_number = si['exp_date']
+            exp_date_str = str(exp_date_number)
+            exp_date = datetime.strptime(exp_date_str, "%Y%m%d")
+            formatted_exp_date = exp_date.strftime("%d.%m.%Y")
+
+            # Вычисляем количество и цену
+            order_qty = order_data.get('data').get('qty') * si['lot_size']
+            order_price = qp_provider.quik_price_to_price('SPBOPT', sec_code, order_data.get('data').get('price'))
+
+            # Создаем опцион для расчета волатильности
+            option = Option(sec_code, si["base_active_seccode"], expdate, si['option_strike'], opt_type_converted)
+
+            # Проверяем, нет ли уже такой заявки в списке
+            existing_order = next((item for item in all_rows_order_list if str(item['order_num']) == order_num), None)
+            if existing_order:
+                print(f"Заявка с order_num {order_num} уже существует, пропускаем")
+                return
+
+            # Добавляем заявку в список
+            all_rows_order_list.append({
+                'datetime': format_datetime(order_data.get('data').get('datetime')),
+                'order_num': order_num,
+                'option_base': si['base_active_seccode'],
+                'ticker': sec_code,
+                'option_type': option_type_str,
+                'strike': int(si['option_strike']),
+                'expdate': formatted_exp_date,
+                'operation': operation,
+                'volume': order_qty,
+                'price': order_price,
+                'value': order_qty * order_price,
+                'volatility': round(implied_volatility.get_iv_for_option_price(asset_price, option, order_price), 2)
+            })
+
+        # Создаем DataFrame и сохраняем в CSV только если есть изменения
+        if all_rows_order_list:
+            df_order_quik = pd.DataFrame(all_rows_order_list)
+            df_order_quik.to_csv(temp_obj.substitute(name_file='QUIK_Stream_Orders.csv'), sep=';', encoding='utf-8',
+                                 index=False)
+        else:
+            # Если список пуст, создаем пустой файл с заголовками
+            empty_df = pd.DataFrame(columns=['datetime', 'order_num', 'option_base', 'ticker', 'option_type',
+                                             'strike', 'expdate', 'operation', 'volume', 'price', 'value',
+                                             'volatility'])
+            empty_df.to_csv(temp_obj.substitute(name_file='QUIK_Stream_Orders.csv'), sep=';', encoding='utf-8',
+                            index=False)
+
+
+
+def _on_trade_impl(data):
+    """Реализация обработчика событий по сделкам"""
+    global qp_provider, class_code
+
+    trade_data = data
+    row_trade_list = []  # Список для новой сделки
+
+    # Проверяем, что это опцион
+    if trade_data.get('data').get('class_code') == 'SPBOPT':
+        print("Новая сделка")
+
+        # Определяем тип операции
+        buy = trade_data.get('data').get('flags') & 0b100 != 0b100  # Заявка на покупку
+        operation = "Купля" if buy else "Продажа"
+
+        # Получаем информацию о ценной бумаге
+        sec_code = trade_data.get('data').get('sec_code')
+        si = qp_provider.get_symbol_info('SPBOPT', sec_code)
+
+        # Получаем цену базового актива
+        asset_price = qp_provider.get_param_ex('SPBFUT', si['base_active_seccode'], 'LAST', trans_id=0)['data'][
+            'param_value']
+        asset_price = float(asset_price)
+
+        # Получаем дату экспирации
+        expdate_image = qp_provider.get_param_ex('SPBOPT', sec_code, 'EXPDATE', trans_id=0)['data']['param_image']
+        expdate_str = datetime.strptime(expdate_image, "%d.%m.%Y").strftime("%Y-%m-%d")
+        expdate = datetime.strptime(expdate_str, "%Y-%m-%d")
+
+        # Определяем тип опциона
+        option_type_str = qp_provider.get_param_ex('SPBOPT', sec_code, 'OPTIONTYPE', trans_id=0)['data']['param_image']
+        opt_type_converted = option_type.PUT if option_type_str == "Put" else option_type.CALL
+
+        # Форматируем дату экспирации
+        exp_date_number = si['exp_date']
+        exp_date_str = str(exp_date_number)
+        exp_date = datetime.strptime(exp_date_str, "%Y%m%d")
+        formatted_exp_date = exp_date.strftime("%d.%m.%Y")
+
+        # Вычисляем количество и цену
+        trade_qty = trade_data.get('data').get('qty') * si['lot_size']
+        trade_price = qp_provider.quik_price_to_price('SPBOPT', sec_code, trade_data.get('data').get('price'))
+
+        # Создаем опцион для расчета волатильности
+        option = Option(sec_code, si["base_active_seccode"], expdate, si['option_strike'], opt_type_converted)
+
+        # Добавляем сделку в список
+        row_trade_list.append({
+            'datetime': format_datetime(trade_data.get('data').get('datetime')),
+            'order_num': trade_data.get('data').get('trade_num'),
+            'option_base': si['base_active_seccode'],
+            'ticker': sec_code,
+            'option_type': option_type_str,
+            'strike': int(si['option_strike']),
+            'expdate': formatted_exp_date,
+            'operation': operation,
+            'volume': trade_qty,
+            'price': trade_price,
+            'value': trade_qty * trade_price,
+            'volatility': round(implied_volatility.get_iv_for_option_price(asset_price, option, trade_price), 2)
+        })
+
+        # Создаем DataFrame и добавляем в CSV файл
+        df_trade_quik = pd.DataFrame(row_trade_list)
+        print(df_trade_quik)
+        df_trade_quik.to_csv(temp_obj.substitute(name_file='QUIK_Stream_Trades.csv'), mode='a', sep=';', index=False,
+                             header=False)
+
+
+if __name__ == '__main__':  # Точка входа при запуске этого скрипта
+
+    # Запускаем поток проверки рабочего времени
+    time_thread = threading.Thread(target=wait_for_business_time, daemon=True)
+    time_thread.start()
+
+    # Запускаем основной цикл
+    main_loop()
