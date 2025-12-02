@@ -113,6 +113,40 @@ with open(temp_obj.substitute(name_file='MyPosHistory.csv'), 'r') as file:
     df_MyPosTilt = pd.read_csv(file, encoding='UTF-8', sep=';')
 file.close()
 
+# MyEquity
+# Чтение промежуточного файла
+with open(temp_obj.substitute(name_file='Equity.CSV'), 'r') as file:
+    df_equity = pd.read_csv(file, sep=',')
+    df_equity['Date'] = pd.to_datetime(df_equity['Date'], format='%d.%m.%Y %H:%M:%S')
+    df_equity = df_equity.sort_values('Date').reset_index(drop=True)
+    # Получаем все столбцы кроме 'Date'
+    cols_to_convert = df_equity.columns.drop('Date')
+    # Удаляем пробелы и преобразуем в числа
+    df_equity[cols_to_convert] = df_equity[cols_to_convert].replace(' ', '', regex=True)
+    df_equity[cols_to_convert] = df_equity[cols_to_convert].apply(pd.to_numeric, errors='coerce')
+file.close()
+
+# Сборка основного файла истории
+try:
+    with open(temp_obj.substitute(name_file='MyEquity.CSV'), 'r') as file:
+        df_myequity = pd.read_csv(file, sep=',')
+        df_myequity['Date'] = pd.to_datetime(df_myequity['Date'], format='%Y-%m-%d %H:%M:%S')
+        df_myequity = df_myequity.sort_values('Date').reset_index(drop=True)
+except pd.errors.EmptyDataError:
+    # Если файл пустой, создаем пустой DataFrame с нужными колонками
+    df_myequity = pd.DataFrame(columns=df_equity.columns)
+
+# Объединяем df_equity и df_myequity
+df_combined = pd.concat([df_equity, df_myequity], ignore_index=True)
+# Удаляем дубликаты
+df_combined = df_combined.drop_duplicates()
+# Удаляем возможные дубликаты по дате, оставляя последнюю запись
+df_combined = df_combined.drop_duplicates(subset=['Date'], keep='last')
+df_combined = df_combined.sort_values('Date').reset_index(drop=True)
+
+# Сохранить df_combined в файл MyEquity.CSV с разделителем запятая
+df_combined.to_csv(temp_obj.substitute(name_file='MyEquity.CSV'), sep=',', index=False)
+
 
 def get_object_from_json_endpoint(url, method='GET', params={}):
     response = requests.request(method, url, params=params)
@@ -172,74 +206,89 @@ tab3_content = [  # График истории
 ]
 tab4_content = [  # Таблица моих позиций
     html.Div(id='intermediate-value', style={'display': 'none'}),
-    dash_table.DataTable(id='table', data=df_table.to_dict('records'), page_size=20,
-                         style_table={'max-width': '50px'},
-                         # Стиль для заголовков (жирный шрифт)
-                         style_header={
-                             'fontWeight': 'bold',
-                             'backgroundColor': 'rgb(230, 230, 230)',
-                             'textAlign': 'center'
-                         },
-                         style_data_conditional=[
-                             {
-                                 'if': {'filter_query': '{ticker} = "Итого"'},
-                                 'fontWeight': 'bold',
-                                 'backgroundColor': 'rgb(240, 240, 240)'
-                             },
-                             {'if': {'filter_query': '{P/L theor} > 1', 'column_id': 'P/L theor'},
-                              'backgroundColor': '#3D9970', 'color': 'white'},
-                             {'if': {'filter_query': '{P/L last} > 1', 'column_id': 'P/L last'},
-                              'backgroundColor': '#3D9970', 'color': 'white'},
-                             {'if': {'filter_query': '{P/L market} > 1', 'column_id': 'P/L market'},
-                              'backgroundColor': '#3D9970', 'color': 'white'},
-                             {'if': {'column_id': 'time_last'}, 'color': '#DAA520'},
-                             {'if': {'column_id': 'bid'}, 'color': '#3D9970'},
-                             {'if': {'column_id': 'last'}, 'color': '#DAA520'},
-                             {'if': {'column_id': 'ask'}, 'color': '#FF0000'},
-                             {'if': {'filter_query': '{bidIV} >= 0', 'column_id': 'bidIV'}, 'color': '#3D9970'},
-                             {'if': {'filter_query': '{lastIV} >= 0', 'column_id': 'lastIV'}, 'color': '#DAA520'},
-                             {'if': {'filter_query': '{askIV} >= 0', 'column_id': 'askIV'}, 'color': '#FF0000'}
-                         ])]
+    html.Div(
+        dash_table.DataTable(
+            id='table',
+            data=df_table.to_dict('records'),
+            page_size=20,
+            style_table={'max-width': '50px'},
+            style_header={
+                'fontWeight': 'bold',
+                'backgroundColor': 'rgb(230, 230, 230)',
+                'textAlign': 'center'
+            },
+            style_data_conditional=[
+                {
+                    'if': {'filter_query': '{ticker} = "Итого"'},
+                    'fontWeight': 'bold',
+                    'backgroundColor': 'rgb(240, 240, 240)'
+                },
+                {'if': {'filter_query': '{P/L theor} > 1', 'column_id': 'P/L theor'},
+                 'backgroundColor': '#3D9970', 'color': 'white'},
+                {'if': {'filter_query': '{P/L last} > 1', 'column_id': 'P/L last'},
+                 'backgroundColor': '#3D9970', 'color': 'white'},
+                {'if': {'filter_query': '{P/L market} > 1', 'column_id': 'P/L market'},
+                 'backgroundColor': '#3D9970', 'color': 'white'},
+                {'if': {'column_id': 'time_last'}, 'color': '#DAA520'},
+                {'if': {'column_id': 'bid'}, 'color': '#3D9970'},
+                {'if': {'column_id': 'last'}, 'color': '#DAA520'},
+                {'if': {'column_id': 'ask'}, 'color': '#FF0000'},
+            ]
+        ),
+        style={'margin-left': '100px'}  # Сдвиг вправо для таблицы
+    )
+]
+
 tab5_content = [  # Таблица моих сделок
     html.Div(id='intermediate-value1', style={'display': 'none'}),
-    dash_table.DataTable(id='trades', data=df_trades.to_dict('records'), page_size=14,
-                         style_table={'max-width': '50px'},
-                         style_data_conditional=[
-                             {
-                                 'if': {
-                                     'filter_query': '{operation} eq "Купля"'
-                                 },
-                                 'backgroundColor': 'white',
-                                 'color': '#3D9970'
-                             },
-                             {
-                                 'if': {
-                                     'filter_query': '{operation} eq "Продажа"'
-                                 },
-                                 'backgroundColor': 'white',
-                                 'color': '#FF0000'
-                             }, ]
-                         )]
+    html.Div(
+        dash_table.DataTable(
+            id='trades',
+            data=df_trades.to_dict('records'),
+            page_size=14,
+            style_table={'max-width': '50px'},
+            style_data_conditional=[
+                {
+                    'if': {'filter_query': '{operation} eq "Купля"'},
+                    'backgroundColor': 'white',
+                    'color': '#3D9970'
+                },
+                {
+                    'if': {'filter_query': '{operation} eq "Продажа"'},
+                    'backgroundColor': 'white',
+                    'color': '#FF0000'
+                },
+            ]
+        ),
+        style={'margin-left': '300px'}  # Сдвиг вправо
+    )
+]
+
 tab6_content = [  # Таблица моих ордеров
     html.Div(id='intermediate-value2', style={'display': 'none'}),
-    dash_table.DataTable(id='orders', data=df_orders.to_dict('records'), page_size=14,
-                         style_table={'max-width': '50px'},
-                         style_data_conditional=[
-                             {
-                                 'if': {
-                                     'filter_query': '{operation} eq "Купля"'
-                                 },
-                                 'backgroundColor': 'white',
-                                 'color': '#3D9970'
-                             },
-                             {
-                                 'if': {
-                                     'filter_query': '{operation} eq "Продажа"'
-                                 },
-                                 'backgroundColor': 'white',
-                                 'color': '#FF0000'
-                             }, ]
-                         )]
+    html.Div(
+        dash_table.DataTable(
+            id='orders',
+            data=df_orders.to_dict('records'),
+            page_size=14,
+            style_table={'max-width': '50px'},
+            style_data_conditional=[
+                {
+                    'if': {'filter_query': '{operation} eq "Купля"'},
+                    'backgroundColor': 'white',
+                    'color': '#3D9970'
+                },
+                {
+                    'if': {'filter_query': '{operation} eq "Продажа"'},
+                    'backgroundColor': 'white',
+                    'color': '#FF0000'
+                },
+            ]
+        ),
+        style={'margin-left': '400px'}  # Сдвиг вправо
+    )
+]
+
 tab7_content = [dcc.Graph(id='MyEquityHistory', style={'margin-top': 10})]
 
 app = dash.Dash(external_stylesheets=[dbc.themes.BOOTSTRAP])
@@ -544,6 +593,17 @@ def update_output_smile(value, n):
         fig.update_layout(height=450,
                           title_text=f"Volatility smile, series <b>{value}<b>", uirevision="Don't change"
                           )
+
+        # Легенда справа по центру
+        fig.update_layout(
+            legend=dict(
+                yanchor="middle",
+                y=0.5,
+                xanchor="left",
+                x=0.96,
+                orientation="v"
+            )
+        )
         fig.update_layout(
             margin=dict(l=1, r=1, t=30, b=0),
         )
@@ -632,13 +692,23 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
     )
 
     fig.update_layout(xaxis_title=None)
+    # Легенда справа по центру
+    fig.update_layout(
+        legend=dict(
+            yanchor="middle",
+            y=0.5,
+            xanchor="left",
+            x=0.96,
+            orientation="v"
+        )
+    )
 
     fig.update_layout(
         title_text=f'Central strike volatility history, put or call option series <b>{dropdown_value}<b>',
         uirevision="Don't change"
     )
     fig.update_layout(
-        margin=dict(l=1, r=1, t=30, b=0),
+        margin=dict(l=5, r=5, t=30, b=0),
     )
 
     return fig
@@ -738,13 +808,23 @@ def update_output_MyPosTilt(dropdown_value, slider_value, n):
     )
 
     fig.update_layout(xaxis_title=None)
+    # Легенда справа по центру
+    fig.update_layout(
+        legend=dict(
+            yanchor="middle",
+            y=0.5,
+            xanchor="left",
+            x=0.96,
+            orientation="v"
+        )
+    )
 
     # fig.update_layout(
     #     title_text=f'Наклон моей позиции, option series <b>{dropdown_value}<b>', uirevision="Don't change"
     # )
     fig.update_layout(uirevision="Don't change")
     fig.update_layout(
-        margin=dict(l=1, r=1, t=0, b=0),
+        margin=dict(l=3, r=3, t=0, b=0),
     )
 
     return fig
@@ -827,13 +907,23 @@ def update_output_history_naklon(dropdown_value, slider_value, n):
     )
 
     fig.update_layout(xaxis_title=None)
+    # Легенда справа по центру
+    fig.update_layout(
+        legend=dict(
+            yanchor="middle",
+            y=0.5,
+            xanchor="left",
+            x=0.96,
+            orientation="v"
+        )
+    )
 
     # fig.update_layout(
     #     title_text=f'"Наклон улыбки" of the option series <b>{dropdown_value}<b>', uirevision="Don't change"
     # )
     fig.update_layout(uirevision="Don't change")
     fig.update_layout(
-        margin=dict(l=1, r=1, t=0, b=0),
+        margin=dict(l=3, r=3, t=0, b=0),
     )
 
     return fig
@@ -845,53 +935,52 @@ def update_output_history_naklon(dropdown_value, slider_value, n):
                ],
               prevent_initial_call=True)
 def update_equity_history(slider_value, n):
+    global df_combined
     # limit = 450 * slider_value
     limit_time = datetime.datetime.now() - timedelta(hours=10 * 12 * slider_value)
-
-    # Чтение промежуточного файла
-    with open(temp_obj.substitute(name_file='Equity.CSV'), 'r') as file:
-        df_equity = pd.read_csv(file, sep=',')
-        df_equity['Date'] = pd.to_datetime(df_equity['Date'], format='%d.%m.%Y %H:%M:%S')
-        df_equity.index = pd.DatetimeIndex(df_equity['Date'])
-    file.close()
-    # print(df_equity)
-
-    # Сборка основного файла истории
-    with open(temp_obj.substitute(name_file='MyEquity.CSV'), 'r') as file:
-        df_myequity = pd.read_csv(file, sep=',')
-        df_myequity['Date'] = pd.to_datetime(df_myequity['Date'], format='%Y-%m-%d %H:%M:%S')
-        df_myequity.index = pd.DatetimeIndex(df_myequity['Date'])
-        # Объединяем df_equity и df_myequity
-        df_combined = pd.concat([df_equity, df_myequity], ignore_index=True)
-        # Удаляем дубликаты
-        df_combined = df_combined.drop_duplicates()
-        df_combined = df_combined[(df_combined.Date > limit_time)]
-    # Close the file
-    file.close()
-
+    # print(limit_time)
     # print(df_combined)
-    # Сохранить df_combined в файл MyEquity.CSV с разделителем запятая
-    df_combined.to_csv(temp_obj.substitute(name_file='MyEquity.CSV'), sep=',', index=False)
+
+
+    df_limited = df_combined[(df_combined.Date > limit_time)] # Ограничение по времени
 
     # Create figure with secondary y-axis
     # fig = make_subplots(specs=[[{"secondary_y": True}]])
     fig = make_subplots()
 
     # График Money
-    fig.add_trace(go.Scatter(x=df_combined['Date'], y=df_combined['Money'], mode='lines+text',
+    fig.add_trace(go.Scatter(x=df_limited['Date'], y=df_limited['Money'], mode='lines+text',
+                             name=df_limited.columns[1],
                              line=dict(color='red', width=3, dash='dashdot')),
                   )
 
     # График GM
-    fig.add_trace(go.Scatter(x=df_combined['Date'], y=df_combined['GM'], mode='lines+text',
-                             visible='legendonly',
+    fig.add_trace(go.Scatter(x=df_limited['Date'], y=df_limited['GM'], mode='lines+text',
+                             name=df_limited.columns[2], visible='legendonly',
                              line=dict(color='gray', width=1, dash='dashdot')),
                   )
 
+    # График Fee
+    fig.add_trace(go.Scatter(x=df_limited['Date'], y=df_limited['Fee'], mode='lines+text',
+                             name=df_limited.columns[4], visible='legendonly',
+                             line=dict(color='gray', width=1, dash='dashdot')),
+                  )
+
+    # Легенда справа по центру
+    fig.update_layout(
+        legend=dict(
+            yanchor="middle",
+            y=0.5,
+            xanchor="left",
+            x=1.03,
+            orientation="v"
+        )
+    )
     fig.update_layout(xaxis_title=None)
+    fig.update_yaxes(side="right") # Перенос оси Y на правую сторону
     fig.update_layout(uirevision="Don't change")
     fig.update_layout(
-        margin=dict(l=1, r=1, t=0, b=0),
+        margin=dict(l=1, r=50, t=0, b=0),
     )
 
     return fig
