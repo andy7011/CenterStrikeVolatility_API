@@ -240,6 +240,7 @@ tab6_content = [  # Таблица моих ордеров
                                  'color': '#FF0000'
                              }, ]
                          )]
+tab7_content = [dcc.Graph(id='MyEquityHistory', style={'margin-top': 10})]
 
 app = dash.Dash(external_stylesheets=[dbc.themes.BOOTSTRAP])
 app.layout = html.Div(children=[
@@ -302,6 +303,7 @@ app.layout = html.Div(children=[
             dbc.Tab(tab4_content, label='MyPos table'),
             dbc.Tab(tab5_content, label='MyTrades table'),
             dbc.Tab(tab6_content, label='MyOrders table'),
+            dbc.Tab(tab7_content, label='MyEquity'),
         ]),
 
         # Интервал обновления данных
@@ -669,7 +671,6 @@ def update_output_MyPosTilt(dropdown_value, slider_value, n):
     with open(temp_obj.substitute(name_file='MyPosHistory.csv'), 'r') as file:
         df_MyPosTilt = pd.read_csv(file, sep=';')
         df_MyPosTilt = df_MyPosTilt[(df_MyPosTilt.option_base == dropdown_value)]
-        # df_MyPosTilt = df_MyPosTilt.tail(limit * len(df_MyPosTilt['expiration_datetime'].unique()) * 2) # глубина истории по количеству серий
 
         df_MyPosTilt['DateTime'] = pd.to_datetime(df_MyPosTilt['DateTime'],
                                                   format='%Y-%m-%d %H:%M:%S')
@@ -836,6 +837,65 @@ def update_output_history_naklon(dropdown_value, slider_value, n):
     )
 
     return fig
+
+## EQUITY HISTORY##
+@app.callback(Output('MyEquityHistory', 'figure', allow_duplicate=True),
+              [Input('my_slider', 'value'),
+               Input('interval-component', 'n_intervals'),
+               ],
+              prevent_initial_call=True)
+def update_equity_history(slider_value, n):
+    # limit = 450 * slider_value
+    limit_time = datetime.datetime.now() - timedelta(hours=10 * 12 * slider_value)
+
+    # Чтение промежуточного файла
+    with open(temp_obj.substitute(name_file='Equity.CSV'), 'r') as file:
+        df_equity = pd.read_csv(file, sep=',')
+        df_equity['Date'] = pd.to_datetime(df_equity['Date'], format='%d.%m.%Y %H:%M:%S')
+        df_equity.index = pd.DatetimeIndex(df_equity['Date'])
+    file.close()
+    # print(df_equity)
+
+    # Сборка основного файла истории
+    with open(temp_obj.substitute(name_file='MyEquity.CSV'), 'r') as file:
+        df_myequity = pd.read_csv(file, sep=',')
+        df_myequity['Date'] = pd.to_datetime(df_myequity['Date'], format='%Y-%m-%d %H:%M:%S')
+        df_myequity.index = pd.DatetimeIndex(df_myequity['Date'])
+        # Объединяем df_equity и df_myequity
+        df_combined = pd.concat([df_equity, df_myequity], ignore_index=True)
+        # Удаляем дубликаты
+        df_combined = df_combined.drop_duplicates()
+        df_combined = df_combined[(df_combined.Date > limit_time)]
+    # Close the file
+    file.close()
+
+    # print(df_combined)
+    # Сохранить df_combined в файл MyEquity.CSV с разделителем запятая
+    df_combined.to_csv(temp_obj.substitute(name_file='MyEquity.CSV'), sep=',', index=False)
+
+    # Create figure with secondary y-axis
+    # fig = make_subplots(specs=[[{"secondary_y": True}]])
+    fig = make_subplots()
+
+    # График Money
+    fig.add_trace(go.Scatter(x=df_combined['Date'], y=df_combined['Money'], mode='lines+text',
+                             line=dict(color='red', width=3, dash='dashdot')),
+                  )
+
+    # График GM
+    fig.add_trace(go.Scatter(x=df_combined['Date'], y=df_combined['GM'], mode='lines+text',
+                             visible='legendonly',
+                             line=dict(color='gray', width=1, dash='dashdot')),
+                  )
+
+    fig.update_layout(xaxis_title=None)
+    fig.update_layout(uirevision="Don't change")
+    fig.update_layout(
+        margin=dict(l=1, r=1, t=0, b=0),
+    )
+
+    return fig
+
 
 # Callback to update the table "MyPos Table"
 @app.callback(
