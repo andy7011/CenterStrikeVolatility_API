@@ -12,7 +12,7 @@ from QuikPy import QuikPy  # Работа с QUIK из Python через LUA с�
 from option import Option
 
 # Конфигурация для работы с файлами
-temp_str = 'C:\\Users\\шадрин\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\Андрей\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 futures_firm_id = 'SPBFUT'  # Код фирмы для фьючерсов
@@ -479,9 +479,18 @@ def MyPosHistorySave():
                     weights_long = long_positions['TrueVega'].abs()
                     total_weight_long = weights_long.sum()
 
-                    # Средневзвешенные значения
+                    # Средневзвешенные значения long позиций
                     theor_long = (long_positions['QuikVola'] * weights_long).sum() / total_weight_long
-                    last_long = (long_positions['lastIV'] * weights_long).sum() / total_weight_long
+                    # Проверяем, есть ли нулевые значения в lastIV
+                    if (long_positions['lastIV'] == 0).any():
+                        # Создаем копию lastIV для замены нулей
+                        adjusted_lastIV_long = long_positions['lastIV'].copy()
+                        # Заменяем нули на значения из QuikVola для тех же инструментов
+                        zero_mask_long = adjusted_lastIV_long == 0
+                        adjusted_lastIV_long[zero_mask_long] = long_positions.loc[zero_mask_long, 'QuikVola']
+                        last_long = (adjusted_lastIV_long * weights_long).sum() / total_weight_long
+                    else:
+                        last_long = (long_positions['lastIV'] * weights_long).sum() / total_weight_long
                     bid_long = (long_positions['bidIV'] * weights_long).sum() / total_weight_long
                     ask_long = (long_positions['askIV'] * weights_long).sum() / total_weight_long
                     open_long = (long_positions['OpenIV'] * weights_long).sum() / total_weight_long
@@ -504,9 +513,17 @@ def MyPosHistorySave():
                     weights_short = short_positions['TrueVega'].abs()
                     total_weight_short = weights_short.sum()
 
-                    # Средневзвешенные значения
+                    # Средневзвешенные значения short позиций
                     theor_short = (short_positions['QuikVola'] * weights_short).sum() / total_weight_short
-                    last_short = (short_positions['lastIV'] * weights_short).sum() / total_weight_short
+                    if (short_positions['lastIV'] == 0).any():
+                        # Создаем копию lastIV для замены нулей
+                        adjusted_lastIV_short = short_positions['lastIV'].copy()
+                        # Заменяем нули на значения из QuikVola для тех же инструментов
+                        zero_mask_short = adjusted_lastIV_short == 0
+                        adjusted_lastIV_short[zero_mask_short] = short_positions.loc[zero_mask_short, 'QuikVola']
+                        last_short = (adjusted_lastIV_short * weights_short).sum() / total_weight_short
+                    else:
+                        last_short = (short_positions['lastIV'] * weights_short).sum() / total_weight_short
                     bid_short = (short_positions['bidIV'] * weights_short).sum() / total_weight_short
                     ask_short = (short_positions['askIV'] * weights_short).sum() / total_weight_short
                     open_short = (short_positions['OpenIV'] * weights_short).sum() / total_weight_short
