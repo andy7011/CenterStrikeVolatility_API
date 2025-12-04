@@ -581,7 +581,7 @@ def update_output_smile(value, n):
 
         # TrueVega позиции
         fig.add_trace(go.Bar(x=df_table_base['strike'], y=df_table_base['TrueVega'], text=df_table_base['TrueVega'],
-                             textposition='auto', name='TrueVega', opacity=0.1), secondary_y=True)
+                             textposition='auto', name='TrueVega', opacity=0.2), secondary_y=True)
 
         # Цена базового актива (вертикальная линия)
         fig.add_vline(x=base_asset_last_price, line_dash='dash', line_color='firebrick')
@@ -612,7 +612,7 @@ def update_output_smile(value, n):
         raise PreventUpdate
 
 
-# Callback to update the line-graph history data (обновление данных графика истории волатильности на центральном страйке)
+# Callback to update the line-graph history data (обновление данных графика истории)
 @app.callback(Output('plot_history', 'figure', allow_duplicate=True),
               [Input('dropdown-selection', 'value'),
                Input('my_slider', 'value'),
@@ -732,7 +732,7 @@ def update_output_MyPosTilt(dropdown_value, slider_value, n):
     # Close the file
     file.close()
 
-    # ДАННЫЕ ИЗ csv
+    # ДАННЫЕ ИЗ DAMP/csv
     # MyPosTilt.csv history data options volatility
     with open(temp_obj.substitute(name_file='MyPosHistory.csv'), 'r') as file:
         df_MyPosTilt = pd.read_csv(file, sep=';')
@@ -744,18 +744,6 @@ def update_output_MyPosTilt(dropdown_value, slider_value, n):
         # df_MyPosTilt = df_MyPosTilt[(df_vol_history.type == radiobutton_value)]
         df_MyPosTilt = df_MyPosTilt[(df_MyPosTilt.DateTime > limit_time)]
         # print(df_MyPosTilt)
-    # Close the file
-    file.close()
-
-    # Данные о сделках
-    # My trades data
-    with open(temp_obj.substitute(name_file='QUIK_Stream_Trades.csv'), 'r', encoding='UTF-8') as file:
-        df_trades = pd.read_csv(file, sep=';')
-        df_trades = df_trades[(df_trades.option_base == dropdown_value)]
-        df_trades['datetime'] = pd.to_datetime(df_trades['datetime'],
-                                                  format='%d.%m.%Y %H:%M:%S')
-        df_trades.index = pd.DatetimeIndex(df_trades['datetime'])
-        df_trades = df_trades[(df_trades.datetime > limit_time)]
     # Close the file
     file.close()
 
@@ -800,58 +788,6 @@ def update_output_MyPosTilt(dropdown_value, slider_value, n):
                                  mode='lines+text',
                                  name='Market'), secondary_y=True, )
 
-    # Мои сделки (trades) на графике
-    for opt in sorted(df_trades['ticker'].unique()):
-        df_ticker = df_trades[df_trades.ticker == opt]
-
-        # Создаем отдельные серии для покупок и продаж
-        df_buy = df_ticker[df_ticker['operation'] == 'Купля']
-        df_sell = df_ticker[df_ticker['operation'] == 'Продажа']
-
-        if not df_buy.empty:
-            fig.add_trace(go.Scatter(x=df_buy['datetime'], y=df_buy['volatility'], visible='legendonly',
-                                     mode='markers', text=df_buy['volatility'], textposition='top left',
-                                     marker=dict(size=8, symbol="triangle-up", color='green'),
-                                     name=f'{opt} (купля)',
-                                     customdata=df_buy[
-                                        ['volatility', 'option_type', 'price', 'volume', 'expdate']],
-                                        hovertemplate="<b>%{customdata}</b><br>"
-                                     ), secondary_y=True, )
-
-        if not df_sell.empty:
-            fig.add_trace(go.Scatter(x=df_sell['datetime'], y=df_sell['volatility'], visible='legendonly',
-                                     mode='markers', text=df_sell['volatility'], textposition='top left',
-                                     marker=dict(size=8, symbol="triangle-down", color='red'),
-                                     name=f'{opt} (продажа)',
-                                     customdata=df_sell[
-                                         ['volatility', 'option_type', 'price', 'volume', 'expdate']],
-                                     hovertemplate="<b>%{customdata}</b><br>"
-                                     ), secondary_y=True, )
-
-    # # BUY
-    # fig.add_trace(go.Scatter(x=df_trades_buy['datetime'], y=df_trades_buy['volatility'], # visible='legendonly',
-    #                          # legendgroup=option_type_group,
-    #                          # legendgrouptitle_text=option_type_group,
-    #                          mode='markers', text=df_trades_buy['volatility'], textposition='top left',
-    #                          marker=dict(size=8, symbol="triangle-up", color='green'),
-    #                          name='BUY',
-    #                          customdata=df_trades_buy[
-    #                              ['volatility', 'option_type', 'price', 'volume', 'expdate', 'ticker']],
-    #                          hovertemplate="<b>%{customdata}</b><br>"
-    #                          ), secondary_y=True, )
-    #
-    # # SELL
-    # fig.add_trace(go.Scatter(x=df_trades_sell['datetime'], y=df_trades_sell['volatility'], # visible='legendonly',
-    #                          # legendgroup=option_type_group,
-    #                          # legendgrouptitle_text=option_type_group,
-    #                          mode='markers', text=df_trades_sell['volatility'], textposition='top left',
-    #                          marker=dict(size=8, symbol="triangle-down", color='red'),
-    #                          name='SELL',
-    #                          customdata=df_trades_sell[
-    #                              ['volatility', 'option_type', 'price', 'volume', 'expdate', 'ticker']],
-    #                          hovertemplate="<b>%{customdata}</b><br>"
-    #                          ), secondary_y=True, )
-
     fig.update_layout(legend=dict(groupclick="toggleitem"))
 
     # График истории цены базового актива
@@ -880,7 +816,7 @@ def update_output_MyPosTilt(dropdown_value, slider_value, n):
     )
 
     # fig.update_layout(
-    #     title_text=f'История моей позиции, option series <b>{dropdown_value}<b>', uirevision="Don't change"
+    #     title_text=f'Наклон моей позиции, option series <b>{dropdown_value}<b>', uirevision="Don't change"
     # )
     fig.update_layout(uirevision="Don't change")
     fig.update_layout(
