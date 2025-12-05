@@ -710,7 +710,7 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
     return fig
 
 
-# Callback to update the line-graph history MyPosTilt data (обновление данных графика истории моей позиции)
+# Обновление данных графика истории моей позиции
 @app.callback(Output('MyPosTiltHistory', 'figure', allow_duplicate=True),
               [Input('dropdown-selection', 'value'),
                Input('my_slider', 'value'),
@@ -733,7 +733,7 @@ def update_output_MyPosTilt(dropdown_value, slider_value, n):
     file.close()
 
     # ДАННЫЕ ИЗ csv
-    # MyPosTilt.csv history data options volatility
+    # MyPosHistory.csv history data options volatility
     with open(temp_obj.substitute(name_file='MyPosHistory.csv'), 'r') as file:
         df_MyPosTilt = pd.read_csv(file, sep=';')
         df_MyPosTilt = df_MyPosTilt[(df_MyPosTilt.option_base == dropdown_value)]
@@ -743,7 +743,6 @@ def update_output_MyPosTilt(dropdown_value, slider_value, n):
         df_MyPosTilt.index = pd.DatetimeIndex(df_MyPosTilt['DateTime'])
         # df_MyPosTilt = df_MyPosTilt[(df_vol_history.type == radiobutton_value)]
         df_MyPosTilt = df_MyPosTilt[(df_MyPosTilt.DateTime > limit_time)]
-        # print(df_MyPosTilt)
     # Close the file
     file.close()
 
@@ -756,6 +755,14 @@ def update_output_MyPosTilt(dropdown_value, slider_value, n):
                                                   format='%d.%m.%Y %H:%M:%S')
         df_trades.index = pd.DatetimeIndex(df_trades['datetime'])
         df_trades = df_trades[(df_trades.datetime > limit_time)]
+        # print(df_table)
+        # Создаем столбец 'pos' в df_trades на основе значений из df_table
+        df_table['pos'] = df_table['net_pos'].apply(lambda x: 'long' if x > 0 else 'short')
+        df_trades = df_trades.merge(df_table[['ticker', 'pos']], on='ticker', how='left')
+        # Удаляем строки, где 'pos' равен NaN
+        df_trades = df_trades.dropna(subset=['pos'])
+        # print(df_trades)
+
     # Close the file
     file.close()
 
@@ -763,7 +770,7 @@ def update_output_MyPosTilt(dropdown_value, slider_value, n):
     fig = make_subplots(specs=[[{"secondary_y": True}]])
 
     # График истории моей позиции (из MyPosHistory.cs)
-    for pos in sorted(df_MyPosTilt['pos'].unique()):
+    for pos in sorted(df_MyPosTilt['pos'].unique(), reverse=True):
         dff = df_MyPosTilt[df_MyPosTilt.pos == pos]
         fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['mypos'], visible='legendonly',
                                  legendgroup=pos,  # this can be any string, not just "group"
@@ -782,7 +789,7 @@ def update_output_MyPosTilt(dropdown_value, slider_value, n):
                                  name='Last'), secondary_y=True, )
 
     # График истории моей позиции по цене LAST (из MyPosHistory.csv)
-    for pos in sorted(df_MyPosTilt['pos'].unique()):
+    for pos in sorted(df_MyPosTilt['pos'].unique(), reverse=True):
         dff = df_MyPosTilt[df_MyPosTilt.pos == pos]
         fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['theor'],
                                  legendgroup=pos,
@@ -792,7 +799,7 @@ def update_output_MyPosTilt(dropdown_value, slider_value, n):
                                  name='Theor'), secondary_y=True, )
 
     # График истории моей позиции ПО рынку из MyPosHistory
-    for pos in sorted(df_MyPosTilt['pos'].unique()):
+    for pos in sorted(df_MyPosTilt['pos'].unique(), reverse=True):
         dff = df_MyPosTilt[df_MyPosTilt.pos == pos]
         fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['market'], visible='legendonly',
                                  legendgroup=pos,  # this can be any string, not just "group"
@@ -807,9 +814,11 @@ def update_output_MyPosTilt(dropdown_value, slider_value, n):
         # Создаем отдельные серии для покупок и продаж
         df_buy = df_ticker[df_ticker['operation'] == 'Купля']
         df_sell = df_ticker[df_ticker['operation'] == 'Продажа']
-
         if not df_buy.empty:
+            pos = df_buy['pos'].iloc[0]
             fig.add_trace(go.Scatter(x=df_buy['datetime'], y=df_buy['volatility'], visible='legendonly',
+                                     legendgroup=pos,
+                                     legendgrouptitle_text=pos,
                                      mode='markers', text=df_buy['volatility'], textposition='top left',
                                      marker=dict(size=8, symbol="triangle-up", color='green'),
                                      name=f'{opt} (купля)',
@@ -819,7 +828,10 @@ def update_output_MyPosTilt(dropdown_value, slider_value, n):
                                      ), secondary_y=True, )
 
         if not df_sell.empty:
+            pos = df_sell['pos'].iloc[0]
             fig.add_trace(go.Scatter(x=df_sell['datetime'], y=df_sell['volatility'], visible='legendonly',
+                                     legendgroup=pos,
+                                     legendgrouptitle_text=pos,
                                      mode='markers', text=df_sell['volatility'], textposition='top left',
                                      marker=dict(size=8, symbol="triangle-down", color='red'),
                                      name=f'{opt} (продажа)',
