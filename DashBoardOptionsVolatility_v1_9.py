@@ -761,9 +761,6 @@ def update_output_MyPosTilt(dropdown_value, slider_value, n):
         df_trades = df_trades.merge(df_table[['ticker', 'pos']], on='ticker', how='left')
         # Удаляем строки, где 'pos' равен NaN
         df_trades = df_trades.dropna(subset=['pos'])
-        # print(df_trades)
-
-    # Close the file
     file.close()
 
     # Create figure with secondary y-axis
@@ -839,30 +836,6 @@ def update_output_MyPosTilt(dropdown_value, slider_value, n):
                                          ['volatility', 'option_type', 'price', 'volume', 'expdate']],
                                      hovertemplate="<b>%{customdata}</b><br>"
                                      ), secondary_y=True, )
-
-    # # BUY
-    # fig.add_trace(go.Scatter(x=df_trades_buy['datetime'], y=df_trades_buy['volatility'], # visible='legendonly',
-    #                          # legendgroup=option_type_group,
-    #                          # legendgrouptitle_text=option_type_group,
-    #                          mode='markers', text=df_trades_buy['volatility'], textposition='top left',
-    #                          marker=dict(size=8, symbol="triangle-up", color='green'),
-    #                          name='BUY',
-    #                          customdata=df_trades_buy[
-    #                              ['volatility', 'option_type', 'price', 'volume', 'expdate', 'ticker']],
-    #                          hovertemplate="<b>%{customdata}</b><br>"
-    #                          ), secondary_y=True, )
-    #
-    # # SELL
-    # fig.add_trace(go.Scatter(x=df_trades_sell['datetime'], y=df_trades_sell['volatility'], # visible='legendonly',
-    #                          # legendgroup=option_type_group,
-    #                          # legendgrouptitle_text=option_type_group,
-    #                          mode='markers', text=df_trades_sell['volatility'], textposition='top left',
-    #                          marker=dict(size=8, symbol="triangle-down", color='red'),
-    #                          name='SELL',
-    #                          customdata=df_trades_sell[
-    #                              ['volatility', 'option_type', 'price', 'volume', 'expdate', 'ticker']],
-    #                          hovertemplate="<b>%{customdata}</b><br>"
-    #                          ), secondary_y=True, )
 
     fig.update_layout(legend=dict(groupclick="toggleitem"))
 
@@ -1002,11 +975,12 @@ def update_output_history_naklon(dropdown_value, slider_value, n):
 
 ## EQUITY HISTORY##
 @app.callback(Output('MyEquityHistory', 'figure', allow_duplicate=True),
-              [Input('my_slider', 'value'),
+              [Input('dropdown-selection', 'value'),
+                  Input('my_slider', 'value'),
                Input('interval-component', 'n_intervals'),
                ],
               prevent_initial_call=True)
-def update_equity_history(slider_value, n):
+def update_equity_history(dropdown_value, slider_value, n):
     global df_combined
     # limit = 450 * slider_value
     limit_time = datetime.datetime.now() - timedelta(hours=10 * 12 * slider_value)
@@ -1015,28 +989,98 @@ def update_equity_history(slider_value, n):
 
 
     df_limited = df_combined[(df_combined.Date > limit_time)] # Ограничение по времени
+    # Первая запись
+    first_value = df_limited['Money'].iloc[0]
+    # print(first_value)
+
+    # Последняя запись
+    last_value = df_limited['Money'].iloc[-1]
+    # print(last_value)
+
+    # Доходность за период в процентах
+    profit = (last_value - first_value) / first_value * 100
+    # print(f'Доходность за период {slider_value * 5} дн. в процентах: {profit:.2f}%')
+
+    # Доходность за период в процентах годовых
+    profit_year = profit / 12 * 100
+    # print(f'Доходность за период в процентах годовых: {profit_year:.2f}%')
+
+    # BaseAssetPrice history data DAMP
+    with open(temp_obj.substitute(name_file='BaseAssetPriceHistoryDamp.csv'), 'r') as file:
+        df_BaseAssetPrice = pd.read_csv(file, sep=';')
+        df_BaseAssetPrice = df_BaseAssetPrice[(df_BaseAssetPrice.ticker == dropdown_value)]
+        # df_BaseAssetPrice = df_BaseAssetPrice.tail(limit)
+        df_BaseAssetPrice['DateTime'] = pd.to_datetime(df_BaseAssetPrice['DateTime'], format='%Y-%m-%d %H:%M:%S')
+        df_BaseAssetPrice.index = pd.DatetimeIndex(df_BaseAssetPrice['DateTime'])
+        df_BaseAssetPrice = df_BaseAssetPrice[(df_BaseAssetPrice.DateTime > limit_time)]
+    # Close the file
+    file.close()
+
 
     # Create figure with secondary y-axis
-    # fig = make_subplots(specs=[[{"secondary_y": True}]])
-    fig = make_subplots()
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    # fig = make_subplots()
 
     # График Money
     fig.add_trace(go.Scatter(x=df_limited['Date'], y=df_limited['Money'], mode='lines+text',
-                             name=df_limited.columns[1],
+                             name='Money',
                              line=dict(color='red', width=3, dash='dashdot')),
-                  )
+                            secondary_y=True,)
 
-    # График GM
+    # График GM (гарантийное обеспечение)
     fig.add_trace(go.Scatter(x=df_limited['Date'], y=df_limited['GM'], mode='lines+text',
-                             name=df_limited.columns[2], visible='legendonly',
+                             name='GM', visible='legendonly',
                              line=dict(color='gray', width=1, dash='dashdot')),
-                  )
+                            secondary_y=True,)
 
-    # График Fee
+    # График Fee (комиссия)
     fig.add_trace(go.Scatter(x=df_limited['Date'], y=df_limited['Fee'], mode='lines+text',
-                             name=df_limited.columns[4], visible='legendonly',
+                             name="Comiss",
+                             visible='legendonly',
                              line=dict(color='gray', width=1, dash='dashdot')),
-                  )
+                            secondary_y=True,)
+
+    fig.update_layout(
+        annotations=[
+            dict(
+                x=1,
+                y=0.1,
+                xref="paper",
+                yref="paper",
+                text=f'Доходность за период {slider_value * 5} дн. в процентах: {profit:.2f}%',
+                showarrow=False,
+                xanchor='right',
+                yanchor='top'
+            ),
+            dict(
+                x=1,
+                y=0.1,
+                xref="paper",
+                yref="paper",
+                text=f'Доходность за период в процентах годовых: {profit_year:.2f}%',
+                showarrow=False,
+                xanchor='right',
+                yanchor='top',
+                yshift=-20
+            )
+        ]
+    )
+
+    # График истории цены базового актива
+    fig.add_trace(go.Scatter(x=df_BaseAssetPrice['DateTime'], y=df_BaseAssetPrice['last_price'], mode='lines+text',
+                             visible='legendonly',
+                             name=dropdown_value, line=dict(color='gray', width=1, dash='dashdot')),
+                  secondary_y=False, )
+
+    # Убираем неторговое время
+    fig.update_xaxes(
+        rangebreaks=[
+            dict(bounds=["sat", "mon"]),  # hide weekends, eg. hide sat to before mon
+            dict(bounds=[24, 9], pattern="hour"),  # hide hours outside of 9am-24pm
+        ]
+    )
+
+
 
     # Легенда справа по центру
     fig.update_layout(
@@ -1044,12 +1088,12 @@ def update_equity_history(slider_value, n):
             yanchor="middle",
             y=0.5,
             xanchor="left",
-            x=1.03,
+            x=0.97,
             orientation="v"
         )
     )
     fig.update_layout(xaxis_title=None)
-    fig.update_yaxes(side="right") # Перенос оси Y на правую сторону
+    # fig.update_yaxes(side="right") # Перенос оси Y на правую сторону
     fig.update_layout(uirevision="Don't change")
     fig.update_layout(
         margin=dict(l=1, r=50, t=0, b=0),

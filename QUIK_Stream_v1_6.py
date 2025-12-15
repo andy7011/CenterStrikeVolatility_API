@@ -25,16 +25,17 @@ active_orders_set = set()
 df_portfolio = pd.DataFrame()  # Глобальный датафрейм для хранения позиций портфеля
 all_rows_order_list = []  # Список для хранения всех заявок
 qp_provider = None  # Глобальная ссылка на провайдер QUIK
+is_working_time = False  # Глобальная переменная для отслеживания рабочего времени
 order_handler = None
 trade_handler = None
 
 class_code = 'SPBOPT'  # Глобальная переменная для класса опционов
 
 
+
 def wait_for_business_time():
     """Ждет наступления рабочего времени, проверяя каждые 30 секунд."""
-    global is_working_time
-    is_working_time = False  # Инициализация переменной
+    global is_working_time  # Добавляем глобальную переменную
 
     while True:
         now = datetime.now()
@@ -51,7 +52,10 @@ def wait_for_business_time():
             continue
 
         # Проверяем нерабочее время (23:50-9:00)
-        if (current_hour == 23 and current_minute >= 50) or (current_hour < 9):
+        # Учитываем переход через полночь
+        is_night_time = (current_hour >= 23 and current_minute >= 50) or (current_hour < 9)
+
+        if is_night_time:
             if is_working_time:
                 print("Рабочее время закончилось")
                 is_working_time = False
@@ -94,6 +98,7 @@ def start_main_functions():
         qp_provider.on_order = order_handler
         qp_provider.on_trade = trade_handler
 
+        is_working_time = True  # Устанавливаем флаг рабочего времени
         print("Основные функции запущены")
 
     except Exception as e:
@@ -118,11 +123,17 @@ def main_loop():
     try:
         print("Сервис запущен. Нажмите Ctrl+C для остановки.")
         while True:
-            time.sleep(1)
+            if is_working_time:  # Добавляем проверку состояния рабочего времени
+                # Здесь ваш основной код
+                time.sleep(1)
+            else:
+                # Если не рабочее время, ждем
+                time.sleep(5)  # Ждем 5 секунд перед следующей проверкой
     except KeyboardInterrupt:
         print("Остановка сервиса...")
         stop_main_functions()
         print("Сервис остановлен")
+
 
 
 def get_time_to_maturity(expiration_datetime):
