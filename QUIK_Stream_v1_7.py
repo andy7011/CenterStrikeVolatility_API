@@ -11,6 +11,9 @@ import implied_volatility
 import option_type
 from QuikPy.QuikPy import QuikPy  # Работа с QUIK из Python через LUA скрипты QUIK#
 from model.option import Option
+from accfifo import Entry, FIFO
+from collections import deque
+import re
 
 pd.set_option('future.no_silent_downcasting', True)
 
@@ -473,7 +476,6 @@ def sync_portfolio_positions():
                             open_price = 0.0
                             open_iv = 0.0
 
-
                         # Добавляем данные в список
                         portfolio_positions.append({
                             'ticker': sec_code,
@@ -517,6 +519,18 @@ def sync_portfolio_positions():
             ])
             empty_df.to_csv(temp_obj.substitute(name_file='QUIK_MyPos.csv'),
                             sep=';', encoding='utf-8', index=False)
+
+        # Получаем список тикеров из портфеля
+        tickers = [item['ticker'] for item in portfolio_positions]
+        # print(f'portfolio_positions tickers: {tickers}')
+        # Очищаем файл со сделками QUIK_Stream_Trades.csv - удаляем старые сделки с тикерами, которых уже нет в портфеле
+        # Чтение CSV файла
+        df = pd.read_csv(temp_obj.substitute(name_file='QUIK_Stream_Trades.csv'), encoding='utf-8', delimiter=';')
+        # Удаляем строки с тикерами, которых нет в портфеле
+        df = df[df['ticker'].isin(tickers)]
+        # Сохраняем обновленный CSV файл
+        df.to_csv(temp_obj.substitute(name_file='QUIK_Stream_Trades.csv'), encoding='utf-8', index=False, sep=';')
+
 
     except Exception as e:
         print(f"Ошибка при синхронизации позиций портфеля: {e}")
@@ -688,56 +702,53 @@ def calculate_open_data_open_price_open_iv(sec_code, net_pos):
         # Чтение CSV файла
         df = pd.read_csv(temp_obj.substitute(name_file='QUIK_Stream_Trades.csv'), encoding='utf-8', delimiter=';')
 
-        # Фильтрация по инструменту
-        instrument_df = df[df['ticker'] == sec_code].copy()
+        # Фильтрация по инструменту (все сделки по инструменту)
+        instrument_trades_df = df[df['ticker'] == sec_code].copy()
 
-        if instrument_df.empty:
+        if instrument_trades_df.empty:
             print(f"Предупреждение: Нет данных для инструмента {sec_code}")
             return None, None, None
 
         # Преобразование datetime
-        instrument_df['datetime'] = pd.to_datetime(instrument_df['datetime'], format='%d.%m.%Y %H:%M:%S')
+        instrument_trades_df['datetime'] = pd.to_datetime(instrument_trades_df['datetime'], format='%d.%m.%Y %H:%M:%S')
 
         # Сортировка по дате
-        instrument_df = instrument_df.sort_values('datetime', ascending=False)
-        print(instrument_df)
+        instrument_trades_df = instrument_trades_df.sort_values('datetime', ascending=False) # обратный порядок
+        # instrument_trades_df = instrument_trades_df.sort_values('datetime')
 
-        # Определение направления позиции
-        if net_pos > 0:
-            open_trades = instrument_df[instrument_df['operation'] == 'Купля']
-        else:
-            open_trades = instrument_df[instrument_df['operation'] == 'Продажа']
+        # Применяем изменение знака для объема при продаже
+        instrument_trades_df.loc[instrument_trades_df['operation'] == 'Продажа', 'volume'] *= -1
 
-        if open_trades.empty:
-            print(f"Предупреждение: Нет сделок открытия для инструмента {sec_code}")
-            return None, None, None
+        # print(instrument_trades_df)
+        # print(instrument_trades_df.iloc[-1]['volume']) # последняя сделка
+        volume_last = instrument_trades_df.iloc[0]['volume']  # объем последней сделки
 
         # Целевой объём
-        required_volume = abs(net_pos)
-        cumulative_volume = 0
+        required_volume = net_pos
         selected_trades = []
-
-        # Накапливаем сделки до достижения нужного объёма
-        for _, trade in open_trades.iterrows():
+        # Вычитаем сделки до достижения нужного объёма
+        for _, trade in instrument_trades_df.iterrows():
             volume = trade['volume']
-            if volume <= 0:
-                continue  # Пропускаем сделки с volume = 0
-            if cumulative_volume + volume <= required_volume:
-                selected_trades.append(trade)
-                cumulative_volume += volume
-            else:
-                # Добавляем частичную сделку
-                if volume <= 0:
-                    continue  # Пропускаем сделки с volume = 0
-                    remaining_volume = required_volume - cumulative_volume
+            # Для положительного required_volume: вычитаем объем
+            if required_volume > 0:
+                if required_volume - volume >= 0:
+                    selected_trades.append(trade)
+                    required_volume -= volume
+                else:
+                    # Добавляем частичную сделку
                     partial_trade = trade.copy()
-                    partial_trade['volume'] = remaining_volume
+                    partial_trade['volume'] = required_volume
                     selected_trades.append(partial_trade)
+                    required_volume = 0
                     break
+            # Для отрицательного required_volume: добавляем объем
+            else:
+                selected_trades.append(trade)
+                required_volume += volume
 
-        if not selected_trades:
-            print(f"Предупреждение: Недостаточно сделок для инструмента {sec_code}")
-            return None, None, None
+            # Прерываем цикл при достижении нуля
+            if required_volume == 0:
+                break
 
         # Создаём DataFrame из выбранных сделок
         selected_df = pd.DataFrame(selected_trades)
@@ -745,10 +756,66 @@ def calculate_open_data_open_price_open_iv(sec_code, net_pos):
         # Дата первой сделки (самой старой сделки, она в конце списка)
         OpenDateTime = selected_df.iloc[-1]['datetime'].strftime('%d.%m.%Y %H:%M:%S')
 
-        # Средневзвешенные значения
-        total_volume = selected_df['volume'].sum()
-        OpenPrice = (selected_df['price'] * selected_df['volume']).sum() / total_volume
-        OpenIV = (selected_df['volatility'] * selected_df['volume']).sum() / total_volume
+        # Удаляем из списка selected_trades сделки противоположной направленности selected_trades['volume'] общей позиции required_volume = net_pos
+        # для правильного расчета средневзвешенных значений цены и волатильности
+        # Удаляем сделки противоположной направленности
+        if selected_trades:  # Проверяем, что список не пуст
+            # Создаем новый список без противоположных сделок
+            filtered_trades = []
+            print(f"Список до фильтрации {sec_code} net_pos {net_pos}: {len(selected_trades)}")
+            if sec_code == 'RI95000BO6':
+                print(f"Список до фильтрации {sec_code} net_pos {net_pos}: {selected_trades}")
+
+
+            # Проходим по всем сделкам
+            for trade in selected_trades:
+                volume = trade['volume']
+
+                # Если required_volume положительный - удаляем сделки с отрицательным объемом
+                if net_pos > 0:
+                    if volume > 0:  # Оставляем только сделки с положительным объемом
+                        filtered_trades.append(trade)
+                # Если required_volume отрицательный - удаляем сделки с положительным объемом
+                else:
+                    if volume < 0:  # Оставляем только сделки с отрицательным объемом
+                        filtered_trades.append(trade)
+
+            # Заменяем исходный список отфильтрованными сделками
+            selected_trades = filtered_trades
+        print(f"Сделок для инструмента после фильтрации {sec_code} net_pos {net_pos}: {len(selected_trades)}")
+
+        # Расчет средневзвешенной цены и волатильности открытия методом FIFO
+        # selected_trades - это отфильтрованный на предыдущем этапе список словарей
+        fifo_entries = []
+        fifo_entries_volatility = []
+        for trade in selected_trades:
+            quantity = trade['volume']
+            price = trade['price']
+            volatility = trade['volatility']
+
+            # Создаем Entry с позиционными аргументами
+            fifo_entries.append(Entry(quantity=quantity, price=price))
+            fifo_entries_volatility.append(Entry(quantity=quantity, price=volatility))
+
+        fifo = FIFO(fifo_entries)
+        # print(f"Позиция {sec_code}: {fifo.stock}")
+        # print(f"Цены открытия позиции {sec_code}: {fifo.inventory}")
+        s = fifo.inventory
+        OpenPrice = calculate_weighted_average(s)
+        # print(f'Средневзвешенная цена {sec_code}: {OpenPrice}')
+
+        # print(f"Реализованный P&L {sec_code}: {sum([entry.price * entry.quantity for step in fifo.trace for entry in step])}")
+        fifo = FIFO(fifo_entries_volatility)
+        # print(f"Волатильность отрытых позиций {sec_code}: {fifo.inventory}")
+        # print(f"Реализованный P&L IV {sec_code}: {sum([entry.price * entry.quantity for step in fifo.trace for entry in step])}")
+        s = fifo.inventory
+        OpenIV = calculate_weighted_average(s)
+        # print(f'Средневзвешенная волатильность {sec_code}: {OpenIV}')
+
+
+        if not selected_trades:
+            print(f"Предупреждение: Недостаточно сделок для инструмента {sec_code}")
+            return None, None, None
 
         return OpenDateTime, OpenPrice, OpenIV
 
@@ -757,9 +824,21 @@ def calculate_open_data_open_price_open_iv(sec_code, net_pos):
         return None, None, None
 
 
+def calculate_weighted_average(s):
+    # Преобразуем deque в строку, если это необходимо
+    if isinstance(s, deque):
+        s = str(s)  # или другой способ преобразования deque в строку
+    # Извлекаем элементы из строки
+    items = re.findall(r'(-?\d+(?:\.\d+)?) @(-?\d+(?:\.\d+)?)', s)
 
-# Пример использования:
-# OpenDateTime, OpenPrice, OpenIV = calculate_open_data_open_price_open_iv("RI97500BX5", -10)
+    # Преобразуем в числа
+    items = [(float(w), float(v)) for w, v in items]
+
+    # Вычисляем средневзвешенное
+    weighted_sum = sum(w * v for w, v in items)
+    total_weight = sum(w for w, v in items)
+
+    return weighted_sum / total_weight if total_weight != 0 else 0
 
 
 def _add_order_to_list_from_data(order_data):

@@ -28,7 +28,6 @@ class Option:
     def get_time_to_maturity(self) -> float:
         difference = self._expiration_datetime - datetime.utcnow()
         seconds_in_year = 365 * 24 * 60 * 60
-        # print(difference.total_seconds())
         return (difference.total_seconds() + 67800) / seconds_in_year
 
     @property

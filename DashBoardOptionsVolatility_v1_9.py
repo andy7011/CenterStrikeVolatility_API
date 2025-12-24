@@ -1043,7 +1043,7 @@ def update_equity_history(dropdown_value, slider_value, n):
     fig.update_layout(
         annotations=[
             dict(
-                x=1,
+                x=0.94,
                 y=0.1,
                 xref="paper",
                 yref="paper",
@@ -1053,7 +1053,7 @@ def update_equity_history(dropdown_value, slider_value, n):
                 yanchor='top'
             ),
             dict(
-                x=1,
+                x=0.94,
                 y=0.1,
                 xref="paper",
                 yref="paper",
