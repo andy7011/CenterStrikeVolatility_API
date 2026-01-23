@@ -1166,6 +1166,14 @@ def updateTable(n, value):
     total_vega = df_pos['Vega'].sum() if 'Vega' in df_pos.columns else 0
     total_true_vega = df_pos['TrueVega'].sum() if 'TrueVega' in df_pos.columns else 0
 
+    # Сортировать датафрейм df_pos по столбцу strike
+    df_pos = df_pos.sort_values(by='strike')
+    # Добавляем столбец с порядковым номером строки, начиная с 1
+    df_pos['num'] = range(1, len(df_pos) + 1)
+    # Переставляем столбец 'num' в начало
+    cols = ['num'] + [col for col in df_pos.columns if col != 'num']
+    df_pos = df_pos[cols]
+
     # Создание строки итогов
     total_row = {col: '' for col in df_pos.columns}
     total_row['ticker'] = 'Итого'
@@ -1190,6 +1198,13 @@ def updateTable(n, value):
     prevent_initial_call=True)
 def updateTrades(n, value):
     df_trades = pd.read_csv(temp_obj.substitute(name_file='QUIK_Stream_Trades.csv'), encoding='UTF-8', sep=';')
+    # Добавляем столбец с порядковым номером строки, начиная с 1
+    df_trades['num'] = range(1, len(df_trades) + 1)
+    # Переставляем столбец 'num' в начало
+    cols = ['num'] + [col for col in df_trades.columns if col != 'num']
+    df_trades = df_trades[cols]
+    # Преобразование столбца order_num в строку
+    df_trades['order_num'] = df_trades['order_num'].astype(str)
     # Фильтрация строк по базовому активу
     df_trades = df_trades[df_trades['option_base'] == value]
 
@@ -1204,11 +1219,17 @@ def updateTrades(n, value):
     prevent_initial_call=True)
 def updateOrders(n, value):
     df_orders = pd.read_csv(temp_obj.substitute(name_file='QUIK_Stream_Orders.csv'), encoding='UTF-8', sep=';')
+    # Добавляем столбец с порядковым номером строки, начиная с 1
+    df_orders['num'] = range(1, len(df_orders) + 1)
+    # Переставляем столбец 'num' в начало
+    cols = ['num'] + [col for col in df_orders.columns if col != 'num']
+    df_orders = df_orders[cols]
+    # Преобразование столбца order_num в строку
+    df_orders['order_num'] = df_orders['order_num'].astype(str)
     # Фильтрация строк по базовому активу
     df_orders = df_orders[df_orders['option_base'] == value]
 
     return df_orders.to_dict('records')
-
 
 # Callback to update the graph-gauge Спидометр TrueVega
 @app.callback(

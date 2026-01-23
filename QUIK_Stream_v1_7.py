@@ -35,7 +35,6 @@ trade_handler = None
 class_code = 'SPBOPT'  # Глобальная переменная для класса опционов
 
 
-
 def wait_for_business_time():
     """Ждет наступления рабочего времени, проверяя каждые 30 секунд."""
     global is_working_time  # Добавляем глобальную переменную
@@ -138,7 +137,6 @@ def main_loop():
         print("Сервис остановлен")
 
 
-
 def get_time_to_maturity(expiration_datetime):
     # Если expiration_datetime - это datetime объект, конвертируем в timestamp
     if isinstance(expiration_datetime, datetime):
@@ -154,7 +152,9 @@ def get_time_to_maturity(expiration_datetime):
     expiration_dt = datetime.fromtimestamp(expiration_timestamp, tz=moscow_tz)
     difference = expiration_dt - now
     seconds_in_year = 365 * 24 * 60 * 60
-    return (difference.total_seconds() + 67800) / seconds_in_year # Добавляем 67800 секунд (18 ч. 50 мин.), чтобы учесть время в последний день экспирации
+    return (
+                difference.total_seconds() + 67800) / seconds_in_year  # Добавляем 67800 секунд (18 ч. 50 мин.), чтобы учесть время в последний день экспирации
+
 
 # Функция для форматирования даты и времени
 def format_datetime(datetime_dict):
@@ -167,6 +167,7 @@ def format_datetime(datetime_dict):
     second = datetime_dict['sec']
     formatted_datetime = f"{day:02d}.{month:02d}.{year} {hour:02d}:{minute:02d}:{second:02d}"
     return formatted_datetime
+
 
 class OrderHandler:
     """Класс для обработки событий по заявкам"""
@@ -192,17 +193,22 @@ def sync_active_orders():
             current_active_orders = set()
             # Создаем словарь order_num -> order_data для активных ордеров
             current_orders_dict = {}
-
+            # Проходимся по всем ордерам
             for order in orders_response['data']:
                 if order.get('class_code') == 'SPBOPT':
                     # Проверяем, что ордер активен (бит 0 установлен) и не снят (бит 1 не установлен)
                     if (order.get('flags') & 0b1 == 0b1) and (order.get('flags') & 0b10 != 0b10):
                         order_num = str(order.get('order_num'))
                         current_active_orders.add(order_num)
+                        # Добавляем ордер в словарь current_orders_dict
                         current_orders_dict[order_num] = order
+            print('\n')
+            for item in current_orders_dict.items():
+                print(f'current_orders_dict: {item}')
 
             # Находим ордера, которые были удалены с биржи или стали неактивными
             orders_to_remove = active_orders_set - current_active_orders
+            # print(f'orders_to_remove: {orders_to_remove}')
 
             # Удаляем неактивные ордера из нашего списка
             if orders_to_remove:
@@ -210,8 +216,8 @@ def sync_active_orders():
                 all_rows_order_list = [item for item in all_rows_order_list
                                        if str(item['order_num']) not in orders_to_remove]
                 removed_count = original_count - len(all_rows_order_list)
-                if removed_count > 0:
-                    print(f"Удалено {removed_count} неактивных ордеров: {orders_to_remove}")
+                # if removed_count > 0:
+                #     print(f"Удалено {removed_count} неактивных ордеров: {orders_to_remove}")
 
             # Добавляем новые активные ордера, которых нет в нашем списке
             existing_order_nums = {str(item['order_num']) for item in all_rows_order_list}
@@ -221,7 +227,7 @@ def sync_active_orders():
                 order_data = current_orders_dict[order_num]
                 # Добавляем ордер в список (передаем сам order_data, не order_data.get('data'))
                 _add_order_to_list_from_data(order_data)
-                print(f"Добавлен активный ордер при синхронизации: {order_num}")
+                # print(f"Добавлен активный ордер при синхронизации: {order_num}")
 
             # Обновляем список активных ордеров
             active_orders_set = current_active_orders
@@ -243,22 +249,28 @@ def sync_portfolio_positions():
         # Получаем информацию по инструментам в портфеле
         # Получаем все классы инструментов
         class_codes = qp_provider.get_classes_list()['data']  # Режимы торгов через запятую
-        class_codes_list = class_codes[:-1].split(',')  # Удаляем последнюю запятую, разбиваем значения по запятой в список режимов торгов
+        class_codes_list = class_codes[:-1].split(
+            ',')  # Удаляем последнюю запятую, разбиваем значения по запятой в список режимов торгов
         trade_accounts = qp_provider.get_trade_accounts()['data']  # Все торговые счета
         money_limits = qp_provider.get_money_limits()['data']  # Все денежные лимиты (остатки на счетах)
 
         i = 0  # Номер учетной записи
         for trade_account in trade_accounts:  # Пробегаемся по всем счетам (Коды клиента/Фирма/Счет)
-            trade_account_class_codes = trade_account['class_codes'][1:-1].split('|')  # Режимы торгов счета. Удаляем первую и последнюю вертикальную черту, разбиваем значения по вертикальной черте
-            intersection_class_codes = list(set(trade_account_class_codes).intersection(class_codes_list))  # Режимы торгов, которые есть и в списке и в торговом счете
+            trade_account_class_codes = trade_account['class_codes'][1:-1].split(
+                '|')  # Режимы торгов счета. Удаляем первую и последнюю вертикальную черту, разбиваем значения по вертикальной черте
+            intersection_class_codes = list(set(trade_account_class_codes).intersection(
+                class_codes_list))  # Режимы торгов, которые есть и в списке и в торговом счете
             firm_id = trade_account['firmid']  # Фирма
             trade_account_id = trade_account['trdaccid']  # Счет
-            client_code = next((moneyLimit['client_code'] for moneyLimit in money_limits if moneyLimit['firmid'] == firm_id), None)  # Код клиента
+            client_code = next(
+                (moneyLimit['client_code'] for moneyLimit in money_limits if moneyLimit['firmid'] == firm_id),
+                None)  # Код клиента
             if firm_id == futures_firm_id:  # Для фирмы фьючерсов
                 active_futures_holdings = [futuresHolding for futuresHolding in
                                            qp_provider.get_futures_holdings()['data'] if
                                            futuresHolding['totalnet'] != 0]  # Активные фьючерсные позиции
-                futures_limit = qp_provider.get_futures_limit(firm_id, trade_account_id, 0, qp_provider.currency)['data']  # Фьючерсные лимиты по денежным средствам (limit_type=0)
+                futures_limit = qp_provider.get_futures_limit(firm_id, trade_account_id, 0, qp_provider.currency)[
+                    'data']  # Фьючерсные лимиты по денежным средствам (limit_type=0)
                 varmargin = futures_limit['varmargin']  # Вариационная маржа
                 accruedint = futures_limit['accruedint']  # Накопленный доход
                 ts_comission = futures_limit['ts_comission']  # ТС комиссия
@@ -289,7 +301,7 @@ def sync_portfolio_positions():
         futures_holdings_response = qp_provider.get_futures_holdings()
         if futures_holdings_response and futures_holdings_response.get('data'):
             active_futures_holdings = [futuresHolding for futuresHolding in futures_holdings_response['data']
-                                      if futuresHolding['totalnet'] != 0]  # Активные фьючерсные позиции
+                                       if futuresHolding['totalnet'] != 0]  # Активные фьючерсные позиции
 
             for active_futures_holding in active_futures_holdings:
                 sec_code = active_futures_holding["sec_code"]
@@ -362,7 +374,8 @@ def sync_portfolio_positions():
                                 theor_price = 0.0
 
                         # Цена последней сделки базового актива (S)
-                        asset_price_response = qp_provider.get_param_ex('SPBFUT', si['base_active_seccode'], 'LAST', trans_id=0)
+                        asset_price_response = qp_provider.get_param_ex('SPBFUT', si['base_active_seccode'], 'LAST',
+                                                                        trans_id=0)
                         asset_price = 0.0
                         if asset_price_response and asset_price_response.get('data'):
                             param_value = asset_price_response['data'].get('param_value')
@@ -383,9 +396,10 @@ def sync_portfolio_positions():
                                 strike_price = 0.0
 
                         # Волатильность опциона (sigma)
-                        VOLATILITY = qp_provider.get_param_ex(class_code, sec_code, 'VOLATILITY', trans_id=0)['data']['param_value']
+                        VOLATILITY = qp_provider.get_param_ex(class_code, sec_code, 'VOLATILITY', trans_id=0)['data'][
+                            'param_value']
                         VOLATILITY = float(VOLATILITY)
-                        # print(f'VOLATILITY - Волатильность опциона: {VOLATILITY}, тип: {type(VOLATILITY)}')
+                        # print(f'{sec_code} VOLATILITY Волатильность опциона: {VOLATILITY}, тип: {type(VOLATILITY)}')
 
                         # Дата исполнения инструмента
                         EXPDATE_image = qp_provider.get_param_ex(class_code, sec_code, 'EXPDATE', trans_id=0)['data'][
@@ -430,10 +444,10 @@ def sync_portfolio_positions():
 
                         # Число дней до экспирации
                         DAYS_TO_MAT_DATE = \
-                        qp_provider.get_param_ex(class_code, sec_code, 'DAYS_TO_MAT_DATE', trans_id=0)['data'][
-                            'param_value']
+                            qp_provider.get_param_ex(class_code, sec_code, 'DAYS_TO_MAT_DATE', trans_id=0)['data'][
+                                'param_value']
                         DAYS_TO_MAT_DATE = float(DAYS_TO_MAT_DATE)
-                        # print(f'DAYS_TO_MAT_DATE - Число дней до погашения: {DAYS_TO_MAT_DATE}, тип: {type(DAYS_TO_MAT_DATE)}')
+                        # print(f'DAYS_TO_MAT_DATE Число дней до погашения: {DAYS_TO_MAT_DATE}, тип: {type(DAYS_TO_MAT_DATE)}')
 
                         # Вычисление TrueVega
                         if DAYS_TO_MAT_DATE == 0:
@@ -445,9 +459,9 @@ def sync_portfolio_positions():
                         option = Option(si["sec_code"], si["base_active_seccode"], EXPDATE, strike_price,
                                         opt_type_converted)
 
-                        # Вычисление Implied Volatility Last, Bid, Offer
+                        # # Вычисление Implied Volatility Last, Bid, Offer
                         # opt_volatility_last = implied_volatility.get_iv_for_option_price(asset_price, option, opt_price)
-                        # # print(f'opt_volatility_last - Implied Volatility Last: {opt_volatility_last}, тип: {type(opt_volatility_last)}')
+                        # print(f'opt_volatility_last IV Last: {opt_volatility_last}, тип: {type(opt_volatility_last)}')
 
                         # Волатильность опциона IMPLIED_VOLATILITY (IV) - через расчет по цене опциона
                         opt_volatility_last = 0.0
@@ -456,11 +470,12 @@ def sync_portfolio_positions():
                                                                                              opt_price)
                             if opt_volatility_last is None:
                                 opt_volatility_last = 0.0
-                        # print(f"Волатильность опциона IMPLIED_VOLATILITY (IV) - через расчет по цене опциона: {opt_volatility_last}")
+                        # print(f"{sec_code} Волатильность опциона IMPLIED_VOLATILITY (IV) opt_volatility_last: {opt_volatility_last}")
 
                         opt_volatility_bid = implied_volatility.get_iv_for_option_price(asset_price, option, bid_price)
                         # print(f'opt_volatility_bid - Implied Volatility Bid: {opt_volatility_bid}, тип: {type(opt_volatility_bid)}')
-                        opt_volatility_offer = implied_volatility.get_iv_for_option_price(asset_price, option, offer_price)
+                        opt_volatility_offer = implied_volatility.get_iv_for_option_price(asset_price, option,
+                                                                                          offer_price)
                         # print(f'opt_volatility_offer - Implied Volatility Offer: {opt_volatility_offer}, тип: {type(opt_volatility_offer)}')
 
                         net_pos = active_futures_holding['totalnet']
@@ -475,6 +490,10 @@ def sync_portfolio_positions():
                             open_datetime = ""
                             open_price = 0.0
                             open_iv = 0.0
+                        # print('\n')
+                        # print(f'{sec_code} open_datetime - OpenDateTime: {open_datetime}, тип: {type(open_datetime)}')
+                        # print(f'{sec_code} open_price - OpenPrice: {open_price}, тип: {type(open_price)}')
+                        # print(f'{sec_code} open_iv - OpenIV: {open_iv}, тип: {type(open_iv)}')
 
                         # Добавляем данные в список
                         portfolio_positions.append({
@@ -496,10 +515,14 @@ def sync_portfolio_positions():
                             'bidIV': round(opt_volatility_bid, 2) if opt_volatility_bid is not None else 0,
                             'lastIV': round(opt_volatility_last, 2) if opt_volatility_last is not None else 0,
                             'askIV': round(opt_volatility_offer, 2) if opt_volatility_offer is not None else 0,
-                            'P/L theor': round(VOLATILITY - open_iv, 2) if net_pos > 0 else round(open_iv - VOLATILITY, 2),
+                            'P/L theor': round(VOLATILITY - open_iv, 2) if net_pos > 0 else round(open_iv - VOLATILITY,
+                                                                                                  2),
                             # 'P/L last': round(opt_volatility_last - open_iv, 2) if net_pos > 0 else round(open_iv - opt_volatility_last, 2),
-                            'P/L last': 0 if opt_volatility_last == 0 else (round(opt_volatility_last - open_iv, 2) if net_pos > 0 else round(open_iv - opt_volatility_last, 2)),
-                            'P/L market': round(opt_volatility_bid - open_iv, 2) if net_pos > 0 else round(open_iv - opt_volatility_offer, 2),
+                            'P/L last': 0 if opt_volatility_last == 0 else (
+                                round(opt_volatility_last - open_iv, 2) if net_pos > 0 else round(
+                                    open_iv - opt_volatility_last, 2)),
+                            'P/L market': round(opt_volatility_bid - open_iv, 2) if net_pos > 0 else round(
+                                open_iv - opt_volatility_offer, 2),
                             'Vega': round(Vega * net_pos, 2),
                             'TrueVega': round(TrueVega * net_pos, 2)
                         })
@@ -513,7 +536,7 @@ def sync_portfolio_positions():
             # Создаем пустой файл с заголовками
             empty_df = pd.DataFrame(columns=[
                 'ticker', 'net_pos', 'strike', 'option_type', 'expdate', 'option_base',
-                 'OpenDateTime', 'OpenPrice', 'OpenIV', 'time_last', 'bid', 'last', 'ask', 'theor',
+                'OpenDateTime', 'OpenPrice', 'OpenIV', 'time_last', 'bid', 'last', 'ask', 'theor',
                 'QuikVola', 'bidIV', 'lastIV', 'askIV', 'P/L theor', 'P/L last', 'P/L market',
                 'Vega', 'TrueVega'
             ])
@@ -523,6 +546,7 @@ def sync_portfolio_positions():
         # Получаем список тикеров из портфеля
         tickers = [item['ticker'] for item in portfolio_positions]
         # print(f'portfolio_positions tickers: {tickers}')
+
         # Очищаем файл со сделками QUIK_Stream_Trades.csv - удаляем старые сделки с тикерами, которых уже нет в портфеле
         # Чтение CSV файла
         df = pd.read_csv(temp_obj.substitute(name_file='QUIK_Stream_Trades.csv'), encoding='utf-8', delimiter=';')
@@ -530,7 +554,6 @@ def sync_portfolio_positions():
         df = df[df['ticker'].isin(tickers)]
         # Сохраняем обновленный CSV файл
         df.to_csv(temp_obj.substitute(name_file='QUIK_Stream_Trades.csv'), encoding='utf-8', index=False, sep=';')
-
 
     except Exception as e:
         print(f"Ошибка при синхронизации позиций портфеля: {e}")
@@ -680,6 +703,7 @@ def MyPosHistorySave():
             time.sleep(30)
             continue
 
+
 # Запуск функции в отдельном потоке
 def start_mypos_history_save():
     """Запускает поток для периодического сохранения истории позиций"""
@@ -687,6 +711,7 @@ def start_mypos_history_save():
     history_thread.start()
     print("Поток сохранения истории позиций запущен")
     return history_thread
+
 
 def calculate_open_data_open_price_open_iv(sec_code, net_pos):
     """
@@ -713,10 +738,10 @@ def calculate_open_data_open_price_open_iv(sec_code, net_pos):
         instrument_trades_df['datetime'] = pd.to_datetime(instrument_trades_df['datetime'], format='%d.%m.%Y %H:%M:%S')
 
         # Сортировка по дате
-        instrument_trades_df = instrument_trades_df.sort_values('datetime', ascending=False) # обратный порядок
+        instrument_trades_df = instrument_trades_df.sort_values('datetime', ascending=False)  # обратный порядок
         # instrument_trades_df = instrument_trades_df.sort_values('datetime')
 
-        # Применяем изменение знака для объема при продаже
+        # Применяем изменение знака для объема при продаже (умножаем объем сделки на -1)
         instrument_trades_df.loc[instrument_trades_df['operation'] == 'Продажа', 'volume'] *= -1
 
         # print(instrument_trades_df)
@@ -756,16 +781,12 @@ def calculate_open_data_open_price_open_iv(sec_code, net_pos):
         # Дата первой сделки (самой старой сделки, она в конце списка)
         OpenDateTime = selected_df.iloc[-1]['datetime'].strftime('%d.%m.%Y %H:%M:%S')
 
-        # Удаляем из списка selected_trades сделки противоположной направленности selected_trades['volume'] общей позиции required_volume = net_pos
+        # Удаляем из списка selected_trades сделки противоположной направленности
         # для правильного расчета средневзвешенных значений цены и волатильности
-        # Удаляем сделки противоположной направленности
         if selected_trades:  # Проверяем, что список не пуст
             # Создаем новый список без противоположных сделок
             filtered_trades = []
-            print(f"Список до фильтрации {sec_code} net_pos {net_pos}: {len(selected_trades)}")
-            if sec_code == 'RI95000BO6':
-                print(f"Список до фильтрации {sec_code} net_pos {net_pos}: {selected_trades}")
-
+            # print(f"\nСписок до фильтрации {sec_code} net_pos {net_pos}: {len(selected_trades)}")
 
             # Проходим по всем сделкам
             for trade in selected_trades:
@@ -775,14 +796,17 @@ def calculate_open_data_open_price_open_iv(sec_code, net_pos):
                 if net_pos > 0:
                     if volume > 0:  # Оставляем только сделки с положительным объемом
                         filtered_trades.append(trade)
+                        # print(f"Сделка LONG после фильтрации: {trade['datetime']}, {volume}, {trade['price']}, {trade['volatility']}")
                 # Если required_volume отрицательный - удаляем сделки с положительным объемом
                 else:
                     if volume < 0:  # Оставляем только сделки с отрицательным объемом
                         filtered_trades.append(trade)
+                        # print(f"Сделка SHORT после фильтрации: {trade['datetime']}, {volume}, {trade['price']}, {trade['volatility']}")
+
+            # print(f"Список после фильтрации {sec_code} net_pos {net_pos}: {len(filtered_trades)}")
 
             # Заменяем исходный список отфильтрованными сделками
             selected_trades = filtered_trades
-        print(f"Сделок для инструмента после фильтрации {sec_code} net_pos {net_pos}: {len(selected_trades)}")
 
         # Расчет средневзвешенной цены и волатильности открытия методом FIFO
         # selected_trades - это отфильтрованный на предыдущем этапе список словарей
@@ -811,7 +835,8 @@ def calculate_open_data_open_price_open_iv(sec_code, net_pos):
         s = fifo.inventory
         OpenIV = calculate_weighted_average(s)
         # print(f'Средневзвешенная волатильность {sec_code}: {OpenIV}')
-
+        #
+        # print('\n')
 
         if not selected_trades:
             print(f"Предупреждение: Недостаточно сделок для инструмента {sec_code}")
@@ -851,7 +876,7 @@ def _add_order_to_list_from_data(order_data):
         # Проверяем, нет ли уже такой заявки в списке
         existing_order = next((item for item in all_rows_order_list if str(item['order_num']) == order_num), None)
         if existing_order:
-            print(f"Заявка с order_num {order_num} уже существует, пропускаем")
+            # print(f"Заявка с order_num {order_num} уже существует, пропускаем")
             return
 
         # Определяем тип операции
@@ -952,6 +977,7 @@ def sync_orders_worker():
             print(f"Ошибка в потоке синхронизации: {e}")
             time.sleep(5)  # При ошибке ждем 5 секунд перед повтором
 
+
 # Запуск потока синхронизации при старте
 def start_sync_thread():
     sync_thread = threading.Thread(target=sync_orders_worker, daemon=True)
@@ -972,7 +998,7 @@ def _on_order_impl(data):
 
         # Проверяем, что ордер активен (бит 0 установлен) и не снят (бит 1 не установлен)
         if (order_data.get('data').get('flags') & 0b1 != 0b1) or (order_data.get('data').get('flags') & 0b10 == 0b10):
-            print(f"{format_datetime(order_data.get('data').get('datetime'))} Заявка снята: {order_num}")
+            # print(f"{format_datetime(order_data.get('data').get('datetime'))} Заявка снята: {order_num}")
             # Удаляем из списка активных ордеров
             active_orders_set.discard(order_num)
             # Удаляем из нашего списка
@@ -980,9 +1006,9 @@ def _on_order_impl(data):
             all_rows_order_list = [item for item in all_rows_order_list if str(item['order_num']) != order_num]
             # removed_count = original_count - len(all_rows_order_list)
             # if removed_count > 0:
-                # print(f"Удалено {removed_count} записей с order_num: {order_num}")
+            # print(f"Удалено {removed_count} записей с order_num: {order_num}")
         else:
-            print(f"{format_datetime(order_data.get('data').get('datetime'))} Новая заявка: {order_num}")
+            # print(f"{format_datetime(order_data.get('data').get('datetime'))} Новая заявка: {order_num}")
             # Добавляем в список активных ордеров
             active_orders_set.add(order_num)
 
@@ -1025,7 +1051,7 @@ def _on_order_impl(data):
             # Проверяем, нет ли уже такой заявки в списке
             existing_order = next((item for item in all_rows_order_list if str(item['order_num']) == order_num), None)
             if existing_order:
-                print(f"Заявка с order_num {order_num} уже существует, пропускаем")
+                # print(f"Заявка с order_num {order_num} уже существует, пропускаем")
                 return
 
             # Добавляем заявку в список
@@ -1056,7 +1082,6 @@ def _on_order_impl(data):
                                              'volatility'])
             empty_df.to_csv(temp_obj.substitute(name_file='QUIK_Stream_Orders.csv'), sep=';', encoding='utf-8',
                             index=False)
-
 
 
 def _on_trade_impl(data):
