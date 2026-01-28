@@ -87,6 +87,10 @@ def get_object_from_json_endpoint_with_retry(url, method='GET', params={}, max_d
             print(f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} Timeout при запросе к {url}")
             raise
 
+
+# # Create the app
+# app = dash.Dash(__name__)
+
 # My positions data
 with open(temp_obj.substitute(name_file='QUIK_MyPos.csv'), 'r') as file:
     df_table = pd.read_csv(file, encoding='UTF-8', sep=';')
@@ -215,7 +219,7 @@ tab4_content = [  # Таблица моих позиций
             },
             style_data_conditional=[
                 {
-                    'if': {'filter_query': '{ticker} = "Итого"'},
+                    'if': {'filter_query': '{ticker} = "Total"'},
                     'fontWeight': 'bold',
                     'backgroundColor': 'rgb(240, 240, 240)'
                 },
@@ -377,6 +381,7 @@ app.layout = html.Div(children=[
     ])
 ])
 
+
 # --- CALLBACKS ---
 
 # Callback to update the table
@@ -410,6 +415,7 @@ def update_time(n):
         html.Br(),
         html.Pre(info)
     ]
+
 
 # Callback to update the line-graph volatility smile (обновление улыбки волатильности)
 @app.callback(Output('plot_smile', 'figure', allow_duplicate=True),
@@ -549,7 +555,7 @@ def update_output_smile(value, n):
         # print(dff_MyPosOrders['_last_price_timestamp'])
 
         # ASK
-        fig.add_trace(go.Scatter(x=dff_MyPosOrders['_strike'], y=dff_MyPosOrders['_ask_iv'], visible='legendonly',
+        fig.add_trace(go.Scatter(x=dff_MyPosOrders['_strike'], y=dff_MyPosOrders['_ask_iv'],  # visible='legendonly',
                                  mode='markers', text=dff_MyPosOrders['_ask_iv'], textposition='top left',
                                  marker=dict(size=8, symbol="triangle-down", color='red'),
                                  name='Ask',
@@ -559,7 +565,7 @@ def update_output_smile(value, n):
                                  ))
 
         # BID
-        fig.add_trace(go.Scatter(x=dff_MyPosOrders['_strike'], y=dff_MyPosOrders['_bid_iv'], visible='legendonly',
+        fig.add_trace(go.Scatter(x=dff_MyPosOrders['_strike'], y=dff_MyPosOrders['_bid_iv'],  # visible='legendonly',
                                  mode='markers', text=dff_MyPosOrders['_bid_iv'], textposition='top left',
                                  marker=dict(size=8, symbol="triangle-up", color='green'),
                                  name='Bid',
@@ -581,7 +587,7 @@ def update_output_smile(value, n):
 
         # TrueVega позиции
         fig.add_trace(go.Bar(x=df_table_base['strike'], y=df_table_base['TrueVega'], text=df_table_base['TrueVega'],
-                             textposition='auto', name='TrueVega', opacity=0.1), secondary_y=True)
+                             textposition='auto', name='TrueVega', opacity=0.2), secondary_y=True)
 
         # Цена базового актива (вертикальная линия)
         fig.add_vline(x=base_asset_last_price, line_dash='dash', line_color='firebrick')
@@ -710,7 +716,7 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
     return fig
 
 
-# Обновление данных графика истории моей позиции
+# Callback to update the line-graph history MyPosTilt data (обновление данных графика истории моей позиции)
 @app.callback(Output('MyPosTiltHistory', 'figure', allow_duplicate=True),
               [Input('dropdown-selection', 'value'),
                Input('my_slider', 'value'),
@@ -733,7 +739,7 @@ def update_output_MyPosTilt(dropdown_value, slider_value, n):
     file.close()
 
     # ДАННЫЕ ИЗ csv
-    # MyPosHistory.csv history data options volatility
+    # MyPosTilt.csv history data options volatility
     with open(temp_obj.substitute(name_file='MyPosHistory.csv'), 'r') as file:
         df_MyPosTilt = pd.read_csv(file, sep=';')
         df_MyPosTilt = df_MyPosTilt[(df_MyPosTilt.option_base == dropdown_value)]
@@ -743,6 +749,7 @@ def update_output_MyPosTilt(dropdown_value, slider_value, n):
         df_MyPosTilt.index = pd.DatetimeIndex(df_MyPosTilt['DateTime'])
         # df_MyPosTilt = df_MyPosTilt[(df_vol_history.type == radiobutton_value)]
         df_MyPosTilt = df_MyPosTilt[(df_MyPosTilt.DateTime > limit_time)]
+        # print(df_MyPosTilt)
     # Close the file
     file.close()
 
@@ -752,7 +759,7 @@ def update_output_MyPosTilt(dropdown_value, slider_value, n):
         df_trades = pd.read_csv(file, sep=';')
         df_trades = df_trades[(df_trades.option_base == dropdown_value)]
         df_trades['datetime'] = pd.to_datetime(df_trades['datetime'],
-                                                  format='%d.%m.%Y %H:%M:%S')
+                                               format='%d.%m.%Y %H:%M:%S')
         df_trades.index = pd.DatetimeIndex(df_trades['datetime'])
         df_trades = df_trades[(df_trades.datetime > limit_time)]
         # print(df_table)
@@ -820,8 +827,8 @@ def update_output_MyPosTilt(dropdown_value, slider_value, n):
                                      marker=dict(size=8, symbol="triangle-up", color='green'),
                                      name=f'{opt} (купля)',
                                      customdata=df_buy[
-                                        ['volatility', 'option_type', 'price', 'volume', 'expdate']],
-                                        hovertemplate="<b>%{customdata}</b><br>"
+                                         ['volatility', 'option_type', 'price', 'volume', 'expdate']],
+                                     hovertemplate="<b>%{customdata}</b><br>"
                                      ), secondary_y=True, )
 
         if not df_sell.empty:
@@ -973,10 +980,11 @@ def update_output_history_naklon(dropdown_value, slider_value, n):
 
     return fig
 
+
 ## EQUITY HISTORY##
 @app.callback(Output('MyEquityHistory', 'figure', allow_duplicate=True),
               [Input('dropdown-selection', 'value'),
-                  Input('my_slider', 'value'),
+               Input('my_slider', 'value'),
                Input('interval-component', 'n_intervals'),
                ],
               prevent_initial_call=True)
@@ -987,8 +995,7 @@ def update_equity_history(dropdown_value, slider_value, n):
     # print(limit_time)
     # print(df_combined)
 
-
-    df_limited = df_combined[(df_combined.Date > limit_time)] # Ограничение по времени
+    df_limited = df_combined[(df_combined.Date > limit_time)]  # Ограничение по времени
     # Первая запись
     first_value = df_limited['Money'].iloc[0]
     # print(first_value)
@@ -1002,7 +1009,8 @@ def update_equity_history(dropdown_value, slider_value, n):
     # print(f'Доходность за период {slider_value * 5} дн. в процентах: {profit:.2f}%')
 
     # Доходность за период в процентах годовых
-    profit_year = profit / 12 * 100
+    # profit_year = profit / 12 * 100
+    profit_year = (profit * 365) / (slider_value * 5)
     # print(f'Доходность за период в процентах годовых: {profit_year:.2f}%')
 
     # BaseAssetPrice history data DAMP
@@ -1016,7 +1024,6 @@ def update_equity_history(dropdown_value, slider_value, n):
     # Close the file
     file.close()
 
-
     # Create figure with secondary y-axis
     fig = make_subplots(specs=[[{"secondary_y": True}]])
     # fig = make_subplots()
@@ -1025,20 +1032,20 @@ def update_equity_history(dropdown_value, slider_value, n):
     fig.add_trace(go.Scatter(x=df_limited['Date'], y=df_limited['Money'], mode='lines+text',
                              name='Money',
                              line=dict(color='red', width=3, dash='dashdot')),
-                            secondary_y=True,)
+                  secondary_y=True, )
 
     # График GM (гарантийное обеспечение)
     fig.add_trace(go.Scatter(x=df_limited['Date'], y=df_limited['GM'], mode='lines+text',
                              name='GM', visible='legendonly',
                              line=dict(color='gray', width=1, dash='dashdot')),
-                            secondary_y=True,)
+                  secondary_y=True, )
 
     # График Fee (комиссия)
     fig.add_trace(go.Scatter(x=df_limited['Date'], y=df_limited['Fee'], mode='lines+text',
                              name="Comiss",
                              visible='legendonly',
                              line=dict(color='gray', width=1, dash='dashdot')),
-                            secondary_y=True,)
+                  secondary_y=True, )
 
     fig.update_layout(
         annotations=[
@@ -1080,8 +1087,6 @@ def update_equity_history(dropdown_value, slider_value, n):
         ]
     )
 
-
-
     # Легенда справа по центру
     fig.update_layout(
         legend=dict(
@@ -1113,12 +1118,17 @@ def updateTable(n, value):
     # Фильтрация строк по базовому активу
     df_pos = df_pos[df_pos['option_base'] == value]
 
+    # # Замена нулевых и NaN значений 'P/L last' на значения 'P/L theor'
+    # df_pos['P/L last'] = df_pos['P/L last'].replace(0, pd.NA)  # Заменяем 0 на NaN
+    # df_pos['P/L last'] = df_pos['P/L last'].fillna(df_pos['P/L theor'])  # Заменяем NaN на значения из P/L theor
+
     # Замена нулевых значений 'P/L last' на значения 'P/L theor'
     df_pos['P/L last'] = df_pos['P/L last'].mask(df_pos['P/L last'] == 0, df_pos['P/L theor'])
 
     # Вычисление итогов по колонке net_pos
     total_net_pos = df_pos['net_pos'].sum()
     total_theor = df_pos['theor'].sum()
+    # total_theor = (df_pos['theor'] * df_pos['net_pos']).sum()
     total_last = df_pos['last'].sum()
 
     # Theor
@@ -1171,7 +1181,7 @@ def updateTable(n, value):
 
     # Создание строки итогов
     total_row = {col: '' for col in df_pos.columns}
-    total_row['ticker'] = 'Итого'
+    total_row['ticker'] = 'Total'
     total_row['net_pos'] = total_net_pos
     total_row['P/L theor'] = round(weighted_pl_theor, 2)
     total_row['P/L last'] = round(weighted_pl_last, 2)
@@ -1196,7 +1206,7 @@ def updateTrades(n, value):
     # Добавляем столбец с порядковым номером строки, начиная с 1
     df_trades['num'] = range(1, len(df_trades) + 1)
     # Переставляем столбец 'num' в начало
-    cols = ['num'] + [col for col in df_trades.columns if col != 'num']
+    cols = ['num'] + [col for col in df_orders.columns if col != 'num']
     df_trades = df_trades[cols]
     # Преобразование столбца order_num в строку
     df_trades['order_num'] = df_trades['order_num'].astype(str)
@@ -1225,6 +1235,7 @@ def updateOrders(n, value):
     df_orders = df_orders[df_orders['option_base'] == value]
 
     return df_orders.to_dict('records')
+
 
 # Callback to update the graph-gauge Спидометр TrueVega
 @app.callback(
