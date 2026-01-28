@@ -305,9 +305,8 @@ def sync_portfolio_positions():
         tradingstatus = qp_provider.get_param_ex('SPBFUT', first_key, 'TRADINGSTATUS', trans_id=0)['data']['param_value']
         # print(f'Статус торговой сессии tradingstatus: {float(tradingstatus)}')
         if float(tradingstatus) != 1:
-            print('Эта сессия сейчас не идёт!')
+            print('sync_portfolio_positions Эта сессия сейчас не идёт!')
             return
-
 
         # Получаем позиции по фьючерсам
         futures_holdings_response = qp_provider.get_futures_holdings()
@@ -576,8 +575,23 @@ def MyPosHistorySave():
     while True:
         try:
 
-            # Получаем данные портфеля
-            sync_portfolio_positions()
+            # # Получаем данные портфеля
+            # sync_portfolio_positions()
+
+            # Проверка статуса торговой сессии (1 - открыта, 0 - закрыта)
+            # Первый фьючерс в списке MAP
+            first_key = next(iter(MAP))
+            # print(first_key)
+            # Функция param_request заказывает получение параметров Quik
+            request_status = qp_provider.param_request('SPBFUT', first_key, 'TRADINGSTATUS', trans_id=0)[
+                'data']  # Функция заказывает получение параметров Quik
+            # print(f'request_status: {request_status}')
+            tradingstatus = qp_provider.get_param_ex('SPBFUT', first_key, 'TRADINGSTATUS', trans_id=0)['data'][
+                'param_value']
+            # print(f'Статус торговой сессии tradingstatus: {float(tradingstatus)}')
+            if float(tradingstatus) != 1:
+                print('MyPosHistorySave Эта сессия сейчас не идёт!')
+                return
 
             # Проверяем, что df_portfolio существует и не пуст
             if 'df_portfolio' not in globals() or df_portfolio.empty:
@@ -604,85 +618,72 @@ def MyPosHistorySave():
             # Группируем по option_base
             grouped = df.groupby('option_base')
 
-            tradingstatus_ticker = df['option_base'].unique()[0]
-            # print(f'tradingstatus_ticker: {tradingstatus_ticker}')
+            # Обрабатываем каждую группу (тикера) отдельно
+            for option_base, group_data in grouped:
+                # Разделяем на long и short позиции внутри группы
+                long_positions = group_data[group_data['net_pos'] > 0]
+                short_positions = group_data[group_data['net_pos'] < 0]
 
-            # Функция param_request заказывает получение параметров Quik
-            request_status = qp_provider.param_request('SPBFUT', tradingstatus_ticker, 'TRADINGSTATUS', trans_id=0)['data'] # Функция заказывает получение параметров Quik
-            # print(f'request_status: {request_status}')
-            # Проверка статуса торговой сессии (1 - открыта, 0 - закрыта)
-            tradingstatus = qp_provider.get_param_ex('SPBFUT', tradingstatus_ticker, 'TRADINGSTATUS', trans_id=0)['data']['param_value']
-            # print(f'Статус торговой сессии tradingstatus: {tradingstatus}')
-            if float(tradingstatus) == 0:
-                print('Торговая сессия закрыта!')
-                return
-            else:
-                # Обрабатываем каждую группу (тикера) отдельно
-                for option_base, group_data in grouped:
-                    # Разделяем на long и short позиции внутри группы
-                    long_positions = group_data[group_data['net_pos'] > 0]
-                    short_positions = group_data[group_data['net_pos'] < 0]
+                # Вычисляем средневзвешенные значения для long позиций
+                if not long_positions.empty and long_positions['TrueVega'].abs().sum() != 0:
+                    # Используем TrueVega как веса
+                    weights_long = long_positions['TrueVega'].abs()
+                    total_weight_long = weights_long.sum()
 
-                    # Вычисляем средневзвешенные значения для long позиций
-                    if not long_positions.empty and long_positions['TrueVega'].abs().sum() != 0:
-                        # Используем TrueVega как веса
-                        weights_long = long_positions['TrueVega'].abs()
-                        total_weight_long = weights_long.sum()
+                    # Заменяем нулевые значения 'lastIV' на 'QuikVola' (theor)
+                    lastIV_corrected = long_positions['lastIV'].replace(0, pd.NA).fillna(long_positions['QuikVola'])
 
-                        # Заменяем нулевые значения 'lastIV' на 'QuikVola' (theor)
-                        lastIV_corrected = long_positions['lastIV'].replace(0, pd.NA).fillna(long_positions['QuikVola'])
+                    # Средневзвешенные значения
+                    theor_long = (long_positions['QuikVola'] * weights_long).sum() / total_weight_long
+                    last_long = (lastIV_corrected * weights_long).sum() / total_weight_long
+                    bid_long = (long_positions['bidIV'] * weights_long).sum() / total_weight_long
+                    ask_long = (long_positions['askIV'] * weights_long).sum() / total_weight_long
+                    open_long = (long_positions['OpenIV'] * weights_long).sum() / total_weight_long
 
-                        # Средневзвешенные значения
-                        theor_long = (long_positions['QuikVola'] * weights_long).sum() / total_weight_long
-                        last_long = (lastIV_corrected * weights_long).sum() / total_weight_long
-                        bid_long = (long_positions['bidIV'] * weights_long).sum() / total_weight_long
-                        ask_long = (long_positions['askIV'] * weights_long).sum() / total_weight_long
-                        open_long = (long_positions['OpenIV'] * weights_long).sum() / total_weight_long
+                    # Создаем строку для long позиций
+                    long_row = {
+                        'DateTime': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        'option_base': option_base,
+                        'pos': 'long',
+                        'theor': round(theor_long, 2),
+                        'last': round(last_long, 2),
+                        'market': round(bid_long, 2),
+                        'mypos': round(open_long, 2)
+                    }
+                    rows_to_write.append(long_row)
 
-                        # Создаем строку для long позиций
-                        long_row = {
-                            'DateTime': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                            'option_base': option_base,
-                            'pos': 'long',
-                            'theor': round(theor_long, 2),
-                            'last': round(last_long, 2),
-                            'market': round(bid_long, 2),
-                            'mypos': round(open_long, 2)
-                        }
-                        rows_to_write.append(long_row)
+                # Вычисляем средневзвешенные значения для short позиций
+                if not short_positions.empty and short_positions['TrueVega'].abs().sum() != 0:
+                    # Используем TrueVega как веса
+                    weights_short = short_positions['TrueVega'].abs()
+                    total_weight_short = weights_short.sum()
 
-                    # Вычисляем средневзвешенные значения для short позиций
-                    if not short_positions.empty and short_positions['TrueVega'].abs().sum() != 0:
-                        # Используем TrueVega как веса
-                        weights_short = short_positions['TrueVega'].abs()
-                        total_weight_short = weights_short.sum()
+                    # Заменяем нулевые значения 'lastIV' на 'QuikVola' (theor)
+                    lastIV_corrected = short_positions['lastIV'].replace(0, pd.NA).fillna(
+                        short_positions['QuikVola']).infer_objects(copy=False)
+                    # lastIV_corrected = short_positions['lastIV'].replace(0, pd.NA).fillna(short_positions['QuikVola'])
+                    # # lastIV_corrected = short_positions['lastIV'].replace(0, pd.NA).fillna(short_positions['QuikVola'])
+                    # lastIV_corrected = short_positions['lastIV'].replace(0, pd.NA).fillna(
+                    #     short_positions['QuikVola']).infer_objects(copy=False)
 
-                        # Заменяем нулевые значения 'lastIV' на 'QuikVola' (theor)
-                        lastIV_corrected = short_positions['lastIV'].replace(0, pd.NA).fillna(
-                            short_positions['QuikVola']).infer_objects(copy=False)
-                        # lastIV_corrected = short_positions['lastIV'].replace(0, pd.NA).fillna(short_positions['QuikVola'])
-                        # # lastIV_corrected = short_positions['lastIV'].replace(0, pd.NA).fillna(short_positions['QuikVola'])
-                        # lastIV_corrected = short_positions['lastIV'].replace(0, pd.NA).fillna(
-                        #     short_positions['QuikVola']).infer_objects(copy=False)
+                    # Средневзвешенные значения
+                    theor_short = (short_positions['QuikVola'] * weights_short).sum() / total_weight_short
+                    last_short = (lastIV_corrected * weights_short).sum() / total_weight_short
+                    bid_short = (short_positions['bidIV'] * weights_short).sum() / total_weight_short
+                    ask_short = (short_positions['askIV'] * weights_short).sum() / total_weight_short
+                    open_short = (short_positions['OpenIV'] * weights_short).sum() / total_weight_short
 
-                        # Средневзвешенные значения
-                        theor_short = (short_positions['QuikVola'] * weights_short).sum() / total_weight_short
-                        last_short = (lastIV_corrected * weights_short).sum() / total_weight_short
-                        bid_short = (short_positions['bidIV'] * weights_short).sum() / total_weight_short
-                        ask_short = (short_positions['askIV'] * weights_short).sum() / total_weight_short
-                        open_short = (short_positions['OpenIV'] * weights_short).sum() / total_weight_short
-
-                        # Создаем строку для short позиций
-                        short_row = {
-                            'DateTime': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                            'option_base': option_base,
-                            'pos': 'short',
-                            'theor': round(theor_short, 2),
-                            'last': round(last_short, 2),
-                            'market': round(ask_short, 2),
-                            'mypos': round(open_short, 2)
-                        }
-                        rows_to_write.append(short_row)
+                    # Создаем строку для short позиций
+                    short_row = {
+                        'DateTime': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        'option_base': option_base,
+                        'pos': 'short',
+                        'theor': round(theor_short, 2),
+                        'last': round(last_short, 2),
+                        'market': round(ask_short, 2),
+                        'mypos': round(open_short, 2)
+                    }
+                    rows_to_write.append(short_row)
 
                 # Записываем данные в CSV файл
                 if rows_to_write:

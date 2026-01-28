@@ -1113,17 +1113,12 @@ def updateTable(n, value):
     # Фильтрация строк по базовому активу
     df_pos = df_pos[df_pos['option_base'] == value]
 
-    # # Замена нулевых и NaN значений 'P/L last' на значения 'P/L theor'
-    # df_pos['P/L last'] = df_pos['P/L last'].replace(0, pd.NA)  # Заменяем 0 на NaN
-    # df_pos['P/L last'] = df_pos['P/L last'].fillna(df_pos['P/L theor'])  # Заменяем NaN на значения из P/L theor
-
     # Замена нулевых значений 'P/L last' на значения 'P/L theor'
     df_pos['P/L last'] = df_pos['P/L last'].mask(df_pos['P/L last'] == 0, df_pos['P/L theor'])
 
     # Вычисление итогов по колонке net_pos
     total_net_pos = df_pos['net_pos'].sum()
     total_theor = df_pos['theor'].sum()
-    # total_theor = (df_pos['theor'] * df_pos['net_pos']).sum()
     total_last = df_pos['last'].sum()
 
     # Theor
