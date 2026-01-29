@@ -82,13 +82,11 @@ def start_main_functions():
     try:
         # Подключение к QUIK
         qp_provider = QuikPy()
-
+        # Сразу выполняем синхронизацию инструментов портфеля и активных ордеров
+        sync_portfolio_positions()
+        sync_active_orders()
         # Запуск сохранения истории позиций
         start_mypos_history_save()
-
-        # Сразу выполняем синхронизацию активных ордеров и инструментов портфеля
-        sync_active_orders()
-        sync_portfolio_positions()
 
         # Запускаем поток синхронизации
         start_sync_thread()
@@ -305,7 +303,7 @@ def sync_portfolio_positions():
         tradingstatus = qp_provider.get_param_ex('SPBFUT', first_key, 'TRADINGSTATUS', trans_id=0)['data']['param_value']
         # print(f'Статус торговой сессии tradingstatus: {float(tradingstatus)}')
         if float(tradingstatus) != 1:
-            print('sync_portfolio_positions Эта сессия сейчас не идёт!')
+            print('sync_portfolio_positions: Эта сессия сейчас не идёт!')
             return
 
         # Получаем позиции по фьючерсам
@@ -575,9 +573,6 @@ def MyPosHistorySave():
     while True:
         try:
 
-            # # Получаем данные портфеля
-            # sync_portfolio_positions()
-
             # Проверка статуса торговой сессии (1 - открыта, 0 - закрыта)
             # Первый фьючерс в списке MAP
             first_key = next(iter(MAP))
@@ -591,124 +586,121 @@ def MyPosHistorySave():
             # print(f'Статус торговой сессии tradingstatus: {float(tradingstatus)}')
             if float(tradingstatus) != 1:
                 print('MyPosHistorySave Эта сессия сейчас не идёт!')
-                return
+            else:
+                # Проверяем, что df_portfolio существует и не пуст
+                if 'df_portfolio' not in globals() or df_portfolio.empty:
+                    time.sleep(30)
+                    continue
+                # Создаем копию датафрейма для обработки
+                df = df_portfolio.copy()
+                # Конвертируем net_pos в числовой формат, если нужно
+                df['net_pos'] = pd.to_numeric(df['net_pos'], errors='coerce')
+                df['TrueVega'] = pd.to_numeric(df['TrueVega'], errors='coerce')
+                df['QuikVola'] = pd.to_numeric(df['QuikVola'], errors='coerce')
+                df['lastIV'] = pd.to_numeric(df['lastIV'], errors='coerce')
+                df['bidIV'] = pd.to_numeric(df['bidIV'], errors='coerce')
+                df['askIV'] = pd.to_numeric(df['askIV'], errors='coerce')
+                df['OpenIV'] = pd.to_numeric(df['OpenIV'], errors='coerce')
 
-            # Проверяем, что df_portfolio существует и не пуст
-            if 'df_portfolio' not in globals() or df_portfolio.empty:
+                # Удаляем строки с NaN в ключевых столбцах
+                df = df.dropna(subset=['net_pos', 'TrueVega'])
+                # Подготавливаем список строк для записи в CSV
+                rows_to_write = []
+
+                # Группируем по option_base
+                grouped = df.groupby('option_base')
+
+                # Обрабатываем каждую группу (тикера) отдельно
+                for option_base, group_data in grouped:
+                    # Разделяем на long и short позиции внутри группы
+                    long_positions = group_data[group_data['net_pos'] > 0]
+                    short_positions = group_data[group_data['net_pos'] < 0]
+
+                    # Вычисляем средневзвешенные значения для long позиций
+                    if not long_positions.empty and long_positions['TrueVega'].abs().sum() != 0:
+                        # Используем TrueVega как веса
+                        weights_long = long_positions['TrueVega'].abs()
+                        total_weight_long = weights_long.sum()
+
+                        # Заменяем нулевые значения 'lastIV' на 'QuikVola' (theor)
+                        lastIV_corrected = long_positions['lastIV'].replace(0, pd.NA).fillna(long_positions['QuikVola'])
+
+                        # Средневзвешенные значения
+                        theor_long = (long_positions['QuikVola'] * weights_long).sum() / total_weight_long
+                        last_long = (lastIV_corrected * weights_long).sum() / total_weight_long
+                        bid_long = (long_positions['bidIV'] * weights_long).sum() / total_weight_long
+                        ask_long = (long_positions['askIV'] * weights_long).sum() / total_weight_long
+                        open_long = (long_positions['OpenIV'] * weights_long).sum() / total_weight_long
+
+                        # Создаем строку для long позиций
+                        long_row = {
+                            'DateTime': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                            'option_base': option_base,
+                            'pos': 'long',
+                            'theor': round(theor_long, 2),
+                            'last': round(last_long, 2),
+                            'market': round(bid_long, 2),
+                            'mypos': round(open_long, 2)
+                        }
+                        rows_to_write.append(long_row)
+
+                    # Вычисляем средневзвешенные значения для short позиций
+                    if not short_positions.empty and short_positions['TrueVega'].abs().sum() != 0:
+                        # Используем TrueVega как веса
+                        weights_short = short_positions['TrueVega'].abs()
+                        total_weight_short = weights_short.sum()
+
+                        # Заменяем нулевые значения 'lastIV' на 'QuikVola' (theor)
+                        lastIV_corrected = short_positions['lastIV'].replace(0, pd.NA).fillna(
+                            short_positions['QuikVola']).infer_objects(copy=False)
+                        # lastIV_corrected = short_positions['lastIV'].replace(0, pd.NA).fillna(short_positions['QuikVola'])
+                        # # lastIV_corrected = short_positions['lastIV'].replace(0, pd.NA).fillna(short_positions['QuikVola'])
+                        # lastIV_corrected = short_positions['lastIV'].replace(0, pd.NA).fillna(
+                        #     short_positions['QuikVola']).infer_objects(copy=False)
+
+                        # Средневзвешенные значения
+                        theor_short = (short_positions['QuikVola'] * weights_short).sum() / total_weight_short
+                        last_short = (lastIV_corrected * weights_short).sum() / total_weight_short
+                        bid_short = (short_positions['bidIV'] * weights_short).sum() / total_weight_short
+                        ask_short = (short_positions['askIV'] * weights_short).sum() / total_weight_short
+                        open_short = (short_positions['OpenIV'] * weights_short).sum() / total_weight_short
+
+                        # Создаем строку для short позиций
+                        short_row = {
+                            'DateTime': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                            'option_base': option_base,
+                            'pos': 'short',
+                            'theor': round(theor_short, 2),
+                            'last': round(last_short, 2),
+                            'market': round(ask_short, 2),
+                            'mypos': round(open_short, 2)
+                        }
+                        rows_to_write.append(short_row)
+
+                    # Записываем данные в CSV файл
+                    if rows_to_write:
+                        # Определяем имя файла
+                        filename = temp_obj.substitute(name_file='MyPosHistory.csv')
+
+                        # Создаем DataFrame и записываем в CSV
+                        df_history = pd.DataFrame(rows_to_write)
+
+                        # Проверяем, существует ли файл
+                        try:
+                            with open(filename, 'r') as f:
+                                file_exists = True
+                        except FileNotFoundError:
+                            file_exists = False
+
+                        # Записываем в файл (добавляем или создаем новый)
+                        with open(filename, 'a', newline='', encoding='utf-8') as f:
+                            if file_exists:
+                                df_history.to_csv(f, index=False, sep=';', header=False)
+                            else:
+                                df_history.to_csv(f, index=False, sep=';')
+
+                # Ждем 30 секунд перед следующей итерацией
                 time.sleep(30)
-                continue
-
-            # Создаем копию датафрейма для обработки
-            df = df_portfolio.copy()
-
-            # Конвертируем net_pos в числовой формат, если нужно
-            df['net_pos'] = pd.to_numeric(df['net_pos'], errors='coerce')
-            df['TrueVega'] = pd.to_numeric(df['TrueVega'], errors='coerce')
-            df['QuikVola'] = pd.to_numeric(df['QuikVola'], errors='coerce')
-            df['lastIV'] = pd.to_numeric(df['lastIV'], errors='coerce')
-            df['bidIV'] = pd.to_numeric(df['bidIV'], errors='coerce')
-            df['askIV'] = pd.to_numeric(df['askIV'], errors='coerce')
-            df['OpenIV'] = pd.to_numeric(df['OpenIV'], errors='coerce')
-
-            # Удаляем строки с NaN в ключевых столбцах
-            df = df.dropna(subset=['net_pos', 'TrueVega'])
-            # Подготавливаем список строк для записи в CSV
-            rows_to_write = []
-
-            # Группируем по option_base
-            grouped = df.groupby('option_base')
-
-            # Обрабатываем каждую группу (тикера) отдельно
-            for option_base, group_data in grouped:
-                # Разделяем на long и short позиции внутри группы
-                long_positions = group_data[group_data['net_pos'] > 0]
-                short_positions = group_data[group_data['net_pos'] < 0]
-
-                # Вычисляем средневзвешенные значения для long позиций
-                if not long_positions.empty and long_positions['TrueVega'].abs().sum() != 0:
-                    # Используем TrueVega как веса
-                    weights_long = long_positions['TrueVega'].abs()
-                    total_weight_long = weights_long.sum()
-
-                    # Заменяем нулевые значения 'lastIV' на 'QuikVola' (theor)
-                    lastIV_corrected = long_positions['lastIV'].replace(0, pd.NA).fillna(long_positions['QuikVola'])
-
-                    # Средневзвешенные значения
-                    theor_long = (long_positions['QuikVola'] * weights_long).sum() / total_weight_long
-                    last_long = (lastIV_corrected * weights_long).sum() / total_weight_long
-                    bid_long = (long_positions['bidIV'] * weights_long).sum() / total_weight_long
-                    ask_long = (long_positions['askIV'] * weights_long).sum() / total_weight_long
-                    open_long = (long_positions['OpenIV'] * weights_long).sum() / total_weight_long
-
-                    # Создаем строку для long позиций
-                    long_row = {
-                        'DateTime': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                        'option_base': option_base,
-                        'pos': 'long',
-                        'theor': round(theor_long, 2),
-                        'last': round(last_long, 2),
-                        'market': round(bid_long, 2),
-                        'mypos': round(open_long, 2)
-                    }
-                    rows_to_write.append(long_row)
-
-                # Вычисляем средневзвешенные значения для short позиций
-                if not short_positions.empty and short_positions['TrueVega'].abs().sum() != 0:
-                    # Используем TrueVega как веса
-                    weights_short = short_positions['TrueVega'].abs()
-                    total_weight_short = weights_short.sum()
-
-                    # Заменяем нулевые значения 'lastIV' на 'QuikVola' (theor)
-                    lastIV_corrected = short_positions['lastIV'].replace(0, pd.NA).fillna(
-                        short_positions['QuikVola']).infer_objects(copy=False)
-                    # lastIV_corrected = short_positions['lastIV'].replace(0, pd.NA).fillna(short_positions['QuikVola'])
-                    # # lastIV_corrected = short_positions['lastIV'].replace(0, pd.NA).fillna(short_positions['QuikVola'])
-                    # lastIV_corrected = short_positions['lastIV'].replace(0, pd.NA).fillna(
-                    #     short_positions['QuikVola']).infer_objects(copy=False)
-
-                    # Средневзвешенные значения
-                    theor_short = (short_positions['QuikVola'] * weights_short).sum() / total_weight_short
-                    last_short = (lastIV_corrected * weights_short).sum() / total_weight_short
-                    bid_short = (short_positions['bidIV'] * weights_short).sum() / total_weight_short
-                    ask_short = (short_positions['askIV'] * weights_short).sum() / total_weight_short
-                    open_short = (short_positions['OpenIV'] * weights_short).sum() / total_weight_short
-
-                    # Создаем строку для short позиций
-                    short_row = {
-                        'DateTime': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                        'option_base': option_base,
-                        'pos': 'short',
-                        'theor': round(theor_short, 2),
-                        'last': round(last_short, 2),
-                        'market': round(ask_short, 2),
-                        'mypos': round(open_short, 2)
-                    }
-                    rows_to_write.append(short_row)
-
-                # Записываем данные в CSV файл
-                if rows_to_write:
-                    # Определяем имя файла
-                    filename = temp_obj.substitute(name_file='MyPosHistory.csv')
-
-                    # Создаем DataFrame и записываем в CSV
-                    df_history = pd.DataFrame(rows_to_write)
-
-                    # Проверяем, существует ли файл
-                    try:
-                        with open(filename, 'r') as f:
-                            file_exists = True
-                    except FileNotFoundError:
-                        file_exists = False
-
-                    # Записываем в файл (добавляем или создаем новый)
-                    with open(filename, 'a', newline='', encoding='utf-8') as f:
-                        if file_exists:
-                            df_history.to_csv(f, index=False, sep=';', header=False)
-                        else:
-                            df_history.to_csv(f, index=False, sep=';')
-
-            # Ждем 30 секунд перед следующей итерацией
-            time.sleep(30)
 
         except Exception as e:
             print(f"Ошибка в MyPosHistorySave: {e}")
