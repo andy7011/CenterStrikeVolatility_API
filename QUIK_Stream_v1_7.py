@@ -586,6 +586,7 @@ def MyPosHistorySave():
             # print(f'Статус торговой сессии tradingstatus: {float(tradingstatus)}')
             if float(tradingstatus) != 1:
                 print('MyPosHistorySave Эта сессия сейчас не идёт!')
+                time.sleep(30)
             else:
                 # Проверяем, что df_portfolio существует и не пуст
                 if 'df_portfolio' not in globals() or df_portfolio.empty:
