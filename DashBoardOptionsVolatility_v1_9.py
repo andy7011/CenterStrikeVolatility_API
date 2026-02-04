@@ -87,10 +87,6 @@ def get_object_from_json_endpoint_with_retry(url, method='GET', params={}, max_d
             print(f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} Timeout при запросе к {url}")
             raise
 
-
-# # Create the app
-# app = dash.Dash(__name__)
-
 # My positions data
 with open(temp_obj.substitute(name_file='QUIK_MyPos.csv'), 'r') as file:
     df_table = pd.read_csv(file, encoding='UTF-8', sep=';')
@@ -124,6 +120,14 @@ with open(temp_obj.substitute(name_file='Equity.CSV'), 'r') as file:
     # Удаляем пробелы и преобразуем в числа
     df_equity[cols_to_convert] = df_equity[cols_to_convert].replace(' ', '', regex=True)
     df_equity[cols_to_convert] = df_equity[cols_to_convert].apply(pd.to_numeric, errors='coerce')
+file.close()
+
+# Candles
+with open(temp_obj.substitute(name_file='SPBFUT.RIH6_D1.txt'), 'r') as file:
+    df_candles = pd.read_csv(file, sep='\t', header=0)
+    df_candles['datetime'] = pd.to_datetime(df_candles['datetime'], format='%d.%m.%Y %H:%M')
+    df_candles = df_candles.sort_values('datetime').reset_index(drop=True)
+    # print(df_candles)
 file.close()
 
 # Сборка основного файла истории
@@ -291,7 +295,9 @@ tab6_content = [  # Таблица моих ордеров
 
 tab7_content = [dcc.Graph(id='MyEquityHistory', style={'margin-top': 10})]
 
-app = dash.Dash(external_stylesheets=[dbc.themes.BOOTSTRAP])
+# Создаем приложение Dash
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
+
 app.layout = html.Div(children=[
 
     html.Div(children=[
@@ -982,70 +988,67 @@ def update_output_history_naklon(dropdown_value, slider_value, n):
 
 
 ## EQUITY HISTORY##
-@app.callback(Output('MyEquityHistory', 'figure', allow_duplicate=True),
+@app.callback(Output('MyEquityHistory', 'figure'),
               [Input('dropdown-selection', 'value'),
                Input('my_slider', 'value'),
-               Input('interval-component', 'n_intervals'),
-               ],
+               Input('interval-component', 'n_intervals')],
               prevent_initial_call=True)
 def update_equity_history(dropdown_value, slider_value, n):
     global df_combined
-    # limit = 450 * slider_value
     limit_time = datetime.datetime.now() - timedelta(hours=10 * 12 * slider_value)
-    # print(limit_time)
-    # print(df_combined)
 
-    df_limited = df_combined[(df_combined.Date > limit_time)]  # Ограничение по времени
-    # Первая запись
-    first_value = df_limited['Money'].iloc[0]
-    # print(first_value)
+    df_limited = df_combined[(df_combined.Date > limit_time)]
 
-    # Последняя запись
-    last_value = df_limited['Money'].iloc[-1]
-    # print(last_value)
-
-    # Доходность за период в процентах
-    profit = (last_value - first_value) / first_value * 100
-    # print(f'Доходность за период {slider_value * 5} дн. в процентах: {profit:.2f}%')
-
-    # Доходность за период в процентах годовых
-    # profit_year = profit / 12 * 100
-    profit_year = (profit * 365) / (slider_value * 5)
-    # print(f'Доходность за период в процентах годовых: {profit_year:.2f}%')
-
-    # BaseAssetPrice history data DAMP
-    with open(temp_obj.substitute(name_file='BaseAssetPriceHistoryDamp.csv'), 'r') as file:
-        df_BaseAssetPrice = pd.read_csv(file, sep=';')
-        df_BaseAssetPrice = df_BaseAssetPrice[(df_BaseAssetPrice.ticker == dropdown_value)]
-        # df_BaseAssetPrice = df_BaseAssetPrice.tail(limit)
-        df_BaseAssetPrice['DateTime'] = pd.to_datetime(df_BaseAssetPrice['DateTime'], format='%Y-%m-%d %H:%M:%S')
-        df_BaseAssetPrice.index = pd.DatetimeIndex(df_BaseAssetPrice['DateTime'])
-        df_BaseAssetPrice = df_BaseAssetPrice[(df_BaseAssetPrice.DateTime > limit_time)]
-    # Close the file
+    # Candles
+    with open(temp_obj.substitute(name_file='SPBFUT.RIH6_D1.txt'), 'r') as file:
+        df_candles = pd.read_csv(file, sep='\t', header=0)
+        df_candles['datetime'] = pd.to_datetime(df_candles['datetime'], format='%d.%m.%Y %H:%M')
+        df_candles = df_candles.sort_values('datetime').reset_index(drop=True)
+        df_candles = df_candles[(df_candles.datetime > limit_time)]
     file.close()
+
+    # Вычисление доходности
+    if len(df_limited) > 1:
+        initial_money = df_limited['Money'].iloc[0]
+        final_money = df_limited['Money'].iloc[-1]
+        profit = ((final_money - initial_money) / initial_money) * 100
+        profit_year = profit * 365 / (slider_value * 5)
+    else:
+        profit = 0
+        profit_year = 0
 
     # Create figure with secondary y-axis
     fig = make_subplots(specs=[[{"secondary_y": True}]])
-    # fig = make_subplots()
 
     # График Money
     fig.add_trace(go.Scatter(x=df_limited['Date'], y=df_limited['Money'], mode='lines+text',
                              name='Money',
                              line=dict(color='red', width=3, dash='dashdot')),
-                  secondary_y=True, )
+                  secondary_y=True)
 
-    # График GM (гарантийное обеспечение)
+    # График GM
     fig.add_trace(go.Scatter(x=df_limited['Date'], y=df_limited['GM'], mode='lines+text',
                              name='GM', visible='legendonly',
                              line=dict(color='gray', width=1, dash='dashdot')),
-                  secondary_y=True, )
+                  secondary_y=True)
 
-    # График Fee (комиссия)
+    # График Fee
     fig.add_trace(go.Scatter(x=df_limited['Date'], y=df_limited['Fee'], mode='lines+text',
                              name="Comiss",
                              visible='legendonly',
                              line=dict(color='gray', width=1, dash='dashdot')),
-                  secondary_y=True, )
+                  secondary_y=True)
+
+    # График Candles
+    fig.add_trace(go.Candlestick(x=df_candles['datetime'],
+                                 open=df_candles['open'],
+                                 high=df_candles['high'],
+                                 low=df_candles['low'],
+                                 close=df_candles['close'],
+                                 name='Candles',
+                                 increasing_line=dict(width=1),
+                                 decreasing_line=dict(width=1)),
+                  secondary_y=False)
 
     fig.update_layout(
         annotations=[
@@ -1072,38 +1075,6 @@ def update_equity_history(dropdown_value, slider_value, n):
             )
         ]
     )
-
-    # График истории цены базового актива
-    fig.add_trace(go.Scatter(x=df_BaseAssetPrice['DateTime'], y=df_BaseAssetPrice['last_price'], mode='lines+text',
-                             visible='legendonly',
-                             name=dropdown_value, line=dict(color='gray', width=1, dash='dashdot')),
-                  secondary_y=False, )
-
-    # Убираем неторговое время
-    fig.update_xaxes(
-        rangebreaks=[
-            dict(bounds=["sat", "mon"]),  # hide weekends, eg. hide sat to before mon
-            dict(bounds=[24, 9], pattern="hour"),  # hide hours outside of 9am-24pm
-        ]
-    )
-
-    # Легенда справа по центру
-    fig.update_layout(
-        legend=dict(
-            yanchor="middle",
-            y=0.5,
-            xanchor="left",
-            x=0.97,
-            orientation="v"
-        )
-    )
-    fig.update_layout(xaxis_title=None)
-    # fig.update_yaxes(side="right") # Перенос оси Y на правую сторону
-    fig.update_layout(uirevision="Don't change")
-    fig.update_layout(
-        margin=dict(l=1, r=50, t=0, b=0),
-    )
-
     return fig
 
 

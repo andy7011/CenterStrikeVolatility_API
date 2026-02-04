@@ -122,6 +122,14 @@ with open(temp_obj.substitute(name_file='Equity.CSV'), 'r') as file:
     df_equity[cols_to_convert] = df_equity[cols_to_convert].apply(pd.to_numeric, errors='coerce')
 file.close()
 
+# Candles
+with open(temp_obj.substitute(name_file='SPBFUT.RIH6_D1.txt'), 'r') as file:
+    df_candles = pd.read_csv(file, sep='\t', header=0)
+    df_candles['datetime'] = pd.to_datetime(df_candles['datetime'], format='%d.%m.%Y %H:%M')
+    df_candles = df_candles.sort_values('datetime').reset_index(drop=True)
+    # print(df_candles)
+file.close()
+
 # Сборка основного файла истории
 try:
     with open(temp_obj.substitute(name_file='MyEquity.CSV'), 'r') as file:
@@ -215,7 +223,7 @@ tab4_content = [  # Таблица моих позиций
             },
             style_data_conditional=[
                 {
-                    'if': {'filter_query': '{ticker} = "Итого"'},
+                    'if': {'filter_query': '{ticker} = "Total"'},
                     'fontWeight': 'bold',
                     'backgroundColor': 'rgb(240, 240, 240)'
                 },
@@ -287,7 +295,9 @@ tab6_content = [  # Таблица моих ордеров
 
 tab7_content = [dcc.Graph(id='MyEquityHistory', style={'margin-top': 10})]
 
-app = dash.Dash(external_stylesheets=[dbc.themes.BOOTSTRAP])
+# Создаем приложение Dash
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
+
 app.layout = html.Div(children=[
 
     html.Div(children=[
@@ -356,6 +366,30 @@ app.layout = html.Div(children=[
             id='interval-component',
             interval=1000 * 10,
             n_intervals=0),
+        # Интервал обновления данных - 10 секунд
+        dcc.Interval(
+            id='interval-10sec',
+            interval=1000 * 10,  # 10 секунд
+            n_intervals=0),
+
+        # Интервал обновления данных - 1 минута
+        dcc.Interval(
+            id='interval-1min',
+            interval=1000 * 60,   # 1 минута
+            n_intervals=0),
+
+        # Интервал обновления данных - 5 минут
+        dcc.Interval(
+            id='interval-5min',
+            interval=1000 * 60 * 5,  # 5 минут
+            n_intervals=0),
+
+        # Интервал обновления данных - 60 минут
+        dcc.Interval(
+            id='interval-60min',
+            interval=1000 * 60 * 60,  # 60 минут
+            n_intervals=0),
+
 
         # Слайдер
         dcc.Slider(0, 28,
@@ -376,6 +410,7 @@ app.layout = html.Div(children=[
         html.Div(id='slider-output-1'),
     ])
 ])
+
 
 # --- CALLBACKS ---
 
@@ -410,6 +445,7 @@ def update_time(n):
         html.Br(),
         html.Pre(info)
     ]
+
 
 # Callback to update the line-graph volatility smile (обновление улыбки волатильности)
 @app.callback(Output('plot_smile', 'figure', allow_duplicate=True),
@@ -549,7 +585,7 @@ def update_output_smile(value, n):
         # print(dff_MyPosOrders['_last_price_timestamp'])
 
         # ASK
-        fig.add_trace(go.Scatter(x=dff_MyPosOrders['_strike'], y=dff_MyPosOrders['_ask_iv'], visible='legendonly',
+        fig.add_trace(go.Scatter(x=dff_MyPosOrders['_strike'], y=dff_MyPosOrders['_ask_iv'],  # visible='legendonly',
                                  mode='markers', text=dff_MyPosOrders['_ask_iv'], textposition='top left',
                                  marker=dict(size=8, symbol="triangle-down", color='red'),
                                  name='Ask',
@@ -559,7 +595,7 @@ def update_output_smile(value, n):
                                  ))
 
         # BID
-        fig.add_trace(go.Scatter(x=dff_MyPosOrders['_strike'], y=dff_MyPosOrders['_bid_iv'], visible='legendonly',
+        fig.add_trace(go.Scatter(x=dff_MyPosOrders['_strike'], y=dff_MyPosOrders['_bid_iv'],  # visible='legendonly',
                                  mode='markers', text=dff_MyPosOrders['_bid_iv'], textposition='top left',
                                  marker=dict(size=8, symbol="triangle-up", color='green'),
                                  name='Bid',
@@ -612,7 +648,7 @@ def update_output_smile(value, n):
         raise PreventUpdate
 
 
-# Callback to update the line-graph history data (обновление данных графика истории)
+# Callback to update the line-graph history data (обновление данных графика истории волатильности на центральном страйке)
 @app.callback(Output('plot_history', 'figure', allow_duplicate=True),
               [Input('dropdown-selection', 'value'),
                Input('my_slider', 'value'),
@@ -732,7 +768,7 @@ def update_output_MyPosTilt(dropdown_value, slider_value, n):
     # Close the file
     file.close()
 
-    # ДАННЫЕ ИЗ DAMP/csv
+    # ДАННЫЕ ИЗ csv
     # MyPosTilt.csv history data options volatility
     with open(temp_obj.substitute(name_file='MyPosHistory.csv'), 'r') as file:
         df_MyPosTilt = pd.read_csv(file, sep=';')
@@ -747,11 +783,28 @@ def update_output_MyPosTilt(dropdown_value, slider_value, n):
     # Close the file
     file.close()
 
+    # Данные о сделках
+    # My trades data
+    with open(temp_obj.substitute(name_file='QUIK_Stream_Trades.csv'), 'r', encoding='UTF-8') as file:
+        df_trades = pd.read_csv(file, sep=';')
+        df_trades = df_trades[(df_trades.option_base == dropdown_value)]
+        df_trades['datetime'] = pd.to_datetime(df_trades['datetime'],
+                                               format='%d.%m.%Y %H:%M:%S')
+        df_trades.index = pd.DatetimeIndex(df_trades['datetime'])
+        df_trades = df_trades[(df_trades.datetime > limit_time)]
+        # print(df_table)
+        # Создаем столбец 'pos' в df_trades на основе значений из df_table
+        df_table['pos'] = df_table['net_pos'].apply(lambda x: 'long' if x > 0 else 'short')
+        df_trades = df_trades.merge(df_table[['ticker', 'pos']], on='ticker', how='left')
+        # Удаляем строки, где 'pos' равен NaN
+        df_trades = df_trades.dropna(subset=['pos'])
+    file.close()
+
     # Create figure with secondary y-axis
     fig = make_subplots(specs=[[{"secondary_y": True}]])
 
     # График истории моей позиции (из MyPosHistory.cs)
-    for pos in sorted(df_MyPosTilt['pos'].unique()):
+    for pos in sorted(df_MyPosTilt['pos'].unique(), reverse=True):
         dff = df_MyPosTilt[df_MyPosTilt.pos == pos]
         fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['mypos'], visible='legendonly',
                                  legendgroup=pos,  # this can be any string, not just "group"
@@ -770,7 +823,7 @@ def update_output_MyPosTilt(dropdown_value, slider_value, n):
                                  name='Last'), secondary_y=True, )
 
     # График истории моей позиции по цене LAST (из MyPosHistory.csv)
-    for pos in sorted(df_MyPosTilt['pos'].unique()):
+    for pos in sorted(df_MyPosTilt['pos'].unique(), reverse=True):
         dff = df_MyPosTilt[df_MyPosTilt.pos == pos]
         fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['theor'],
                                  legendgroup=pos,
@@ -780,13 +833,46 @@ def update_output_MyPosTilt(dropdown_value, slider_value, n):
                                  name='Theor'), secondary_y=True, )
 
     # График истории моей позиции ПО рынку из MyPosHistory
-    for pos in sorted(df_MyPosTilt['pos'].unique()):
+    for pos in sorted(df_MyPosTilt['pos'].unique(), reverse=True):
         dff = df_MyPosTilt[df_MyPosTilt.pos == pos]
         fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['market'], visible='legendonly',
                                  legendgroup=pos,  # this can be any string, not just "group"
                                  legendgrouptitle_text=pos,
                                  mode='lines+text',
                                  name='Market'), secondary_y=True, )
+
+    # Мои сделки (trades) на графике
+    for opt in sorted(df_trades['ticker'].unique()):
+        df_ticker = df_trades[df_trades.ticker == opt]
+
+        # Создаем отдельные серии для покупок и продаж
+        df_buy = df_ticker[df_ticker['operation'] == 'Купля']
+        df_sell = df_ticker[df_ticker['operation'] == 'Продажа']
+        if not df_buy.empty:
+            pos = df_buy['pos'].iloc[0]
+            fig.add_trace(go.Scatter(x=df_buy['datetime'], y=df_buy['volatility'], visible='legendonly',
+                                     legendgroup=pos,
+                                     legendgrouptitle_text=pos,
+                                     mode='markers', text=df_buy['volatility'], textposition='top left',
+                                     marker=dict(size=8, symbol="triangle-up", color='green'),
+                                     name=f'{opt} (купля)',
+                                     customdata=df_buy[
+                                         ['volatility', 'option_type', 'price', 'volume', 'expdate']],
+                                     hovertemplate="<b>%{customdata}</b><br>"
+                                     ), secondary_y=True, )
+
+        if not df_sell.empty:
+            pos = df_sell['pos'].iloc[0]
+            fig.add_trace(go.Scatter(x=df_sell['datetime'], y=df_sell['volatility'], visible='legendonly',
+                                     legendgroup=pos,
+                                     legendgrouptitle_text=pos,
+                                     mode='markers', text=df_sell['volatility'], textposition='top left',
+                                     marker=dict(size=8, symbol="triangle-down", color='red'),
+                                     name=f'{opt} (продажа)',
+                                     customdata=df_sell[
+                                         ['volatility', 'option_type', 'price', 'volume', 'expdate']],
+                                     hovertemplate="<b>%{customdata}</b><br>"
+                                     ), secondary_y=True, )
 
     fig.update_layout(legend=dict(groupclick="toggleitem"))
 
@@ -816,7 +902,7 @@ def update_output_MyPosTilt(dropdown_value, slider_value, n):
     )
 
     # fig.update_layout(
-    #     title_text=f'Наклон моей позиции, option series <b>{dropdown_value}<b>', uirevision="Don't change"
+    #     title_text=f'История моей позиции, option series <b>{dropdown_value}<b>', uirevision="Don't change"
     # )
     fig.update_layout(uirevision="Don't change")
     fig.update_layout(
@@ -924,59 +1010,104 @@ def update_output_history_naklon(dropdown_value, slider_value, n):
 
     return fig
 
+
 ## EQUITY HISTORY##
-@app.callback(Output('MyEquityHistory', 'figure', allow_duplicate=True),
-              [Input('my_slider', 'value'),
-               Input('interval-component', 'n_intervals'),
-               ],
+@app.callback(Output('MyEquityHistory', 'figure'),
+              [Input('dropdown-selection', 'value'),
+               Input('my_slider', 'value'),
+               Input('interval-component', 'n_intervals')],
               prevent_initial_call=True)
-def update_equity_history(slider_value, n):
+def update_equity_history(dropdown_value, slider_value, n):
     global df_combined
-    # limit = 450 * slider_value
     limit_time = datetime.datetime.now() - timedelta(hours=10 * 12 * slider_value)
-    # print(limit_time)
-    # print(df_combined)
 
+    df_limited = df_combined[(df_combined.Date > limit_time)]
 
-    df_limited = df_combined[(df_combined.Date > limit_time)] # Ограничение по времени
+    # Candles
+    with open(temp_obj.substitute(name_file='SPBFUT.RIH6_D1.txt'), 'r') as file:
+        df_candles = pd.read_csv(file, sep='\t', header=0)
+        df_candles['datetime'] = pd.to_datetime(df_candles['datetime'], format='%d.%m.%Y %H:%M')
+        df_candles = df_candles.sort_values('datetime').reset_index(drop=True)
+        df_candles = df_candles[(df_candles.datetime > limit_time)]
+    file.close()
+
+    # Вычисление доходности
+    if len(df_limited) > 1:
+        initial_money = df_limited['Money'].iloc[0]
+        final_money = df_limited['Money'].iloc[-1]
+        profit = ((final_money - initial_money) / initial_money) * 100
+        profit_year = profit * 365 / (slider_value * 5)
+    else:
+        profit = 0
+        profit_year = 0
 
     # Create figure with secondary y-axis
-    # fig = make_subplots(specs=[[{"secondary_y": True}]])
-    fig = make_subplots()
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
 
     # График Money
     fig.add_trace(go.Scatter(x=df_limited['Date'], y=df_limited['Money'], mode='lines+text',
-                             name=df_limited.columns[1],
+                             name='Money',
                              line=dict(color='red', width=3, dash='dashdot')),
-                  )
+                  secondary_y=True)
 
     # График GM
     fig.add_trace(go.Scatter(x=df_limited['Date'], y=df_limited['GM'], mode='lines+text',
-                             name=df_limited.columns[2], visible='legendonly',
+                             name='GM', visible='legendonly',
                              line=dict(color='gray', width=1, dash='dashdot')),
-                  )
+                  secondary_y=True)
 
     # График Fee
     fig.add_trace(go.Scatter(x=df_limited['Date'], y=df_limited['Fee'], mode='lines+text',
-                             name=df_limited.columns[4], visible='legendonly',
+                             name="Comiss",
+                             visible='legendonly',
                              line=dict(color='gray', width=1, dash='dashdot')),
-                  )
+                  secondary_y=True)
 
-    # Легенда справа по центру
+    # График Candles
+    fig.add_trace(go.Candlestick(x=df_candles['datetime'],
+                                 open=df_candles['open'],
+                                 high=df_candles['high'],
+                                 low=df_candles['low'],
+                                 close=df_candles['close'],
+                                 name=dropdown_value,
+                                 increasing_line=dict(width=1),
+                                 decreasing_line=dict(width=1)),
+                  secondary_y=False)
+
     fig.update_layout(
-        legend=dict(
-            yanchor="middle",
-            y=0.5,
-            xanchor="left",
-            x=1.03,
-            orientation="v"
-        )
+        annotations=[
+            dict(
+                x=0.94,
+                y=0.1,
+                xref="paper",
+                yref="paper",
+                text=f'Доходность за период {slider_value * 5} дн. в процентах: {profit:.2f}%',
+                showarrow=False,
+                xanchor='right',
+                yanchor='top'
+            ),
+            dict(
+                x=0.94,
+                y=0.1,
+                xref="paper",
+                yref="paper",
+                text=f'Доходность за период в процентах годовых: {profit_year:.2f}%',
+                showarrow=False,
+                xanchor='right',
+                yanchor='top',
+                yshift=-20
+            )
+        ]
     )
-    fig.update_layout(xaxis_title=None)
-    fig.update_yaxes(side="right") # Перенос оси Y на правую сторону
-    fig.update_layout(uirevision="Don't change")
+    # Убираем неторговое время
+    fig.update_xaxes(
+        rangebreaks=[
+            dict(bounds=["sat", "mon"]),  # hide weekends, eg. hide sat to before mon
+            dict(bounds=[24, 9], pattern="hour"),  # hide hours outside of 9am-24pm
+        ]
+    )
     fig.update_layout(
-        margin=dict(l=1, r=50, t=0, b=0),
+        margin=dict(l=3, r=3, t=0, b=0),
     )
 
     return fig
@@ -1046,9 +1177,17 @@ def updateTable(n, value):
     total_vega = df_pos['Vega'].sum() if 'Vega' in df_pos.columns else 0
     total_true_vega = df_pos['TrueVega'].sum() if 'TrueVega' in df_pos.columns else 0
 
+    # Сортировать датафрейм df_pos по столбцу strike
+    df_pos = df_pos.sort_values(by='strike')
+    # Добавляем столбец с порядковым номером строки, начиная с 1
+    df_pos['num'] = range(1, len(df_pos) + 1)
+    # Переставляем столбец 'num' в начало
+    cols = ['num'] + [col for col in df_pos.columns if col != 'num']
+    df_pos = df_pos[cols]
+
     # Создание строки итогов
     total_row = {col: '' for col in df_pos.columns}
-    total_row['ticker'] = 'Итого'
+    total_row['ticker'] = 'Total'
     total_row['net_pos'] = total_net_pos
     total_row['P/L theor'] = round(weighted_pl_theor, 2)
     total_row['P/L last'] = round(weighted_pl_last, 2)
@@ -1070,6 +1209,13 @@ def updateTable(n, value):
     prevent_initial_call=True)
 def updateTrades(n, value):
     df_trades = pd.read_csv(temp_obj.substitute(name_file='QUIK_Stream_Trades.csv'), encoding='UTF-8', sep=';')
+    # Добавляем столбец с порядковым номером строки, начиная с 1
+    df_trades['num'] = range(1, len(df_trades) + 1)
+    # Переставляем столбец 'num' в начало
+    cols = ['num'] + [col for col in df_orders.columns if col != 'num']
+    df_trades = df_trades[cols]
+    # Преобразование столбца order_num в строку
+    df_trades['order_num'] = df_trades['order_num'].astype(str)
     # Фильтрация строк по базовому активу
     df_trades = df_trades[df_trades['option_base'] == value]
 
@@ -1084,6 +1230,13 @@ def updateTrades(n, value):
     prevent_initial_call=True)
 def updateOrders(n, value):
     df_orders = pd.read_csv(temp_obj.substitute(name_file='QUIK_Stream_Orders.csv'), encoding='UTF-8', sep=';')
+    # Добавляем столбец с порядковым номером строки, начиная с 1
+    df_orders['num'] = range(1, len(df_orders) + 1)
+    # Переставляем столбец 'num' в начало
+    cols = ['num'] + [col for col in df_orders.columns if col != 'num']
+    df_orders = df_orders[cols]
+    # Преобразование столбца order_num в строку
+    df_orders['order_num'] = df_orders['order_num'].astype(str)
     # Фильтрация строк по базовому активу
     df_orders = df_orders[df_orders['option_base'] == value]
 
