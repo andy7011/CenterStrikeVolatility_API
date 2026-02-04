@@ -1021,7 +1021,11 @@ def update_equity_history(dropdown_value, slider_value, n):
     global df_combined
     limit_time = datetime.datetime.now() - timedelta(hours=10 * 12 * slider_value)
 
-    df_limited = df_combined[(df_combined.Date > limit_time)]
+    # Создаем копию для избежания предупреждения
+    df_limited = df_combined[(df_combined.Date > limit_time)].copy()
+
+    # Преобразуем формат даты
+    df_limited['Date'] = pd.to_datetime(df_limited['Date'], format='%d.%m.%Y')
 
     # Candles
     with open(temp_obj.substitute(name_file='SPBFUT.RIH6_D1.txt'), 'r') as file:
@@ -1099,11 +1103,16 @@ def update_equity_history(dropdown_value, slider_value, n):
             )
         ]
     )
-    # Убираем неторговое время
+    # # Убираем неторговое время
+    # fig.update_xaxes(
+    #     rangebreaks=[
+    #         dict(bounds=["sat", "mon"]),  # hide weekends, eg. hide sat to before mon
+    #     ]
+    # )
+    # Убираем выходные дни
     fig.update_xaxes(
         rangebreaks=[
             dict(bounds=["sat", "mon"]),  # hide weekends, eg. hide sat to before mon
-            dict(bounds=[24, 9], pattern="hour"),  # hide hours outside of 9am-24pm
         ]
     )
     fig.update_layout(
