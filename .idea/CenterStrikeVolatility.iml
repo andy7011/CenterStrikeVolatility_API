@@ -5,12 +5,14 @@
       <sourceFolder url="file://$MODULE_DIR$/app" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/infrastructure" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/model" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/FinamPy" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/AlorPy" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/QuikPy" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/.venv" />
       <excludeFolder url="file://$MODULE_DIR$/venv" />
     </content>
     <orderEntry type="jdk" jdkName="Python 3.12 (CenterStrikeVolatility_API)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
-    <orderEntry type="module" module-name="FinamPy" />
     <orderEntry type="module" module-name="FinLabPy" />
     <orderEntry type="module" module-name="AlorPy" />
     <orderEntry type="module" module-name="QuikPy" />
