@@ -1,0 +1,2 @@
+datetime	open	high	low	close	volume
+23.09.2025 15:15	104810.0	104810.0	104810.0	104810.0	2

@@ -1028,7 +1028,7 @@ def update_equity_history(dropdown_value, slider_value, n):
     df_limited['Date'] = pd.to_datetime(df_limited['Date'], format='%d.%m.%Y')
 
     # Candles
-    with open(temp_obj.substitute(name_file='SPBFUT.RIH6_D1.txt'), 'r') as file:
+    with open(temp_obj.substitute(name_file='SPBFUT.RIH6_M5.txt'), 'r') as file:
         df_candles = pd.read_csv(file, sep='\t', header=0)
         df_candles['datetime'] = pd.to_datetime(df_candles['datetime'], format='%d.%m.%Y %H:%M')
         df_candles = df_candles.sort_values('datetime').reset_index(drop=True)
