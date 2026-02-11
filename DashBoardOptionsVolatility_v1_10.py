@@ -1,3 +1,4 @@
+import os.path
 from math import isnan
 import dash
 from dash import dcc, Input, Output, callback, dash_table, State
@@ -172,7 +173,7 @@ model_from_api = get_object_from_json_endpoint_with_retry('https://option-volati
 
 # Список базовых активов, вычисление и добавление в словарь центрального страйка
 base_asset_list = model_from_api[0]
-# print('base_asset_list:', base_asset_list)
+print('base_asset_list:', base_asset_list)
 for asset in base_asset_list:
     ticker = asset.get('_ticker')
     last_price = asset.get('_last_price')
@@ -1020,19 +1021,31 @@ def update_output_history_naklon(dropdown_value, slider_value, n):
 def update_equity_history(dropdown_value, slider_value, n):
     global df_combined
     limit_time = datetime.datetime.now() - timedelta(hours=10 * 12 * slider_value)
-
     # Создаем копию для избежания предупреждения
     df_limited = df_combined[(df_combined.Date > limit_time)].copy()
-
     # Преобразуем формат даты
     df_limited['Date'] = pd.to_datetime(df_limited['Date'], format='%d.%m.%Y')
 
+    # Поиск последней цены базового актива
+    model_from_api = get_object_from_json_endpoint_with_retry('https://option-volatility-dashboard.tech/dump_model',
+                                                              timeout=5)
+    # Список базовых активов, вычисление и добавление в словарь центрального страйка
+    base_asset_list = model_from_api[0]
+    for asset in base_asset_list:
+        if asset.get('_ticker') == dropdown_value:
+            last_price_fut = asset.get('_last_price')
+
     # Candles
-    with open(temp_obj.substitute(name_file='SPBFUT.RIH6_M5.txt'), 'r') as file:
+    time_frame = 'D1'
+    datapath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'Data', 'Finam', '')  # Путь к файлам баров
+    dataname = f'SPBFUT.{dropdown_value}'
+    filename = f'{datapath}{dataname}_{time_frame}.txt'  # Полное имя файла
+    with open(file=filename, mode='r') as file:
         df_candles = pd.read_csv(file, sep='\t', header=0)
         df_candles['datetime'] = pd.to_datetime(df_candles['datetime'], format='%d.%m.%Y %H:%M')
         df_candles = df_candles.sort_values('datetime').reset_index(drop=True)
         df_candles = df_candles[(df_candles.datetime > limit_time)]
+        df_candles.loc[df_candles.index[-1], 'close'] = last_price_fut
     file.close()
 
     # Вычисление доходности
@@ -1082,7 +1095,7 @@ def update_equity_history(dropdown_value, slider_value, n):
         annotations=[
             dict(
                 x=0.94,
-                y=0.1,
+                y=0.11,
                 xref="paper",
                 yref="paper",
                 text=f'Доходность за период {slider_value * 5} дн. в процентах: {profit:.2f}%',
@@ -1092,7 +1105,7 @@ def update_equity_history(dropdown_value, slider_value, n):
             ),
             dict(
                 x=0.94,
-                y=0.1,
+                y=0.11,
                 xref="paper",
                 yref="paper",
                 text=f'Доходность за период в процентах годовых: {profit_year:.2f}%',
@@ -1115,6 +1128,20 @@ def update_equity_history(dropdown_value, slider_value, n):
             dict(bounds=["sat", "mon"]),  # hide weekends, eg. hide sat to before mon
         ]
     )
+
+    fig.update_layout(xaxis_title=None)
+    # Легенда справа по центру
+    fig.update_layout(
+        legend=dict(
+            yanchor="middle",
+            y=0.5,
+            xanchor="left",
+            x=0.96,
+            orientation="v"
+        )
+    )
+
+    fig.update_layout(uirevision="Don't change")
     fig.update_layout(
         margin=dict(l=3, r=3, t=0, b=0),
     )
