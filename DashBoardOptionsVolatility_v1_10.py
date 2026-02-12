@@ -448,15 +448,14 @@ def update_time(n):
     ]
 
 
-# Callback to update the line-graph volatility smile (обновление улыбки волатильности)
+# обновление улыбки волатильности
 @app.callback(Output('plot_smile', 'figure', allow_duplicate=True),
               [Input('dropdown-selection', 'value'),
                Input('interval-component', 'n_intervals')],
               prevent_initial_call=True)
 def update_output_smile(value, n):
     try:
-        model_from_api = get_object_from_json_endpoint_with_retry('https://option-volatility-dashboard.tech/dump_model',
-                                                                  timeout=5)
+        model_from_api = get_object_from_json_endpoint_with_retry('https://option-volatility-dashboard.tech/dump_model', timeout=5)
 
         # Список базовых активов, вычисление и добавление в словарь центрального страйка
         base_asset_list = model_from_api[0]
@@ -649,7 +648,7 @@ def update_output_smile(value, n):
         raise PreventUpdate
 
 
-# Callback to update the line-graph history data (обновление данных графика истории волатильности на центральном страйке)
+# обновление данных графика истории волатильности на центральном страйке
 @app.callback(Output('plot_history', 'figure', allow_duplicate=True),
               [Input('dropdown-selection', 'value'),
                Input('my_slider', 'value'),
@@ -693,7 +692,7 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
     # График истории волатильности ПО ДАННЫМ ИЗ DAMP (из CSV OptionsVolaHistoryDamp.csv)
     for d_exp in sorted(df_vol_history['expiration_datetime'].unique()):
         dff = df_vol_history[df_vol_history.expiration_datetime == d_exp]
-        fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['Real_vol'],
+        fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['Real_vol'], visible='legendonly',
                                  legendgroup="group",  # this can be any string, not just "group"
                                  legendgrouptitle_text="RealVol",
                                  mode='lines+text',
@@ -747,40 +746,50 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
     return fig
 
 
-# Callback to update the line-graph history MyPosTilt data (обновление данных графика истории моей позиции)
+# Обновление данных графика истории моей позиции
 @app.callback(Output('MyPosTiltHistory', 'figure', allow_duplicate=True),
               [Input('dropdown-selection', 'value'),
                Input('my_slider', 'value'),
                Input('interval-component', 'n_intervals'),
                ],
               prevent_initial_call=True)
-def update_output_MyPosTilt(dropdown_value, slider_value, n):
+def update_output_MyPosHistory(dropdown_value, slider_value, n):
     limit_time = datetime.datetime.now() - timedelta(hours=12 * slider_value)
     # print(df_table)
 
-    # BaseAssetPrice history data DAMP
-    with open(temp_obj.substitute(name_file='BaseAssetPriceHistoryDamp.csv'), 'r') as file:
-        df_BaseAssetPrice = pd.read_csv(file, sep=';')
-        df_BaseAssetPrice = df_BaseAssetPrice[(df_BaseAssetPrice.ticker == dropdown_value)]
-        # df_BaseAssetPrice = df_BaseAssetPrice.tail(limit)
-        df_BaseAssetPrice['DateTime'] = pd.to_datetime(df_BaseAssetPrice['DateTime'], format='%Y-%m-%d %H:%M:%S')
-        df_BaseAssetPrice.index = pd.DatetimeIndex(df_BaseAssetPrice['DateTime'])
-        df_BaseAssetPrice = df_BaseAssetPrice[(df_BaseAssetPrice.DateTime > limit_time)]
-    # Close the file
+    # СВЕЧИ Данные для графика базового актива
+    # Поиск последней цены базового актива
+    model_from_api = get_object_from_json_endpoint_with_retry('https://option-volatility-dashboard.tech/dump_model', timeout=5)
+    # Пробегаем по списку базовых активов, находим последнюю цену базового актива
+    base_asset_list = model_from_api[0]
+    for asset in base_asset_list:
+        if asset.get('_ticker') == dropdown_value:
+            last_price_fut = asset.get('_last_price')
+    # Candles (свечи/бары) для базового актива
+    time_frame = 'M5'
+    datapath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'Data', 'Finam', '')  # Путь к файлам баров
+    dataname = f'SPBFUT.{dropdown_value}'
+    filename = f'{datapath}{dataname}_{time_frame}.txt'  # Полное имя файла
+    with open(file=filename, mode='r') as file:
+        df_candles = pd.read_csv(file, sep='\t', header=0)
+        df_candles['datetime'] = pd.to_datetime(df_candles['datetime'], format='%d.%m.%Y %H:%M')
+        df_candles = df_candles.sort_values('datetime').reset_index(drop=True)
+        df_candles = df_candles[(df_candles.datetime > limit_time)]
+        df_candles.loc[df_candles.index[-1], 'close'] = last_price_fut
     file.close()
 
     # ДАННЫЕ ИЗ csv
-    # MyPosTilt.csv history data options volatility
+    # MyPosHistory.csv history data options volatility
     with open(temp_obj.substitute(name_file='MyPosHistory.csv'), 'r') as file:
-        df_MyPosTilt = pd.read_csv(file, sep=';')
-        df_MyPosTilt = df_MyPosTilt[(df_MyPosTilt.option_base == dropdown_value)]
+        df_MyPosHistory = pd.read_csv(file, sep=';')
+        df_MyPosHistory = df_MyPosHistory[(df_MyPosHistory.option_base == dropdown_value)]
 
-        df_MyPosTilt['DateTime'] = pd.to_datetime(df_MyPosTilt['DateTime'],
+        df_MyPosHistory['DateTime'] = pd.to_datetime(df_MyPosHistory['DateTime'],
                                                   format='%Y-%m-%d %H:%M:%S')
-        df_MyPosTilt.index = pd.DatetimeIndex(df_MyPosTilt['DateTime'])
-        # df_MyPosTilt = df_MyPosTilt[(df_vol_history.type == radiobutton_value)]
-        df_MyPosTilt = df_MyPosTilt[(df_MyPosTilt.DateTime > limit_time)]
-        # print(df_MyPosTilt)
+        df_MyPosHistory.index = pd.DatetimeIndex(df_MyPosHistory['DateTime'])
+        # df_MyPosHistory = df_MyPosHistory[(df_vol_history.type == radiobutton_value)]
+        df_MyPosHistory = df_MyPosHistory[(df_MyPosHistory.DateTime > limit_time)]
+        # print(df_MyPosHistory)
     # Close the file
     file.close()
 
@@ -805,8 +814,8 @@ def update_output_MyPosTilt(dropdown_value, slider_value, n):
     fig = make_subplots(specs=[[{"secondary_y": True}]])
 
     # График истории моей позиции (из MyPosHistory.cs)
-    for pos in sorted(df_MyPosTilt['pos'].unique(), reverse=True):
-        dff = df_MyPosTilt[df_MyPosTilt.pos == pos]
+    for pos in sorted(df_MyPosHistory['pos'].unique(), reverse=True):
+        dff = df_MyPosHistory[df_MyPosHistory.pos == pos]
         fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['mypos'], visible='legendonly',
                                  legendgroup=pos,  # this can be any string, not just "group"
                                  legendgrouptitle_text=pos,
@@ -815,8 +824,8 @@ def update_output_MyPosTilt(dropdown_value, slider_value, n):
                                  name='MyPos'), secondary_y=True, )
 
     # График истории моей позиции ПО теоретической цене из MyPosHistory
-    for pos in sorted(df_MyPosTilt['pos'].unique()):
-        dff = df_MyPosTilt[df_MyPosTilt.pos == pos]
+    for pos in sorted(df_MyPosHistory['pos'].unique()):
+        dff = df_MyPosHistory[df_MyPosHistory.pos == pos]
         fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['last'],
                                  legendgroup=pos,  # this can be any string, not just "group"
                                  legendgrouptitle_text=pos,
@@ -824,8 +833,8 @@ def update_output_MyPosTilt(dropdown_value, slider_value, n):
                                  name='Last'), secondary_y=True, )
 
     # График истории моей позиции по цене LAST (из MyPosHistory.csv)
-    for pos in sorted(df_MyPosTilt['pos'].unique(), reverse=True):
-        dff = df_MyPosTilt[df_MyPosTilt.pos == pos]
+    for pos in sorted(df_MyPosHistory['pos'].unique(), reverse=True):
+        dff = df_MyPosHistory[df_MyPosHistory.pos == pos]
         fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['theor'],
                                  legendgroup=pos,
                                  legendgrouptitle_text=pos,
@@ -834,8 +843,8 @@ def update_output_MyPosTilt(dropdown_value, slider_value, n):
                                  name='Theor'), secondary_y=True, )
 
     # График истории моей позиции ПО рынку из MyPosHistory
-    for pos in sorted(df_MyPosTilt['pos'].unique(), reverse=True):
-        dff = df_MyPosTilt[df_MyPosTilt.pos == pos]
+    for pos in sorted(df_MyPosHistory['pos'].unique(), reverse=True):
+        dff = df_MyPosHistory[df_MyPosHistory.pos == pos]
         fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['market'], visible='legendonly',
                                  legendgroup=pos,  # this can be any string, not just "group"
                                  legendgrouptitle_text=pos,
@@ -877,10 +886,21 @@ def update_output_MyPosTilt(dropdown_value, slider_value, n):
 
     fig.update_layout(legend=dict(groupclick="toggleitem"))
 
-    # График истории цены базового актива
-    fig.add_trace(go.Scatter(x=df_BaseAssetPrice['DateTime'], y=df_BaseAssetPrice['last_price'], mode='lines+text',
-                             name=dropdown_value, line=dict(color='gray', width=2, dash='dashdot')),
-                  secondary_y=False, )
+    # # График истории цены базового актива
+    # fig.add_trace(go.Scatter(x=df_BaseAssetPrice['DateTime'], y=df_BaseAssetPrice['last_price'], mode='lines+text',
+    #                          name=dropdown_value, line=dict(color='gray', width=2, dash='dashdot')),
+    #               secondary_y=False, )
+
+    # График Candles
+    fig.add_trace(go.Candlestick(x=df_candles['datetime'],
+                                 open=df_candles['open'],
+                                 high=df_candles['high'],
+                                 low=df_candles['low'],
+                                 close=df_candles['close'],
+                                 name=dropdown_value,
+                                 increasing_line=dict(width=1),
+                                 decreasing_line=dict(width=1)),
+                  secondary_y=False)
 
     # Убираем неторговое время
     fig.update_xaxes(
@@ -913,7 +933,7 @@ def update_output_MyPosTilt(dropdown_value, slider_value, n):
     return fig
 
 
-# Callback to update the line-graph history 'naklon' data (обновление данных графика истории наклона улыбки)
+# Наклон улыбки (обновление данных графика истории наклона улыбки)
 @app.callback(Output('naklon_history', 'figure', allow_duplicate=True),
               [Input('dropdown-selection', 'value'),
                Input('my_slider', 'value'),
@@ -928,7 +948,6 @@ def update_output_history_naklon(dropdown_value, slider_value, n):
     with open(temp_obj.substitute(name_file='BaseAssetPriceHistoryDamp.csv'), 'r') as file:
         df_BaseAssetPrice = pd.read_csv(file, sep=';')
         df_BaseAssetPrice = df_BaseAssetPrice[(df_BaseAssetPrice.ticker == dropdown_value)]
-        # df_BaseAssetPrice = df_BaseAssetPrice.tail(limit)
         df_BaseAssetPrice['DateTime'] = pd.to_datetime(df_BaseAssetPrice['DateTime'], format='%Y-%m-%d %H:%M:%S')
         df_BaseAssetPrice.index = pd.DatetimeIndex(df_BaseAssetPrice['DateTime'])
         df_BaseAssetPrice = df_BaseAssetPrice[(df_BaseAssetPrice.DateTime > limit_time)]
@@ -957,7 +976,7 @@ def update_output_history_naklon(dropdown_value, slider_value, n):
     # График истории наклона улыбки ПО ДАННЫМ ИЗ DAMP (из CSV OptionsSmileNaklonHistory.csv)
     for d_exp in sorted(df_vol_history_naklon['expiration_datetime'].unique()):
         dff = df_vol_history_naklon[df_vol_history_naklon.expiration_datetime == d_exp]
-        fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['Real'],
+        fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['Real'], visible='legendonly',
                                  legendgroup="group",  # this can be any string, not just "group"
                                  legendgrouptitle_text="Real",
                                  mode='lines+text',
@@ -977,7 +996,6 @@ def update_output_history_naklon(dropdown_value, slider_value, n):
 
     # График истории цены базового актива
     fig.add_trace(go.Scatter(x=df_BaseAssetPrice['DateTime'], y=df_BaseAssetPrice['last_price'], mode='lines+text',
-                             visible='legendonly',
                              name=dropdown_value, line=dict(color='gray', width=3, dash='dashdot')),
                   secondary_y=False, )
 
@@ -1026,16 +1044,15 @@ def update_equity_history(dropdown_value, slider_value, n):
     # Преобразуем формат даты
     df_limited['Date'] = pd.to_datetime(df_limited['Date'], format='%d.%m.%Y')
 
+    # СВЕЧИ Данные для графика базового актива
     # Поиск последней цены базового актива
-    model_from_api = get_object_from_json_endpoint_with_retry('https://option-volatility-dashboard.tech/dump_model',
-                                                              timeout=5)
-    # Список базовых активов, вычисление и добавление в словарь центрального страйка
+    model_from_api = get_object_from_json_endpoint_with_retry('https://option-volatility-dashboard.tech/dump_model', timeout=5)
+    # Пробегаем по списку базовых активов, находим последнюю цену базового актива
     base_asset_list = model_from_api[0]
     for asset in base_asset_list:
         if asset.get('_ticker') == dropdown_value:
             last_price_fut = asset.get('_last_price')
-
-    # Candles
+    # Candles (свечи/бары) для базового актива
     time_frame = 'D1'
     datapath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'Data', 'Finam', '')  # Путь к файлам баров
     dataname = f'SPBFUT.{dropdown_value}'
