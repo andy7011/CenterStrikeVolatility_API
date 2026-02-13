@@ -8,14 +8,19 @@ from FinLabPy.Config import brokers, default_broker  # Все брокеры и 
 from FinLabPy.Core import bars_to_df  # Перевод бар в pandas DataFrame
 from app.supported_base_asset import MAP
 
+# time_frame = 'M15'  # 15 минут
+# time_frame = 'M60'  # 1 час
+# time_frame = 'D'  # 1 день
+
 # Запрашиваем глубину истории 140 дней
 date_140_days_ago = datetime.now() - timedelta(days=140)
 
 def clean_old_data_files():
     """Удаляет из файлов исторических данных строки со значением datetime менее date_140_days_ago"""
+    print(f"Удаляем старые данные начиная с {date_140_days_ago}")
     for symbol in iter(MAP):  # Пробегаемся по всем фьючерсам в списке app.supported_base_asset.MAP
-        # Файлы для интервалов D1 и M5
-        for timeframe in ['D1', 'M5']:
+        # Файлы для интервалов D1 и M15
+        for timeframe in ['D1', 'M15']:
             dataname = f'SPBFUT.{symbol}'
             datapath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'Data', 'Finam', '')
             filename = f'{datapath}{dataname}_{timeframe}.txt'  # Полное имя файла
@@ -33,9 +38,8 @@ def clean_old_data_files():
                     # Сбрасываем индекс, чтобы datetime стал обычным столбцом
                     df_bars_cut = df_bars_cut.reset_index()
                     df_bars_cut['datetime'] = df_bars_cut['datetime'].dt.strftime('%d.%m.%Y %H:%M')
-                    # print(f'df_bars_cut {df_bars_cut}')
-                    # Записываем отфильтрованный DataFrame в текстовый файл
-                    # df_bars_cut.to_csv(filename, sep='\t', encoding='utf-8', index=True)
+                    # Записываем отфильтрованный DataFrame обратно в тот же текстовый файл
+                    df_bars_cut.to_csv(filename, sep='\t', encoding='utf-8', index=True)
                 else:
                     print(f"Столбец 'datetime' не найден в файле {filename}")
 
@@ -63,9 +67,9 @@ def main():
             # print(bars_to_df(bars))  # Все бары в pandas DataFrame
             time.sleep(1)  # Пауза в 1 секунду
 
-        # Интервал M5
+        # Интервал M15
         for symbol in iter(MAP):  # Пробегаемся по всем фьючерсам в списке app.supported_base_asset.MAP
-            time_frame = 'M5'  # Временной интервал
+            time_frame = 'M15'  # Временной интервал
             print(symbol)
             dataname = f'SPBFUT.{symbol}'
             symbol = broker.get_symbol_by_dataname(dataname)  # Тикер по названию
@@ -77,7 +81,6 @@ def main():
             time.sleep(1)  # Пауза в 1 секунду
 
         # Удаляем старые данные после получения новых
-        print("Удаляем старые данные...")
         clean_old_data_files()
 
     finally:

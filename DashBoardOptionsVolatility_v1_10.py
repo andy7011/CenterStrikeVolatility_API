@@ -19,13 +19,19 @@ from string import Template
 import time
 import random
 from functools import lru_cache
-
-@lru_cache(maxsize=None)
-def get_cached_data(url):
-    return get_object_from_json_endpoint_with_retry(url)
+import inspect
 
 temp_str = 'C:\\Users\\шадрин\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
+
+# Глобальные переменные для хранения данных
+model_from_api = None
+base_asset_list = None
+option_list = None
+central_strike = None
+
+# Первый фьючерс в списке MAP
+first_key = next(iter(MAP))
 
 def utc_to_msk_datetime(dt, tzinfo=False):
     """Перевод времени из UTC в московское
@@ -50,6 +56,30 @@ def utc_timestamp_to_msk_datetime(seconds) -> datetime:
     return utc_to_msk_datetime(dt_utc)  # Переводим время из UTC в московское
 
 
+def fetch_api_data():
+    """Функция для получения данных с API"""
+    global model_from_api, base_asset_list, option_list
+    model_from_api = get_object_from_json_endpoint_with_retry('https://option-volatility-dashboard.tech/dump_model')
+
+    # Список базовых активов
+    base_asset_list = model_from_api[0]
+    # print('base_asset_list:', base_asset_list)
+
+    # Список опционов
+    option_list = model_from_api[1]
+
+    # Вычисление и добавление в словарь центрального страйка
+    for asset in base_asset_list:
+        ticker = asset.get('_ticker')
+        last_price = asset.get('_last_price')
+        strike_step = MAP[ticker]['strike_step']
+        central_strike = _calculate_central_strike(last_price, strike_step)
+        asset.update({
+            'central_strike': central_strike
+        })
+
+    return model_from_api
+
 def get_object_from_json_endpoint_with_retry(url, method='GET', params={}, max_delay=180, timeout=10):
     """
     Модифицированная версия функции с механизмом повторных запросов при ошибке 502.
@@ -68,7 +98,11 @@ def get_object_from_json_endpoint_with_retry(url, method='GET', params={}, max_d
         try:
             response = requests.request(method, url, params=params, timeout=timeout)
             response.raise_for_status()  # Вызываем исключение для всех ошибочных статусов
-
+            # Получаем информацию о вызывающей функции
+            frame = inspect.currentframe().f_back
+            filename = os.path.basename(frame.f_code.co_filename)
+            line_number = frame.f_lineno
+            print(f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} Запрос к {url} успешно выполнен (файл: строка: {line_number})")
             return response.json()
 
         except requests.exceptions.HTTPError as e:
@@ -87,6 +121,58 @@ def get_object_from_json_endpoint_with_retry(url, method='GET', params={}, max_d
         except requests.exceptions.Timeout:
             print(f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} Timeout при запросе к {url}")
             raise
+
+# Выполняем запрос при запуске
+fetch_api_data()
+
+# smile_data() # Запуск функции сборки данных для построения улыбки волатильности первого по списку базового актива
+
+# Сборка данных для улыбки волатильности
+# def smile_data():
+
+# Список базовых активов
+base_asset_ticker_list = {}
+for i in range(len(base_asset_list)):
+    base_asset_ticker_list.update({base_asset_list[i]['_ticker']: base_asset_list[i]['_base_asset_code']})
+
+# Список опционов
+df = pd.DataFrame.from_dict(option_list, orient='columns')
+df = df.loc[df['_volatility'] > 0]
+df['_expiration_datetime'] = pd.to_datetime(df['_expiration_datetime'], format='%a, %d %b %Y %H:%M:%S GMT')
+df['_expiration_datetime'].dt.date
+df['expiration_date'] = df['_expiration_datetime'].dt.strftime('%d.%m.%Y')
+# print(df.columns)
+
+dff = df[(df._base_asset_ticker == first_key)]  # оставим только опционы базового актива
+
+for asset in base_asset_list:
+    if asset['_ticker'] == first_key:
+        base_asset_last_price = asset['_last_price']  # получаем последнюю цену базового актива
+
+dff_call = dff[(dff._type == 'C')]  # оставим только коллы
+
+# My positions data
+with open(temp_obj.substitute(name_file='QUIK_MyPos.csv'), 'r') as file:
+    df_table = pd.read_csv(file, sep=';')
+    df_table_buy = df_table[(df_table.option_base == first_key) & (df_table.net_pos > 0) & (df_table.OpenIV > 0)]
+    df_table_sell = df_table[(df_table.option_base == first_key) & (df_table.net_pos < 0) & (df_table.OpenIV > 0)]
+    MyPos_ticker_list = []
+    for i in range(len(df_table)):
+        MyPos_ticker_list.append(df_table['ticker'][i])
+    # DataFrame для отрисовки баланса TrueVega
+    df_table_base = df_table
+    df_table_base = df_table_base[df_table_base.option_base == first_key]
+# Close the file explicitly file.close()
+file.close()
+
+# My orders data
+with open(temp_obj.substitute(name_file='QUIK_Stream_Orders.csv'), 'r', encoding='utf-8') as file:
+    df_orders = pd.read_csv(file, sep=';')
+    df_orders = df_orders[(df_orders.option_base == first_key)]
+    df_orders_buy = df_orders[(df_orders.option_base == first_key) & (df_orders.operation == 'Купля')]
+    df_orders_sell = df_orders[(df_orders.option_base == first_key) & (df_orders.operation == 'Продажа')]
+    # Converting DataFrame "df_orders" to a list "tikers" containing all the rows of column 'ticker'
+    tikers = df_orders['ticker'].tolist()
 
 # My positions data
 with open(temp_obj.substitute(name_file='QUIK_MyPos.csv'), 'r') as file:
@@ -152,28 +238,11 @@ df_combined = df_combined.sort_values('Date').reset_index(drop=True)
 # Сохранить df_combined в файл MyEquity.CSV с разделителем запятая
 df_combined.to_csv(temp_obj.substitute(name_file='MyEquity.CSV'), sep=',', index=False)
 
-
-def get_object_from_json_endpoint(url, method='GET', params={}):
-    response = requests.request(method, url, params=params)
-
-    response_data = None
-    if response.status_code == 200:
-        response_data = response.json()
-    else:
-        raise Exception(f"Error: {response.status_code}")
-    return response_data
-
-
 def zero_to_nan(values):
     """Replace every 0 with 'nan' and return a copy."""
     return [float('nan') if x == 0 else x for x in values]
 
-
-model_from_api = get_object_from_json_endpoint_with_retry('https://option-volatility-dashboard.tech/dump_model')
-
 # Список базовых активов, вычисление и добавление в словарь центрального страйка
-base_asset_list = model_from_api[0]
-print('base_asset_list:', base_asset_list)
 for asset in base_asset_list:
     ticker = asset.get('_ticker')
     last_price = asset.get('_last_price')
@@ -184,6 +253,7 @@ for asset in base_asset_list:
     })
 # print('base_asset_list:', base_asset_list) # вывод списка базовых активов
 base_asset_ticker_list = {}
+# Создание словаря с базовыми активами и их кодами
 for i in range(len(base_asset_list)):
     # print(base_asset_list[i]['_ticker'])
     base_asset_ticker_list.update({base_asset_list[i]['_ticker']: base_asset_list[i]['_base_asset_code']})
@@ -198,6 +268,8 @@ df['_expiration_datetime'] = pd.to_datetime(df['_expiration_datetime'], format='
 df['_expiration_datetime'].dt.date
 df['expiration_date'] = df['_expiration_datetime'].dt.strftime('%d.%m.%Y')
 
+
+# ОФОРМЛЕНИЕ ВКЛАДОК TAB
 # Tabs content
 tab1_content = [dcc.Graph(id='MyPosTiltHistory', style={'margin-top': 10})]
 tab2_content = [dcc.Graph(id='naklon_history', style={'margin-top': 10})]
@@ -415,29 +487,28 @@ app.layout = html.Div(children=[
 
 # --- CALLBACKS ---
 
-# Callback to update the table
+# Callback to update the table (непонятный колбэк)
 @app.callback(Output('intermediate-value', 'children'),
               [Input('interval-component', 'n_intervals')],
               [State('intermediate-value', 'children')])
 def clean_data(value, dff):
-    model_from_api = get_object_from_json_endpoint_with_retry('https://option-volatility-dashboard.tech/dump_model')
-
-    # Список опционов
-    option_list = model_from_api[1]
-    df = pd.DataFrame.from_dict(option_list, orient='columns')
-    df = df.loc[df['_volatility'] > 0]
-    df['_expiration_datetime'] = pd.to_datetime(df['_expiration_datetime'], format='%a, %d %b %Y %H:%M:%S GMT')
-    df['_expiration_datetime'].dt.date
-    df['expiration_date'] = df['_expiration_datetime'].dt.strftime('%d.%m.%Y')
-    dff = df[(df._base_asset_ticker == value) & (df._type == 'C')]
+    pass
+    # # Список опционов
+    # df = pd.DataFrame.from_dict(option_list, orient='columns')
+    # df = df.loc[df['_volatility'] > 0]
+    # df['_expiration_datetime'] = pd.to_datetime(df['_expiration_datetime'], format='%a, %d %b %Y %H:%M:%S GMT')
+    # df['_expiration_datetime'].dt.date
+    # df['expiration_date'] = df['_expiration_datetime'].dt.strftime('%d.%m.%Y')
+    # dff = df[(df._base_asset_ticker == value) & (df._type == 'C')]
     # print(dff)
-    return dff.tail(450).to_json(date_format='iso', orient='split')
+    # return dff.tail(450).to_json(date_format='iso', orient='split')
 
 
 # Callback to update the last-update-time element
 @app.callback(Output('last_update_time', 'children'),
               [Input('interval-component', 'n_intervals')])
 def update_time(n):
+    fetch_api_data()
     # My portfoloio info data
     with open(temp_obj.substitute(name_file='QUIK_MyPortfolioInfo.csv'), 'r') as file:
         info = file.read()
@@ -447,24 +518,20 @@ def update_time(n):
         html.Pre(info)
     ]
 
-
-# обновление улыбки волатильности
+# Обновление улыбки волатильности
 @app.callback(Output('plot_smile', 'figure', allow_duplicate=True),
               [Input('dropdown-selection', 'value'),
                Input('interval-component', 'n_intervals')],
               prevent_initial_call=True)
 def update_output_smile(value, n):
     try:
-        model_from_api = get_object_from_json_endpoint_with_retry('https://option-volatility-dashboard.tech/dump_model', timeout=5)
 
-        # Список базовых активов, вычисление и добавление в словарь центрального страйка
-        base_asset_list = model_from_api[0]
+        # Список базовых активов
         base_asset_ticker_list = {}
         for i in range(len(base_asset_list)):
             base_asset_ticker_list.update({base_asset_list[i]['_ticker']: base_asset_list[i]['_base_asset_code']})
 
         # Список опционов
-        option_list = model_from_api[1]
         df = pd.DataFrame.from_dict(option_list, orient='columns')
         df = df.loc[df['_volatility'] > 0]
         df['_expiration_datetime'] = pd.to_datetime(df['_expiration_datetime'], format='%a, %d %b %Y %H:%M:%S GMT')
@@ -481,14 +548,10 @@ def update_output_smile(value, n):
         dff_call = dff[(dff._type == 'C')]  # оставим только коллы
 
         # My positions data
-        # Open the file using the "with" statement
         with open(temp_obj.substitute(name_file='QUIK_MyPos.csv'), 'r') as file:
             df_table = pd.read_csv(file, sep=';')
-            # df_table = df_table[(df_table.option_base == value)
             df_table_buy = df_table[(df_table.option_base == value) & (df_table.net_pos > 0) & (df_table.OpenIV > 0)]
-            # print(df_table_buy)
             df_table_sell = df_table[(df_table.option_base == value) & (df_table.net_pos < 0) & (df_table.OpenIV > 0)]
-            # print(df_table_sell)
             MyPos_ticker_list = []
             for i in range(len(df_table)):
                 MyPos_ticker_list.append(df_table['ticker'][i])
@@ -499,14 +562,11 @@ def update_output_smile(value, n):
         file.close()
 
         # My orders data
-        # Open the file using the "with" statement
         with open(temp_obj.substitute(name_file='QUIK_Stream_Orders.csv'), 'r', encoding='utf-8') as file:
             df_orders = pd.read_csv(file, sep=';')
             df_orders = df_orders[(df_orders.option_base == value)]
             df_orders_buy = df_orders[(df_orders.option_base == value) & (df_orders.operation == 'Купля')]
-            # print(df_orders_buy)
             df_orders_sell = df_orders[(df_orders.option_base == value) & (df_orders.operation == 'Продажа')]
-            # print(df_orders_sell)
             # Converting DataFrame "df_orders" to a list "tikers" containing all the rows of column 'ticker'
             tikers = df_orders['ticker'].tolist()
 
@@ -660,15 +720,24 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
     # limit = 450 * slider_value
     limit_time = datetime.datetime.now() - timedelta(hours=12 * slider_value)
 
-    # BaseAssetPrice history data DAMP
-    with open(temp_obj.substitute(name_file='BaseAssetPriceHistoryDamp.csv'), 'r') as file:
-        df_BaseAssetPrice = pd.read_csv(file, sep=';')
-        df_BaseAssetPrice = df_BaseAssetPrice[(df_BaseAssetPrice.ticker == dropdown_value)]
-        # df_BaseAssetPrice = df_BaseAssetPrice.tail(limit)
-        df_BaseAssetPrice['DateTime'] = pd.to_datetime(df_BaseAssetPrice['DateTime'], format='%Y-%m-%d %H:%M:%S')
-        df_BaseAssetPrice.index = pd.DatetimeIndex(df_BaseAssetPrice['DateTime'])
-        df_BaseAssetPrice = df_BaseAssetPrice[(df_BaseAssetPrice.DateTime > limit_time)]
-    # Close the file
+    # СВЕЧИ Данные для графика базового актива
+    # Пробегаем по списку базовых активов, находим последнюю цену базового актива
+    base_asset_list = model_from_api[0]
+    for asset in base_asset_list:
+        if asset.get('_ticker') == dropdown_value:
+            last_price_fut = asset.get('_last_price')
+            print(last_price_fut)
+    # Candles (свечи/бары) для базового актива
+    time_frame = 'M15'
+    datapath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'Data', 'Finam', '')  # Путь к файлам баров
+    dataname = f'SPBFUT.{dropdown_value}'
+    filename = f'{datapath}{dataname}_{time_frame}.txt'  # Полное имя файла
+    with open(file=filename, mode='r') as file:
+        df_candles = pd.read_csv(file, sep='\t', header=0)
+        df_candles['datetime'] = pd.to_datetime(df_candles['datetime'], format='%d.%m.%Y %H:%M')
+        df_candles = df_candles.sort_values('datetime').reset_index(drop=True)
+        df_candles = df_candles[(df_candles.datetime > limit_time)]
+        # df_candles.loc[df_candles.index[-1], 'close'] = last_price_fut # Устанавливаем последнюю цену базового актива в бар
     file.close()
 
     # ДАННЫЕ ИЗ DAMP/csv
@@ -710,10 +779,16 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
                                  name=d_exp), secondary_y=True, )
     fig.update_layout(legend=dict(groupclick="toggleitem"))
 
-    # График истории цены базового актива
-    fig.add_trace(go.Scatter(x=df_BaseAssetPrice['DateTime'], y=df_BaseAssetPrice['last_price'], mode='lines+text',
-                             name=dropdown_value, line=dict(color='gray', width=2, dash='dashdot')),
-                  secondary_y=False, )
+    # График Candles
+    fig.add_trace(go.Candlestick(x=df_candles['datetime'],
+                                 open=df_candles['open'],
+                                 high=df_candles['high'],
+                                 low=df_candles['low'],
+                                 close=df_candles['close'],
+                                 name=dropdown_value,
+                                 increasing_line=dict(width=1),
+                                 decreasing_line=dict(width=1)),
+                  secondary_y=False)
 
     # Убираем неторговое время
     fig.update_xaxes(
@@ -758,15 +833,13 @@ def update_output_MyPosHistory(dropdown_value, slider_value, n):
     # print(df_table)
 
     # СВЕЧИ Данные для графика базового актива
-    # Поиск последней цены базового актива
-    model_from_api = get_object_from_json_endpoint_with_retry('https://option-volatility-dashboard.tech/dump_model', timeout=5)
     # Пробегаем по списку базовых активов, находим последнюю цену базового актива
     base_asset_list = model_from_api[0]
     for asset in base_asset_list:
         if asset.get('_ticker') == dropdown_value:
             last_price_fut = asset.get('_last_price')
     # Candles (свечи/бары) для базового актива
-    time_frame = 'M5'
+    time_frame = 'M15'
     datapath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'Data', 'Finam', '')  # Путь к файлам баров
     dataname = f'SPBFUT.{dropdown_value}'
     filename = f'{datapath}{dataname}_{time_frame}.txt'  # Полное имя файла
@@ -775,7 +848,7 @@ def update_output_MyPosHistory(dropdown_value, slider_value, n):
         df_candles['datetime'] = pd.to_datetime(df_candles['datetime'], format='%d.%m.%Y %H:%M')
         df_candles = df_candles.sort_values('datetime').reset_index(drop=True)
         df_candles = df_candles[(df_candles.datetime > limit_time)]
-        df_candles.loc[df_candles.index[-1], 'close'] = last_price_fut
+        # df_candles.loc[df_candles.index[-1], 'close'] = last_price_fut # Устанавливаем последнюю цену базового актива в бар
     file.close()
 
     # ДАННЫЕ ИЗ csv
@@ -944,14 +1017,23 @@ def update_output_history_naklon(dropdown_value, slider_value, n):
     # limit = 450 * slider_value
     limit_time = datetime.datetime.now() - timedelta(hours=12 * slider_value)
 
-    # BaseAssetPrice history data DAMP
-    with open(temp_obj.substitute(name_file='BaseAssetPriceHistoryDamp.csv'), 'r') as file:
-        df_BaseAssetPrice = pd.read_csv(file, sep=';')
-        df_BaseAssetPrice = df_BaseAssetPrice[(df_BaseAssetPrice.ticker == dropdown_value)]
-        df_BaseAssetPrice['DateTime'] = pd.to_datetime(df_BaseAssetPrice['DateTime'], format='%Y-%m-%d %H:%M:%S')
-        df_BaseAssetPrice.index = pd.DatetimeIndex(df_BaseAssetPrice['DateTime'])
-        df_BaseAssetPrice = df_BaseAssetPrice[(df_BaseAssetPrice.DateTime > limit_time)]
-    # Close the file
+    # СВЕЧИ Данные для графика базового актива
+    # Пробегаем по списку базовых активов, находим последнюю цену базового актива
+    base_asset_list = model_from_api[0]
+    for asset in base_asset_list:
+        if asset.get('_ticker') == dropdown_value:
+            last_price_fut = asset.get('_last_price')
+    # Candles (свечи/бары) для базового актива
+    time_frame = 'M15'
+    datapath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'Data', 'Finam', '')  # Путь к файлам баров
+    dataname = f'SPBFUT.{dropdown_value}'
+    filename = f'{datapath}{dataname}_{time_frame}.txt'  # Полное имя файла
+    with open(file=filename, mode='r') as file:
+        df_candles = pd.read_csv(file, sep='\t', header=0)
+        df_candles['datetime'] = pd.to_datetime(df_candles['datetime'], format='%d.%m.%Y %H:%M')
+        df_candles = df_candles.sort_values('datetime').reset_index(drop=True)
+        df_candles = df_candles[(df_candles.datetime > limit_time)]
+        # df_candles.loc[df_candles.index[-1], 'close'] = last_price_fut # Устанавливаем последнюю цену базового актива в бар
     file.close()
 
     # ДАННЫЕ ИЗ DAMP/csv
@@ -994,10 +1076,21 @@ def update_output_history_naklon(dropdown_value, slider_value, n):
                                  name=d_exp), secondary_y=True, )
     fig.update_layout(legend=dict(groupclick="toggleitem"))
 
-    # График истории цены базового актива
-    fig.add_trace(go.Scatter(x=df_BaseAssetPrice['DateTime'], y=df_BaseAssetPrice['last_price'], mode='lines+text',
-                             name=dropdown_value, line=dict(color='gray', width=3, dash='dashdot')),
-                  secondary_y=False, )
+    # График Candles
+    fig.add_trace(go.Candlestick(x=df_candles['datetime'],
+                                 open=df_candles['open'],
+                                 high=df_candles['high'],
+                                 low=df_candles['low'],
+                                 close=df_candles['close'],
+                                 name=dropdown_value,
+                                 increasing_line=dict(width=1),
+                                 decreasing_line=dict(width=1)),
+                  secondary_y=False)
+
+    # # График истории цены базового актива
+    # fig.add_trace(go.Scatter(x=df_BaseAssetPrice['DateTime'], y=df_BaseAssetPrice['last_price'], mode='lines+text',
+    #                          name=dropdown_value, line=dict(color='gray', width=3, dash='dashdot')),
+    #               secondary_y=False, )
 
     # Убираем неторговое время
     fig.update_xaxes(
@@ -1046,7 +1139,7 @@ def update_equity_history(dropdown_value, slider_value, n):
 
     # СВЕЧИ Данные для графика базового актива
     # Поиск последней цены базового актива
-    model_from_api = get_object_from_json_endpoint_with_retry('https://option-volatility-dashboard.tech/dump_model', timeout=5)
+    # model_from_api = get_object_from_json_endpoint_with_retry('https://option-volatility-dashboard.tech/dump_model', timeout=5)
     # Пробегаем по списку базовых активов, находим последнюю цену базового актива
     base_asset_list = model_from_api[0]
     for asset in base_asset_list:
