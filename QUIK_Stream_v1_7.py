@@ -316,11 +316,12 @@ def sync_portfolio_positions():
                 sec_code = active_futures_holding["sec_code"]
                 class_code_result = qp_provider.get_security_class(class_codes, sec_code)
 
+                # Если тикер - опцион, то берем его спецификацию
                 if class_code_result and class_code_result.get('data'):
                     class_code = class_code_result['data']
                     # print(f'class_code {class_code}')
                     if class_code == "SPBOPT":  # Берем только опционы
-                        si = qp_provider.get_symbol_info(class_code, sec_code)  # Спецификация тикера
+                        si = qp_provider.get_symbol_info(class_code, sec_code)  # Спецификация тикера опционов
 
                         # Тип опциона
                         option_type_response = qp_provider.get_param_ex(class_code, sec_code, 'OPTIONTYPE', trans_id=0)
@@ -481,12 +482,14 @@ def sync_portfolio_positions():
                                 opt_volatility_last = 0.0
                         # print(f"Волатильность опциона IMPLIED_VOLATILITY (IV) - через расчет по цене опциона: {opt_volatility_last}")
 
+                        # Implied Volatility Bid, Offer
                         opt_volatility_bid = implied_volatility.get_iv_for_option_price(asset_price, option, bid_price)
                         # print(f'opt_volatility_bid - Implied Volatility Bid: {opt_volatility_bid}, тип: {type(opt_volatility_bid)}')
                         opt_volatility_offer = implied_volatility.get_iv_for_option_price(asset_price, option,
                                                                                           offer_price)
                         # print(f'opt_volatility_offer - Implied Volatility Offer: {opt_volatility_offer}, тип: {type(opt_volatility_offer)}')
 
+                        # Вычисление OpenDateTime, OpenPrice, OpenIV
                         net_pos = active_futures_holding['totalnet']
                         # OpenDateTime, OpenPrice, OpenIV = calculate_open_data_open_price_open_iv(sec_code, net_pos)
                         open_data_result = calculate_open_data_open_price_open_iv(sec_code, net_pos)
@@ -720,7 +723,8 @@ def start_mypos_history_save():
 
 def calculate_open_data_open_price_open_iv(sec_code, net_pos):
     """
-    Вычисляет дату открытия позиции, цену и волатильность для заданного инструмента,
+    Вычисляет дату открытия позиции, цену и волатильность для заданного инструмента
+    из архива всех сделок по данным из CSV файла QUIK_Stream_Trades.csv,
     как средневзвешенные по объёму первых сделок до достижения нужного объёма.
 
     :param sec_code: Код инструмента
@@ -851,6 +855,7 @@ def calculate_open_data_open_price_open_iv(sec_code, net_pos):
         #
         # print('\n')
 
+        # Если нет сделок, то возвращаем None
         if not selected_trades:
             sum_volume_short = instrument_trades_df.loc[instrument_trades_df['operation'] == 'Продажа', 'volume'].sum()
             count_short = (instrument_trades_df['operation'] == 'Продажа').sum()

@@ -18,7 +18,6 @@ from app.supported_base_asset import MAP
 from string import Template
 import time
 import random
-from functools import lru_cache
 import inspect
 
 temp_str = 'C:\\Users\\шадрин\\YandexDisk\\_ИИС\\Position\\$name_file'
@@ -55,7 +54,7 @@ def utc_timestamp_to_msk_datetime(seconds) -> datetime:
     dt_utc = datetime.datetime.fromtimestamp(seconds)  # Переводим кол-во секунд, прошедших с 01.01.1970 в UTC
     return utc_to_msk_datetime(dt_utc)  # Переводим время из UTC в московское
 
-
+# Функция для получения данных с API при первом запуске приложения, далее каждые 10 секунд по запуску функции обратного вызова update_time(n)
 def fetch_api_data():
     """Функция для получения данных с API"""
     global model_from_api, base_asset_list, option_list
@@ -63,7 +62,7 @@ def fetch_api_data():
 
     # Список базовых активов
     base_asset_list = model_from_api[0]
-    # print('base_asset_list:', base_asset_list)
+    # print(f'base_asset_list: {base_asset_list}')
 
     # Список опционов
     option_list = model_from_api[1]
@@ -102,7 +101,7 @@ def get_object_from_json_endpoint_with_retry(url, method='GET', params={}, max_d
             frame = inspect.currentframe().f_back
             filename = os.path.basename(frame.f_code.co_filename)
             line_number = frame.f_lineno
-            print(f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} Запрос к {url} успешно выполнен (файл: строка: {line_number})")
+            print(f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} Запрос к {url} успешно выполнен (строка: {line_number})")
             return response.json()
 
         except requests.exceptions.HTTPError as e:
@@ -518,7 +517,7 @@ def update_time(n):
         html.Pre(info)
     ]
 
-# Обновление улыбки волатильности
+# Обновление графика улыбки волатильности
 @app.callback(Output('plot_smile', 'figure', allow_duplicate=True),
               [Input('dropdown-selection', 'value'),
                Input('interval-component', 'n_intervals')],
@@ -830,7 +829,6 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
               prevent_initial_call=True)
 def update_output_MyPosHistory(dropdown_value, slider_value, n):
     limit_time = datetime.datetime.now() - timedelta(hours=12 * slider_value)
-    # print(df_table)
 
     # СВЕЧИ Данные для графика базового актива
     # Пробегаем по списку базовых активов, находим последнюю цену базового актива
