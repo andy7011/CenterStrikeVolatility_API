@@ -124,11 +124,6 @@ def get_object_from_json_endpoint_with_retry(url, method='GET', params={}, max_d
 # Выполняем запрос при запуске
 fetch_api_data()
 
-# smile_data() # Запуск функции сборки данных для построения улыбки волатильности первого по списку базового актива
-
-# Сборка данных для улыбки волатильности
-# def smile_data():
-
 # Список базовых активов
 base_asset_ticker_list = {}
 for i in range(len(base_asset_list)):
@@ -208,12 +203,18 @@ with open(temp_obj.substitute(name_file='Equity.CSV'), 'r') as file:
     df_equity[cols_to_convert] = df_equity[cols_to_convert].apply(pd.to_numeric, errors='coerce')
 file.close()
 
-# Candles
-with open(temp_obj.substitute(name_file='SPBFUT.RIH6_D1.txt'), 'r') as file:
+# СВЕЧИ Данные для графика базового актива (для первой прорисовки, первый фьючерс из списка MAP)
+limit_time = datetime.datetime.now() - timedelta(hours=12 * 6) # Три дня
+time_frame = 'M15'
+datapath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'Data', 'Finam', '')  # Путь к файлам баров
+dataname = f'SPBFUT.{first_key}'
+filename = f'{datapath}{dataname}_{time_frame}.txt'  # Полное имя файла
+# print(filename)
+with open(file=filename, mode='r') as file:
     df_candles = pd.read_csv(file, sep='\t', header=0)
     df_candles['datetime'] = pd.to_datetime(df_candles['datetime'], format='%d.%m.%Y %H:%M')
     df_candles = df_candles.sort_values('datetime').reset_index(drop=True)
-    # print(df_candles)
+    df_candles = df_candles[(df_candles.datetime > limit_time)]
 file.close()
 
 # Сборка основного файла истории
@@ -486,7 +487,7 @@ app.layout = html.Div(children=[
 
 # --- CALLBACKS ---
 
-# Callback to update the table (непонятный колбэк)
+# Колбэк для очистки данных после каждого обновления данных с периодичностью 10 секунд
 @app.callback(Output('intermediate-value', 'children'),
               [Input('interval-component', 'n_intervals')],
               [State('intermediate-value', 'children')])
@@ -499,11 +500,11 @@ def clean_data(value, dff):
     # df['_expiration_datetime'].dt.date
     # df['expiration_date'] = df['_expiration_datetime'].dt.strftime('%d.%m.%Y')
     # dff = df[(df._base_asset_ticker == value) & (df._type == 'C')]
-    # print(dff)
+    # print(f'dff: {dff}')
     # return dff.tail(450).to_json(date_format='iso', orient='split')
 
 
-# Callback to update the last-update-time element
+# Колбэк для обновления времени последнего обновления данных с периодичностью 10 секунд
 @app.callback(Output('last_update_time', 'children'),
               [Input('interval-component', 'n_intervals')])
 def update_time(n):
@@ -716,16 +717,15 @@ def update_output_smile(value, n):
                ],
               prevent_initial_call=True)
 def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
-    # limit = 450 * slider_value
     limit_time = datetime.datetime.now() - timedelta(hours=12 * slider_value)
 
     # СВЕЧИ Данные для графика базового актива
     # Пробегаем по списку базовых активов, находим последнюю цену базового актива
-    base_asset_list = model_from_api[0]
+    # base_asset_list = model_from_api[0]
     for asset in base_asset_list:
         if asset.get('_ticker') == dropdown_value:
             last_price_fut = asset.get('_last_price')
-            print(last_price_fut)
+            # print(last_price_fut)
     # Candles (свечи/бары) для базового актива
     time_frame = 'M15'
     datapath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'Data', 'Finam', '')  # Путь к файлам баров
@@ -784,7 +784,7 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
                                  high=df_candles['high'],
                                  low=df_candles['low'],
                                  close=df_candles['close'],
-                                 name=dropdown_value,
+                                 name=f"{dropdown_value} {time_frame}",
                                  increasing_line=dict(width=1),
                                  decreasing_line=dict(width=1)),
                   secondary_y=False)
@@ -968,7 +968,7 @@ def update_output_MyPosHistory(dropdown_value, slider_value, n):
                                  high=df_candles['high'],
                                  low=df_candles['low'],
                                  close=df_candles['close'],
-                                 name=dropdown_value,
+                                 name=f"{dropdown_value} {time_frame}",
                                  increasing_line=dict(width=1),
                                  decreasing_line=dict(width=1)),
                   secondary_y=False)
@@ -1080,7 +1080,7 @@ def update_output_history_naklon(dropdown_value, slider_value, n):
                                  high=df_candles['high'],
                                  low=df_candles['low'],
                                  close=df_candles['close'],
-                                 name=dropdown_value,
+                                 name=f"{dropdown_value} {time_frame}",
                                  increasing_line=dict(width=1),
                                  decreasing_line=dict(width=1)),
                   secondary_y=False)
@@ -1194,7 +1194,7 @@ def update_equity_history(dropdown_value, slider_value, n):
                                  high=df_candles['high'],
                                  low=df_candles['low'],
                                  close=df_candles['close'],
-                                 name=dropdown_value,
+                                 name=f"{dropdown_value} {time_frame}",
                                  increasing_line=dict(width=1),
                                  decreasing_line=dict(width=1)),
                   secondary_y=False)
