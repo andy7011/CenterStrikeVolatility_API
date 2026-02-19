@@ -122,26 +122,9 @@ def my_function():
 
         base_asset_list = model_from_api[0] # список базовых активов
 
-        # Сохраняем параметры базовых активов
-        central_strikes_map = {}
-        with open(temp_obj.substitute(name_file='BaseAssetPriceHistoryDamp.csv'), 'a', newline='') as f:
-            writer = csv.writer(f, delimiter=";", lineterminator="\r")
-            for asset in base_asset_list:
-                DateTime = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                ticker = asset.get('_ticker')
-                base_asset_last_price = asset.get('_last_price')
-                data_price = [DateTime, ticker, base_asset_last_price]
-                writer.writerow(data_price)
-                strike_step = MAP[ticker]['strike_step']
-                central_strike = _calculate_central_strike(base_asset_last_price, strike_step)
-                central_strikes_map[ticker] = central_strike
-                asset.update({
-                    'central_strike': central_strike
-                })
-        f.close()
-
         # Находим центральный страйк для каждого базового актива, а также страйки смещенные влево и
         # вправо на величину offset и рядом расположенные (adjacent) страйки
+        central_strikes_map = {}
         strikes_map_up = {}
         adjacent_strikes_map_up = {}
         strikes_map_down = {}
@@ -152,6 +135,9 @@ def my_function():
             ticker = asset.get('_ticker')
             strike_step = MAP[ticker]['strike_step']
             base_asset_last_price = asset.get('_last_price')  # последняя цена базового актива
+            central_strike = _calculate_central_strike(base_asset_last_price, strike_step)
+            central_strikes_map[ticker] = central_strike
+            asset.update({'central_strike': central_strike})
             # print('\n')
             # print(f"Последняя цена базового актива для {ticker}: {base_asset_last_price}")
             base_asset_last_price_offset_plus = base_asset_last_price + (strike_step * offset)
@@ -427,8 +413,8 @@ def my_function():
                 # print('\n')
 
                 if Real_vol_up is None and adjacent_Real_vol_up is None and Real_vol_down is None and adjacent_Real_vol_down is None:
-                    Real = 0
-                    Quik = 0
+                    Real = None
+                    Quik = None
                 else:
                     difference_up = Real_vol_up - adjacent_Real_vol_up
                     # print(f"difference_up: {difference_up}")
@@ -452,13 +438,13 @@ def my_function():
                         Real_vol_down = Real_vol_down - shifting_vol_down
                         Quik_down = option_down['_volatility'] - shifting_vol_down
 
-                    Real = Real_vol_up - Real_vol_down
-                    Quik = Quik_up - Quik_down
+                    Real = None if round(Real_vol_up - Real_vol_down, 2) == 0 else round(Real_vol_up - Real_vol_down, 2)
+                    Quik = None if round(Quik_up - Quik_down, 2) == 0 else round(Quik_up - Quik_down, 2)
                 # print(f"Real, Quik: {round(Real, 2), round(Quik, 2)}")
 
                 data_options_naklon = [current_DateTimestamp.strftime('%Y-%m-%d %H:%M:%S'),
                                        option_up['_expiration_datetime'], option_up['_base_asset_ticker'],
-                                       round(Real, 2), round(Quik, 2)]
+                                       Real, Quik]
                 writer.writerow(data_options_naklon)
         f.close()
 

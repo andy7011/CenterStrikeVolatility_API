@@ -1,3 +1,0 @@
-date;time;order_num;optionbase;tiker;optiontype;strike;expdate;operation;volume;price;value;volatility
-08.04.2025;14:07:26.781;1892950498629530732;SiM5;Si87000BP5B;Put;87000.0;10.04.2025;Купля;5.0;17.0;85.0;29.46
-08.04.2025;14:08:26.580;1892950498629538127;SiM5;Si92000BF5;Call;92000.0;19.06.2025;Продажа;1.0;3825.0;3825.0;27.02

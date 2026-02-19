@@ -493,16 +493,6 @@ app.layout = html.Div(children=[
               [State('intermediate-value', 'children')])
 def clean_data(value, dff):
     pass
-    # # Список опционов
-    # df = pd.DataFrame.from_dict(option_list, orient='columns')
-    # df = df.loc[df['_volatility'] > 0]
-    # df['_expiration_datetime'] = pd.to_datetime(df['_expiration_datetime'], format='%a, %d %b %Y %H:%M:%S GMT')
-    # df['_expiration_datetime'].dt.date
-    # df['expiration_date'] = df['_expiration_datetime'].dt.strftime('%d.%m.%Y')
-    # dff = df[(df._base_asset_ticker == value) & (df._type == 'C')]
-    # print(f'dff: {dff}')
-    # return dff.tail(450).to_json(date_format='iso', orient='split')
-
 
 # Колбэк для обновления времени последнего обновления данных с периодичностью 10 секунд
 @app.callback(Output('last_update_time', 'children'),
@@ -574,8 +564,6 @@ def update_output_smile(value, n):
         fig = make_subplots(specs=[[{"secondary_y": True}]])
 
         # Рисуем график улыбки
-        # fig = px.line(dff_call, x='_strike', y='_volatility', color='expiration_date', width=1000, height=600)
-        # fig = px.line(dff_call, x='_strike', y='_volatility', color='expiration_date')
         for exp_day in dff_call['expiration_date'].unique():
             dff_smile = dff_call[dff_call.expiration_date == exp_day]
             fig.add_trace(go.Scatter(x=dff_smile['_strike'], y=dff_smile['_volatility'], mode='lines+text',
@@ -590,17 +578,17 @@ def update_output_smile(value, n):
                                  hovertemplate="<b>%{customdata}</b>"
                                  ))
 
-        fig.update_traces(
-            marker=dict(
-                size=8,
-                symbol="star-triangle-up-open",
-                line=dict(
-                    width=2,
-                    #             color="DarkSlateGrey" Line colors don't apply to open markers
-                )
-            ),
-            selector=dict(mode="markers")
-        )
+        # fig.update_traces(
+        #     marker=dict(
+        #         size=8,
+        #         symbol="star-triangle-up-open",
+        #         line=dict(
+        #             width=2,
+        #             #             color="DarkSlateGrey" Line colors don't apply to open markers
+        #         )
+        #     ),
+        #     selector=dict(mode="markers")
+        # )
 
         # Мои позиции SELL
         fig.add_trace(go.Scatter(x=df_table_sell['strike'], y=df_table_sell['OpenIV'],
@@ -641,7 +629,8 @@ def update_output_smile(value, n):
                 UTC_seconds = i
                 MSK_time = utc_timestamp_to_msk_datetime(UTC_seconds)
                 MSK_time = MSK_time.strftime('%H:%M:%S')
-                dff_MyPosOrders[str(int(i))] = dff_MyPosOrders.replace(int(i), MSK_time, inplace=True)
+                # dff_MyPosOrders[str(int(i))] = dff_MyPosOrders.replace(int(i), MSK_time, inplace=True)
+                dff_MyPosOrders.loc[dff_MyPosOrders['_last_price_timestamp'] == i, str(int(i))] = MSK_time
         # print(dff_MyPosOrders['_last_price_timestamp'])
 
         # ASK
@@ -774,7 +763,7 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
                                  legendgroup="group2",
                                  legendgrouptitle_text="QuikVol",
                                  mode='lines+text',
-                                 line=dict(color='gray', width=1, dash='dot'),
+                                 line=dict(width=3, dash='dashdot'),
                                  name=d_exp), secondary_y=True, )
     fig.update_layout(legend=dict(groupclick="toggleitem"))
 
@@ -957,11 +946,6 @@ def update_output_MyPosHistory(dropdown_value, slider_value, n):
 
     fig.update_layout(legend=dict(groupclick="toggleitem"))
 
-    # # График истории цены базового актива
-    # fig.add_trace(go.Scatter(x=df_BaseAssetPrice['DateTime'], y=df_BaseAssetPrice['last_price'], mode='lines+text',
-    #                          name=dropdown_value, line=dict(color='gray', width=2, dash='dashdot')),
-    #               secondary_y=False, )
-
     # График Candles
     fig.add_trace(go.Candlestick(x=df_candles['datetime'],
                                  open=df_candles['open'],
@@ -1070,7 +1054,7 @@ def update_output_history_naklon(dropdown_value, slider_value, n):
                                  legendgroup="group2",
                                  legendgrouptitle_text="Quik",
                                  mode='lines+text',
-                                 line=dict(color='gray', width=1, dash='dot'),
+                                 line=dict(width=3, dash='dashdot'),
                                  name=d_exp), secondary_y=True, )
     fig.update_layout(legend=dict(groupclick="toggleitem"))
 
@@ -1084,11 +1068,6 @@ def update_output_history_naklon(dropdown_value, slider_value, n):
                                  increasing_line=dict(width=1),
                                  decreasing_line=dict(width=1)),
                   secondary_y=False)
-
-    # # График истории цены базового актива
-    # fig.add_trace(go.Scatter(x=df_BaseAssetPrice['DateTime'], y=df_BaseAssetPrice['last_price'], mode='lines+text',
-    #                          name=dropdown_value, line=dict(color='gray', width=3, dash='dashdot')),
-    #               secondary_y=False, )
 
     # Убираем неторговое время
     fig.update_xaxes(
