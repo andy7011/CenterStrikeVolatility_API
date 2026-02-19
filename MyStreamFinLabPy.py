@@ -8,16 +8,23 @@ import csv
 from string import Template
 import threading
 import time  # Подписка на события по времени
-import implied_volatility
-import option_type
-from QuikPy.QuikPy import QuikPy  # Работа с QUIK из Python через LUA скрипты QUIK#
-from FinLabPy.Config import brokers, default_broker  # Все брокеры и брокер по умолчанию
-from FinLabPy.Core import bars_to_df  # Перевод бар в pandas DataFrame
-from model.option import Option
-from app.supported_base_asset import MAP
 from accfifo import Entry, FIFO
 from collections import deque
 import re
+
+from QuikPy.QuikPy import QuikPy  # Работа с QUIK из Python через LUA скрипты QUIK#
+
+from model.option import Option
+import option_type
+import implied_volatility
+from app.supported_base_asset import MAP
+
+from threading import Thread, Event  # Поток и событие выхода из потока
+
+from FinLabPy.Config import brokers, default_broker  # Все брокеры и брокер по умолчанию
+from FinLabPy.Core import Broker, bars_to_df  # Перевод бар в pandas DataFrame
+from FinLabPy.Schedule.MarketSchedule import Schedule  # Расписание работы биржи
+from FinLabPy.Schedule.MOEX import Futures  # Расписание торгов срочного рынка
 
 pd.set_option('future.no_silent_downcasting', True)
 
@@ -161,9 +168,7 @@ def BarsHistoryStream():
     broker.close()  # Закрываем брокера
 
 
-
-
-
+# Функция для расчёта времени до экспирации
 def get_time_to_maturity(expiration_datetime):
     # Если expiration_datetime - это datetime объект, конвертируем в timestamp
     if isinstance(expiration_datetime, datetime):
@@ -209,8 +214,17 @@ class TradeHandler:
     def trigger(self, data):
         _on_trade_impl(data)
 
+def sync_active_orders_FinLab():
+    # broker = default_broker  # Брокер по умолчанию
+    # broker = brokers['Ф']  # Брокер по ключу из Config.py словаря brokers
+    print('- Заявки:')
+    for order in broker.get_orders():  # Пробегаемся по всем заявкам брокера
+        print(f'  - {order}')
+    broker.close()  # Закрываем брокера
+
 
 def sync_active_orders():
+
     global active_orders_set, all_rows_order_list, qp_provider
 
     try:
