@@ -6,7 +6,7 @@ from dash import html
 import dash_bootstrap_components as dbc
 import dash_daq as daq
 from dash.exceptions import PreventUpdate
-import datetime
+from datetime import datetime, timedelta, UTC  # Дата и время
 from datetime import timedelta
 from pytz import utc
 import requests
@@ -20,6 +20,9 @@ import time
 import random
 import inspect
 
+from FinLabPy.Config import brokers, default_broker  # Все брокеры и брокер по умолчанию
+from FinLabPy.Core import bars_to_df  # Перевод бар в pandas DataFrame
+
 temp_str = 'C:\\Users\\ashad\\Yandex.Disk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
@@ -28,6 +31,7 @@ model_from_api = None
 base_asset_list = None
 option_list = None
 central_strike = None
+global df_candles
 
 # Первый фьючерс в списке MAP
 first_key = next(iter(MAP))
@@ -51,7 +55,7 @@ def utc_timestamp_to_msk_datetime(seconds) -> datetime:
     :param int seconds: Кол-во секунд, прошедших с 01.01.1970 00:00 UTC
     :return: Московское время без временнОй зоны
     """
-    dt_utc = datetime.datetime.fromtimestamp(seconds)  # Переводим кол-во секунд, прошедших с 01.01.1970 в UTC
+    dt_utc = datetime.fromtimestamp(seconds)  # Переводим кол-во секунд, прошедших с 01.01.1970 в UTC
     return utc_to_msk_datetime(dt_utc)  # Переводим время из UTC в московское
 
 # Функция для получения данных с API при первом запуске приложения, далее каждые 10 секунд по запуску функции обратного вызова update_time(n)
@@ -101,7 +105,7 @@ def get_object_from_json_endpoint_with_retry(url, method='GET', params={}, max_d
             frame = inspect.currentframe().f_back
             filename = os.path.basename(frame.f_code.co_filename)
             line_number = frame.f_lineno
-            # print(f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} Запрос к {url} успешно выполнен (строка: {line_number})")
+            # print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} Запрос к {url} успешно выполнен (строка: {line_number})")
             return response.json()
 
         except requests.exceptions.HTTPError as e:
@@ -114,11 +118,11 @@ def get_object_from_json_endpoint_with_retry(url, method='GET', params={}, max_d
             wait_time = delay * jitter
 
             print(
-                f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} Попытка {attempt}: Получена ошибка 502. Ждём {wait_time:.1f} секунд перед повторной попыткой")
+                f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} Попытка {attempt}: Получена ошибка 502. Ждём {wait_time:.1f} секунд перед повторной попыткой")
             time.sleep(wait_time)
 
         except requests.exceptions.Timeout:
-            print(f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} Timeout при запросе к {url}")
+            print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} Timeout при запросе к {url}")
             raise
 
 # Выполняем запрос при запуске
@@ -168,18 +172,6 @@ with open(temp_obj.substitute(name_file='QUIK_Stream_Orders.csv'), 'r', encoding
     # Converting DataFrame "df_orders" to a list "tikers" containing all the rows of column 'ticker'
     tikers = df_orders['ticker'].tolist()
 
-# My positions data
-with open(temp_obj.substitute(name_file='QUIK_MyPos.csv'), 'r', encoding='UTF-8') as file:
-    df_table = pd.read_csv(file, sep=';')
-# Close the file explicitly file.close()
-file.close()
-
-# My orders data
-with open(temp_obj.substitute(name_file='QUIK_Stream_Orders.csv'), 'r', encoding='UTF-8') as file:
-    df_orders = pd.read_csv(file, sep=';')
-# Close the file explicitly file.close()
-file.close()
-
 # My trades data
 with open(temp_obj.substitute(name_file='QUIK_Stream_Trades.csv'), 'r', encoding='UTF-8') as file:
     df_trades = pd.read_csv(file, sep=';')
@@ -204,18 +196,34 @@ with open(temp_obj.substitute(name_file='Equity.CSV'), 'r') as file:
 file.close()
 
 # СВЕЧИ Данные для графика базового актива (для первой прорисовки, первый фьючерс из списка MAP)
-limit_time = datetime.datetime.now() - timedelta(hours=12 * 6) # Три дня
-time_frame = 'M15'
-datapath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'Data', 'Alor', '')  # Путь к файлам баров
+
+# Будем запрашивать глубину истории 140 дней
+dt_from = datetime.now() - timedelta(days=140)
 dataname = f'SPBFUT.{first_key}'
-filename = f'{datapath}{dataname}_{time_frame}.txt'  # Полное имя файла
-# print(filename)
-with open(file=filename, mode='r') as file:
-    df_candles = pd.read_csv(file, sep='\t', header=0)
-    df_candles['datetime'] = pd.to_datetime(df_candles['datetime'], format='%d.%m.%Y %H:%M')
-    df_candles = df_candles.sort_values('datetime').reset_index(drop=True)
-    df_candles = df_candles[(df_candles.datetime > limit_time)]
-file.close()
+time_frame = 'M15'
+
+# Получаем историю баров для указанного инструмента и временного интервала
+def get_candles_request(dataname, time_frame, dt_from):
+    """
+    Функция получения датафрейма свечей от брокера Алор.
+    Args:
+        dataname: имя инструмента в формате SPBFUT.RIH6
+        ime_frame: таймфрейм
+        dt_from: начальная дата
+    """
+    global df_candles
+    broker = brokers['АС']  # Брокер по ключу из Config.py словаря brokers
+    symbol = broker.get_symbol_by_dataname(dataname)  # Тикер по названию
+    bars = broker.get_history(symbol, time_frame, dt_from=dt_from)  # Получаем историю тикера за 140 дней
+    print(f"Запрос свечей: {dataname} {time_frame} начиная с даты {dt_from}")
+    # print(f"Первый бар: {bars[0]}")  # Первый бар
+    # print(f"Последний бар: {bars[-1]}")  # Последний бар
+    df_candles = bars_to_df(bars)  # Все бары в pandas DataFrame pd_bars
+    # print(df_candles)  # Все бары в pandas DataFrame pd_bars
+    return df_candles
+
+# Вызов функции после её определения
+df_candles = get_candles_request(dataname, time_frame, dt_from)
 
 # Сборка основного файла истории
 try:
@@ -261,7 +269,7 @@ for i in range(len(base_asset_list)):
 
 # Список опционов из dump_model
 option_list = model_from_api[1]
-current_datetime = datetime.datetime.now()
+current_datetime = datetime.now()
 df = pd.DataFrame.from_dict(option_list, orient='columns')
 df = df.loc[df['_volatility'] > 0]
 df['_expiration_datetime'] = pd.to_datetime(df['_expiration_datetime'], format='%a, %d %b %Y %H:%M:%S GMT')
@@ -291,14 +299,19 @@ tab4_content = [  # Таблица моих позиций
             style_table={'max-width': '50px'},
             style_header={
                 'fontWeight': 'bold',
-                'backgroundColor': 'rgb(230, 230, 230)',
+                'backgroundColor': 'rgb(50, 50, 50)',  # Темный фон заголовка
+                'color': 'white',  # Белый текст заголовка
                 'textAlign': 'center'
+            },
+            style_data={
+                'backgroundColor': 'rgb(30, 30, 30)',  # Темный фон ячеек
+                'color': 'white'  # Белый текст ячеек
             },
             style_data_conditional=[
                 {
                     'if': {'filter_query': '{ticker} = "Total"'},
                     'fontWeight': 'bold',
-                    'backgroundColor': 'rgb(240, 240, 240)'
+                    'backgroundColor': 'rgb(60, 60, 60)'  # Темный фон Total
                 },
                 {'if': {'filter_query': '{P/L theor} > 1', 'column_id': 'P/L theor'},
                  'backgroundColor': '#3D9970', 'color': 'white'},
@@ -324,15 +337,25 @@ tab5_content = [  # Таблица моих сделок
             data=df_trades.to_dict('records'),
             page_size=14,
             style_table={'max-width': '50px'},
+            style_header={
+                'fontWeight': 'bold',
+                'backgroundColor': 'rgb(50, 50, 50)',
+                'color': 'white',
+                'textAlign': 'center'
+            },
+            style_data={
+                'backgroundColor': 'rgb(30, 30, 30)',
+                'color': 'white'
+            },
             style_data_conditional=[
                 {
                     'if': {'filter_query': '{operation} eq "Купля"'},
-                    'backgroundColor': 'white',
+                    'backgroundColor': 'rgb(30, 30, 30)',
                     'color': '#3D9970'
                 },
                 {
                     'if': {'filter_query': '{operation} eq "Продажа"'},
-                    'backgroundColor': 'white',
+                    'backgroundColor': 'rgb(30, 30, 30)',
                     'color': '#FF0000'
                 },
             ]
@@ -349,15 +372,25 @@ tab6_content = [  # Таблица моих ордеров
             data=df_orders.to_dict('records'),
             page_size=14,
             style_table={'max-width': '50px'},
+            style_header={
+                'fontWeight': 'bold',
+                'backgroundColor': 'rgb(50, 50, 50)',
+                'color': 'white',
+                'textAlign': 'center'
+            },
+            style_data={
+                'backgroundColor': 'rgb(30, 30, 30)',
+                'color': 'white'
+            },
             style_data_conditional=[
                 {
                     'if': {'filter_query': '{operation} eq "Купля"'},
-                    'backgroundColor': 'white',
+                    'backgroundColor': 'rgb(30, 30, 30)',
                     'color': '#3D9970'
                 },
                 {
                     'if': {'filter_query': '{operation} eq "Продажа"'},
-                    'backgroundColor': 'white',
+                    'backgroundColor': 'rgb(30, 30, 30)',
                     'color': '#FF0000'
                 },
             ]
@@ -368,8 +401,11 @@ tab6_content = [  # Таблица моих ордеров
 
 tab7_content = [dcc.Graph(id='MyEquityHistory', style={'margin-top': 10})]
 
-# Создаем приложение Dash
-app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
+# Создаем приложение Dash в тёмной теме
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.DARKLY])
+
+# Установка темной темы для всех графиков
+go.Figure(layout=go.Layout(template="plotly_dark"))
 
 app.layout = html.Div(children=[
 
@@ -383,12 +419,20 @@ app.layout = html.Div(children=[
             # Текущее время обновления данных
             html.H6(id='last_update_time'),
 
-            # html.Div(id='dd-output-container')]),
-            html.Div([
-                # Селектор выбора базового актива
-                dcc.Dropdown(df._base_asset_ticker.unique(), value=df._base_asset_ticker.unique()[0],
-                             id='dropdown-selection')
-            ]),
+            # Селектор выбора базового актива
+            dcc.Dropdown(
+                df._base_asset_ticker.unique(),
+                value=first_key,
+                id='dropdown-selection',
+                style={
+                    'backgroundColor': '#2d2d2d',
+                    'color': 'white',
+                    'border': '1px solid #444',
+                    'borderRadius': '4px'
+                },
+                className='dark-dropdown'
+            )
+            ,
 
             # Спидометр TrueVega
             # https://stackoverflow.com/questions/69275527/python-dash-gauge-how-can-i-use-strings-as-values-instead-of-numbers
@@ -493,15 +537,6 @@ app.layout = html.Div(children=[
               [State('intermediate-value', 'children')])
 def clean_data(value, dff):
     pass
-    # # Список опционов
-    # df = pd.DataFrame.from_dict(option_list, orient='columns')
-    # df = df.loc[df['_volatility'] > 0]
-    # df['_expiration_datetime'] = pd.to_datetime(df['_expiration_datetime'], format='%a, %d %b %Y %H:%M:%S GMT')
-    # df['_expiration_datetime'].dt.date
-    # df['expiration_date'] = df['_expiration_datetime'].dt.strftime('%d.%m.%Y')
-    # dff = df[(df._base_asset_ticker == value) & (df._type == 'C')]
-    # print(f'dff: {dff}')
-    # return dff.tail(450).to_json(date_format='iso', orient='split')
 
 
 # Колбэк для обновления времени последнего обновления данных с периодичностью 10 секунд
@@ -513,7 +548,7 @@ def update_time(n):
     with open(temp_obj.substitute(name_file='QUIK_MyPortfolioInfo.csv'), 'r') as file:
         info = file.read()
     return [
-        'Last update: {}'.format(datetime.datetime.now().strftime('%d.%m.%Y %H:%M:%S')),
+        'Last update: {}'.format(datetime.now().strftime('%d.%m.%Y %H:%M:%S')),
         html.Br(),
         html.Pre(info)
     ]
@@ -574,8 +609,6 @@ def update_output_smile(value, n):
         fig = make_subplots(specs=[[{"secondary_y": True}]])
 
         # Рисуем график улыбки
-        # fig = px.line(dff_call, x='_strike', y='_volatility', color='expiration_date', width=1000, height=600)
-        # fig = px.line(dff_call, x='_strike', y='_volatility', color='expiration_date')
         for exp_day in dff_call['expiration_date'].unique():
             dff_smile = dff_call[dff_call.expiration_date == exp_day]
             fig.add_trace(go.Scatter(x=dff_smile['_strike'], y=dff_smile['_volatility'], mode='lines+text',
@@ -589,18 +622,6 @@ def update_output_smile(value, n):
                                  customdata=df_table_buy[['option_type', 'net_pos', 'expdate', 'ticker']],
                                  hovertemplate="<b>%{customdata}</b>"
                                  ))
-
-        # fig.update_traces(
-            # marker=dict(
-                # size=8,
-                # symbol="star-triangle-up-open",
-                # line=dict(
-                    # width=2,
-                    # #             color="DarkSlateGrey" Line colors don't apply to open markers
-                # )
-            # ),
-            # selector=dict(mode="markers")
-        # )
 
         # Мои позиции SELL
         fig.add_trace(go.Scatter(x=df_table_sell['strike'], y=df_table_sell['OpenIV'],
@@ -686,7 +707,7 @@ def update_output_smile(value, n):
 
         # TrueVega позиции
         fig.add_trace(go.Bar(x=df_table_base['strike'], y=df_table_base['TrueVega'], text=df_table_base['TrueVega'],
-                             textposition='auto', name='TrueVega', opacity=0.2), secondary_y=True)
+                             textposition='auto', name='TrueVega', opacity=0.1), secondary_y=True)
 
         # Цена базового актива (вертикальная линия)
         fig.add_vline(x=base_asset_last_price, line_dash='dash', line_color='firebrick')
@@ -708,8 +729,53 @@ def update_output_smile(value, n):
         fig.update_layout(
             margin=dict(l=1, r=1, t=30, b=0),
         )
+
+        # Обновление сетки - добавьте эти строки перед return fig
+        fig.update_xaxes(
+            gridwidth=1,  # Толщина горизонтальной сетки
+            gridcolor='rgba(128, 128, 128, 0.3)',  # Цвет сетки
+            zeroline=False,  # Убрать нулевую линию
+            showgrid=True,  # Показать сетку
+            tickfont=dict(size=10)  # Размер шрифта меток
+        )
+
+        fig.update_yaxes(
+            gridwidth=1,  # Толщина горизонтальной сетки
+            gridcolor='rgba(128, 128, 128, 0.3)',  # Цвет сетки
+            zeroline=False,  # Убрать нулевую линию
+            showgrid=True,  # Показать сетку
+            tickfont=dict(size=10)  # Размер шрифта меток
+        )
+
+        # Для вторичной оси
+        fig.update_yaxes(
+            secondary_y=True,
+            gridwidth=1,  # Толщина горизонтальной сетки
+            gridcolor='rgba(128, 128, 128, 0.3)',  # Цвет сетки
+            zeroline=False,  # Убрать нулевую линию
+            showgrid=True,  # Показать сетку
+            tickfont=dict(size=10)  # Размер шрифта меток
+        )
+
         # убрать сетку правой оси
         fig['layout']['yaxis2']['showgrid'] = False
+
+        fig.update_layout(
+            plot_bgcolor='rgb(30, 30, 30)',
+            paper_bgcolor='rgb(30, 30, 30)',
+            font_color='white',
+            xaxis=dict(
+                gridcolor='rgb(60, 60, 60)',
+                gridwidth=1,
+                zerolinecolor='rgb(60, 60, 60)'
+            ),
+            yaxis=dict(
+                gridcolor='rgb(60, 60, 60)',
+                gridwidth=1,
+                zerolinecolor='rgb(60, 60, 60)'
+            )
+        )
+
         return fig
 
     except Exception as e:
@@ -726,27 +792,11 @@ def update_output_smile(value, n):
                ],
               prevent_initial_call=True)
 def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
-    limit_time = datetime.datetime.now() - timedelta(hours=12 * slider_value)
-
-    # СВЕЧИ Данные для графика базового актива
-    # Пробегаем по списку базовых активов, находим последнюю цену базового актива
-    # base_asset_list = model_from_api[0]
-    for asset in base_asset_list:
-        if asset.get('_ticker') == dropdown_value:
-            last_price_fut = asset.get('_last_price')
-            # print(last_price_fut)
-    # Candles (свечи/бары) для базового актива
-    time_frame = 'M15'
-    datapath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'Data', 'Finam', '')  # Путь к файлам баров
-    dataname = f'SPBFUT.{dropdown_value}'
-    filename = f'{datapath}{dataname}_{time_frame}.txt'  # Полное имя файла
-    with open(file=filename, mode='r') as file:
-        df_candles = pd.read_csv(file, sep='\t', header=0)
-        df_candles['datetime'] = pd.to_datetime(df_candles['datetime'], format='%d.%m.%Y %H:%M')
-        df_candles = df_candles.sort_values('datetime').reset_index(drop=True)
-        df_candles = df_candles[(df_candles.datetime > limit_time)]
-        # df_candles.loc[df_candles.index[-1], 'close'] = last_price_fut # Устанавливаем последнюю цену базового актива в бар
-    file.close()
+    global df_candles  # Добавляем объявление глобальной переменной
+    limit_time = datetime.now() - timedelta(hours=12 * slider_value)
+    # Сброс индекса с сохранением datetime как столбца
+    df_candles = df_candles.reset_index()
+    df_candles = df_candles[(df_candles.datetime > limit_time)]
 
     # ДАННЫЕ ИЗ DAMP/csv
     # OptionsVolaHistoryDamp.csv history data options volatility
@@ -783,7 +833,7 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
                                  legendgroup="group2",
                                  legendgrouptitle_text="QuikVol",
                                  mode='lines+text',
-                                 line=dict(width=3, dash='dashdot'),
+                                 line=dict(width=2, dash='dashdot'),
                                  name=d_exp), secondary_y=True, )
     fig.update_layout(legend=dict(groupclick="toggleitem"))
 
@@ -826,6 +876,52 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
         margin=dict(l=5, r=5, t=30, b=0),
     )
 
+    # Обновление сетки - добавьте эти строки перед return fig
+    fig.update_xaxes(
+        gridwidth=1,  # Толщина горизонтальной сетки
+        gridcolor='rgba(128, 128, 128, 0.3)',  # Цвет сетки
+        zeroline=False,  # Убрать нулевую линию
+        showgrid=True,  # Показать сетку
+        tickfont=dict(size=10)  # Размер шрифта меток
+    )
+
+    fig.update_yaxes(
+        gridwidth=1,  # Толщина горизонтальной сетки
+        gridcolor='rgba(128, 128, 128, 0.3)',  # Цвет сетки
+        zeroline=False,  # Убрать нулевую линию
+        showgrid=True,  # Показать сетку
+        tickfont=dict(size=10)  # Размер шрифта меток
+    )
+
+    # Для вторичной оси
+    fig.update_yaxes(
+        secondary_y=True,
+        gridwidth=1,  # Толщина горизонтальной сетки
+        gridcolor='rgba(128, 128, 128, 0.3)',  # Цвет сетки
+        zeroline=False,  # Убрать нулевую линию
+        showgrid=True,  # Показать сетку
+        tickfont=dict(size=10)  # Размер шрифта меток
+    )
+
+    # Убрать сетку левой оси
+    fig['layout']['yaxis']['showgrid'] = False
+
+    fig.update_layout(
+        plot_bgcolor='rgb(30, 30, 30)', # Фон графика
+        paper_bgcolor='rgb(30, 30, 30)', # Фон области рисования
+        font_color='white',  # Цвет текста
+        xaxis=dict( # Цвет вертикальных линий сетки
+            gridcolor='rgb(60, 60, 60)',
+            gridwidth=1,
+            zerolinecolor='rgb(60, 60, 60)'
+        ),
+        yaxis=dict( # Цвет горизонтальных линий сетки
+            gridcolor='rgb(50, 50, 50)',
+            gridwidth=0.5,
+            zerolinecolor='rgb(50, 50, 50)'
+        )
+    )
+
     return fig
 
 
@@ -837,26 +933,21 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
                ],
               prevent_initial_call=True)
 def update_output_MyPosHistory(dropdown_value, slider_value, n):
-    limit_time = datetime.datetime.now() - timedelta(hours=12 * slider_value)
+    global df_candles  # Добавляем объявление глобальной переменной
+
+    limit_time = datetime.now() - timedelta(hours=12 * slider_value)
 
     # СВЕЧИ Данные для графика базового актива
-    # Пробегаем по списку базовых активов, находим последнюю цену базового актива
-    base_asset_list = model_from_api[0]
-    for asset in base_asset_list:
-        if asset.get('_ticker') == dropdown_value:
-            last_price_fut = asset.get('_last_price')
-    # Candles (свечи/бары) для базового актива
-    time_frame = 'M15'
-    datapath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'Data', 'Finam', '')  # Путь к файлам баров
     dataname = f'SPBFUT.{dropdown_value}'
-    filename = f'{datapath}{dataname}_{time_frame}.txt'  # Полное имя файла
-    with open(file=filename, mode='r') as file:
-        df_candles = pd.read_csv(file, sep='\t', header=0)
-        df_candles['datetime'] = pd.to_datetime(df_candles['datetime'], format='%d.%m.%Y %H:%M')
-        df_candles = df_candles.sort_values('datetime').reset_index(drop=True)
-        df_candles = df_candles[(df_candles.datetime > limit_time)]
-        # df_candles.loc[df_candles.index[-1], 'close'] = last_price_fut # Устанавливаем последнюю цену базового актива в бар
-    file.close()
+    time_frame = 'M15'
+    # Будем запрашивать глубину истории 140 дней
+    dt_from = datetime.now() - timedelta(days=140)
+
+    df_candles = get_candles_request(dataname, time_frame, dt_from)
+
+    # Сброс индекса с сохранением datetime как столбца
+    df_candles = df_candles.reset_index()
+    df_candles = df_candles[(df_candles.datetime > limit_time)]
 
     # ДАННЫЕ ИЗ csv
     # MyPosHistory.csv history data options volatility
@@ -1005,6 +1096,52 @@ def update_output_MyPosHistory(dropdown_value, slider_value, n):
         margin=dict(l=3, r=3, t=0, b=0),
     )
 
+    # Обновление сетки - добавьте эти строки перед return fig
+    fig.update_xaxes(
+        gridwidth=1,  # Толщина горизонтальной сетки
+        gridcolor='rgba(128, 128, 128, 0.3)',  # Цвет сетки
+        zeroline=False,  # Убрать нулевую линию
+        showgrid=True,  # Показать сетку
+        tickfont=dict(size=10)  # Размер шрифта меток
+    )
+
+    fig.update_yaxes(
+        gridwidth=1,  # Толщина горизонтальной сетки
+        gridcolor='rgba(128, 128, 128, 0.3)',  # Цвет сетки
+        zeroline=False,  # Убрать нулевую линию
+        showgrid=True,  # Показать сетку
+        tickfont=dict(size=10)  # Размер шрифта меток
+    )
+
+    # Для вторичной оси
+    fig.update_yaxes(
+        secondary_y=True,
+        gridwidth=1,  # Толщина горизонтальной сетки
+        gridcolor='rgba(128, 128, 128, 0.3)',  # Цвет сетки
+        zeroline=False,  # Убрать нулевую линию
+        showgrid=True,  # Показать сетку
+        tickfont=dict(size=10)  # Размер шрифта меток
+    )
+
+    # Убрать сетку левой оси
+    fig['layout']['yaxis']['showgrid'] = False
+
+    fig.update_layout(
+        plot_bgcolor='rgb(30, 30, 30)',
+        paper_bgcolor='rgb(30, 30, 30)',
+        font_color='white',
+        xaxis=dict(
+            gridcolor='rgb(60, 60, 60)',
+            gridwidth=1,
+            zerolinecolor='rgb(60, 60, 60)'
+        ),
+        yaxis=dict(
+            gridcolor='rgb(60, 60, 60)',
+            gridwidth=1,
+            zerolinecolor='rgb(60, 60, 60)'
+        )
+    )
+
     return fig
 
 
@@ -1016,27 +1153,11 @@ def update_output_MyPosHistory(dropdown_value, slider_value, n):
                ],
               prevent_initial_call=True)
 def update_output_history_naklon(dropdown_value, slider_value, n):
-    # limit = 450 * slider_value
-    limit_time = datetime.datetime.now() - timedelta(hours=12 * slider_value)
-
-    # СВЕЧИ Данные для графика базового актива
-    # Пробегаем по списку базовых активов, находим последнюю цену базового актива
-    base_asset_list = model_from_api[0]
-    for asset in base_asset_list:
-        if asset.get('_ticker') == dropdown_value:
-            last_price_fut = asset.get('_last_price')
-    # Candles (свечи/бары) для базового актива
-    time_frame = 'M15'
-    datapath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'Data', 'Finam', '')  # Путь к файлам баров
-    dataname = f'SPBFUT.{dropdown_value}'
-    filename = f'{datapath}{dataname}_{time_frame}.txt'  # Полное имя файла
-    with open(file=filename, mode='r') as file:
-        df_candles = pd.read_csv(file, sep='\t', header=0)
-        df_candles['datetime'] = pd.to_datetime(df_candles['datetime'], format='%d.%m.%Y %H:%M')
-        df_candles = df_candles.sort_values('datetime').reset_index(drop=True)
-        df_candles = df_candles[(df_candles.datetime > limit_time)]
-        # df_candles.loc[df_candles.index[-1], 'close'] = last_price_fut # Устанавливаем последнюю цену базового актива в бар
-    file.close()
+    global df_candles  # Добавляем объявление глобальной переменной
+    limit_time = datetime.now() - timedelta(hours=12 * slider_value)
+    # Сброс индекса с сохранением datetime как столбца
+    df_candles = df_candles.reset_index()
+    df_candles = df_candles[(df_candles.datetime > limit_time)]
 
     # ДАННЫЕ ИЗ DAMP/csv
     # OptionsSmileNaklonHistory.csv history data options volatility
@@ -1074,7 +1195,7 @@ def update_output_history_naklon(dropdown_value, slider_value, n):
                                  legendgroup="group2",
                                  legendgrouptitle_text="Quik",
                                  mode='lines+text',
-                                 line=dict(width=3, dash='dashdot'),
+                                 line=dict(width=1, dash='dashdot'),
                                  name=d_exp), secondary_y=True, )
     fig.update_layout(legend=dict(groupclick="toggleitem"))
 
@@ -1117,6 +1238,52 @@ def update_output_history_naklon(dropdown_value, slider_value, n):
         margin=dict(l=3, r=3, t=0, b=0),
     )
 
+    fig.update_layout(
+        plot_bgcolor='rgb(30, 30, 30)',
+        paper_bgcolor='rgb(30, 30, 30)',
+        font_color='white',
+        xaxis=dict(
+            gridcolor='rgb(50, 50, 50)',
+            gridwidth=0.5,
+            zerolinecolor='rgb(50, 50, 50)'
+        ),
+        yaxis=dict(
+            gridcolor='rgb(60, 60, 60)',
+            gridwidth=1,
+            zerolinecolor='rgb(60, 60, 60)'
+        )
+    )
+
+    # Обновление сетки - добавьте эти строки перед return fig
+    fig.update_xaxes(
+        gridwidth=1,  # Толщина горизонтальной сетки
+        gridcolor='rgba(128, 128, 128, 0.3)',  # Цвет сетки
+        zeroline=False,  # Убрать нулевую линию
+        showgrid=True,  # Показать сетку
+        tickfont=dict(size=10)  # Размер шрифта меток
+    )
+
+    fig.update_yaxes(
+        gridwidth=1,  # Толщина горизонтальной сетки
+        gridcolor='rgba(128, 128, 128, 0.3)',  # Цвет сетки
+        zeroline=False,  # Убрать нулевую линию
+        showgrid=True,  # Показать сетку
+        tickfont=dict(size=10)  # Размер шрифта меток
+    )
+
+    # Для вторичной оси
+    fig.update_yaxes(
+        secondary_y=True,
+        gridwidth=1,  # Толщина горизонтальной сетки
+        gridcolor='rgba(128, 128, 128, 0.3)',  # Цвет сетки
+        zeroline=False,  # Убрать нулевую линию
+        showgrid=True,  # Показать сетку
+        tickfont=dict(size=10)  # Размер шрифта меток
+    )
+
+    # Убрать сетку левой оси
+    fig['layout']['yaxis']['showgrid'] = False
+
     return fig
 
 
@@ -1124,36 +1291,35 @@ def update_output_history_naklon(dropdown_value, slider_value, n):
 @app.callback(Output('MyEquityHistory', 'figure'),
               [Input('dropdown-selection', 'value'),
                Input('my_slider', 'value'),
-               Input('interval-component', 'n_intervals')],
+               Input('interval-component', 'n_intervals * 2')],
               prevent_initial_call=True)
 def update_equity_history(dropdown_value, slider_value, n):
     global df_combined
-    limit_time = datetime.datetime.now() - timedelta(hours=10 * 12 * slider_value)
+    limit_time = datetime.now() - timedelta(hours=10 * 12 * slider_value)
     # Создаем копию для избежания предупреждения
     df_limited = df_combined[(df_combined.Date > limit_time)].copy()
     # Преобразуем формат даты
     df_limited['Date'] = pd.to_datetime(df_limited['Date'], format='%d.%m.%Y')
 
     # СВЕЧИ Данные для графика базового актива
-    # Поиск последней цены базового актива
-    # model_from_api = get_object_from_json_endpoint_with_retry('https://option-volatility-dashboard.tech/dump_model', timeout=5)
-    # Пробегаем по списку базовых активов, находим последнюю цену базового актива
-    base_asset_list = model_from_api[0]
-    for asset in base_asset_list:
-        if asset.get('_ticker') == dropdown_value:
-            last_price_fut = asset.get('_last_price')
-    # Candles (свечи/бары) для базового актива
+
+    # Будем запрашивать глубину истории 140 дней
+    dt_from = datetime.now() - timedelta(days=140)
     time_frame = 'D1'
-    datapath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'Data', 'Finam', '')  # Путь к файлам баров
     dataname = f'SPBFUT.{dropdown_value}'
-    filename = f'{datapath}{dataname}_{time_frame}.txt'  # Полное имя файла
-    with open(file=filename, mode='r') as file:
-        df_candles = pd.read_csv(file, sep='\t', header=0)
-        df_candles['datetime'] = pd.to_datetime(df_candles['datetime'], format='%d.%m.%Y %H:%M')
-        df_candles = df_candles.sort_values('datetime').reset_index(drop=True)
-        df_candles = df_candles[(df_candles.datetime > limit_time)]
-        df_candles.loc[df_candles.index[-1], 'close'] = last_price_fut
-    file.close()
+
+    broker = brokers['АС']  # Брокер по ключу из Config.py словаря brokers
+    symbol = broker.get_symbol_by_dataname(dataname)  # Тикер по названию
+    bars = broker.get_history(symbol, time_frame, dt_from=dt_from)  # Получаем историю тикера за 140 дней
+    print(f"Запрос свечей: {dataname} {time_frame} начиная с даты {dt_from}")
+    # print(f"Первый бар: {bars[0]}")  # Первый бар
+    # print(f"Последний бар: {bars[-1]}")  # Последний бар
+    df_candles = bars_to_df(bars)  # Все бары в pandas DataFrame pd_bars
+    # print(df_candles)  # Все бары в pandas DataFrame pd_bars
+    df_candles.reset_index(inplace=True)
+    df_candles['datetime'] = pd.to_datetime(df_candles['datetime'], format='%d.%m.%Y %H:%M')
+    df_candles = df_candles[(df_candles.datetime > limit_time)]
+    # print(f"Данные свечей df_candles: {df_candles}")  # Все бары в pandas DataFrame pd_bars
 
     # Вычисление доходности
     if len(df_limited) > 1:
@@ -1253,6 +1419,15 @@ def update_equity_history(dropdown_value, slider_value, n):
         margin=dict(l=3, r=3, t=0, b=0),
     )
 
+    # Убрать сетку левой оси
+    fig['layout']['yaxis']['showgrid'] = False
+
+    fig.update_layout(
+        plot_bgcolor='rgb(30, 30, 30)',
+        paper_bgcolor='rgb(30, 30, 30)',
+        font_color='white'
+    )
+
     return fig
 
 
@@ -1266,10 +1441,6 @@ def updateTable(n, value):
     df_pos = pd.read_csv(temp_obj.substitute(name_file='QUIK_MyPos.csv'), sep=';')
     # Фильтрация строк по базовому активу
     df_pos = df_pos[df_pos['option_base'] == value]
-
-    # # Замена нулевых и NaN значений 'P/L last' на значения 'P/L theor'
-    # df_pos['P/L last'] = df_pos['P/L last'].replace(0, pd.NA)  # Заменяем 0 на NaN
-    # df_pos['P/L last'] = df_pos['P/L last'].fillna(df_pos['P/L theor'])  # Заменяем NaN на значения из P/L theor
 
     # Замена нулевых значений 'P/L last' на значения 'P/L theor'
     df_pos['P/L last'] = df_pos['P/L last'].mask(df_pos['P/L last'] == 0, df_pos['P/L theor'])
