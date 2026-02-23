@@ -8,3 +8,25 @@
     background-color: #2d2d2d !important;
     color: white !important;
 }
+.dark-slider .rc-slider {
+    background-color: #2d2d2d;
+    border: 1px solid #444;
+}
+
+.dark-slider .rc-slider-track {
+    background-color: #444;
+}
+
+.dark-slider .rc-slider-handle {
+    background-color: #666;
+    border: 1px solid #888;
+}
+
+.dark-slider .rc-slider-mark-text {
+    color: #fff;
+    font-weight: bold;
+}
+
+.dark-slider .rc-slider-dot-active {
+    background-color: #fff;
+}

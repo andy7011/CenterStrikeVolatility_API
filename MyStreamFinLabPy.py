@@ -26,10 +26,10 @@ from FinLabPy.Core import Broker, bars_to_df  # Перевод бар в pandas 
 from FinLabPy.Schedule.MarketSchedule import Schedule  # Расписание работы биржи
 from FinLabPy.Schedule.MOEX import Futures  # Расписание торгов срочного рынка
 
-pd.set_option('future.no_silent_downcasting', True)
+# pd.set_option('future.no_silent_downcasting', True)
 
 # Конфигурация для работы с файлами
-temp_str = 'C:\\Users\\шадрин\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\ashad\\Yandex.Disk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 futures_firm_id = 'SPBFUT'  # Код фирмы для фьючерсов
@@ -91,7 +91,7 @@ def start_main_functions():
 
     try:
         # Запуск потока истории баров
-        BarsHistoryStream()
+        # BarsHistoryStream()
         # Подключение к QUIK
         qp_provider = QuikPy()
         # Сразу выполняем синхронизацию инструментов портфеля и активных ордеров
@@ -279,74 +279,101 @@ def sync_portfolio_positions():
     """Синхронизация позиций в портфеле"""
     global qp_provider, df_portfolio
 
+
     try:
+        broker = brokers['Ф']  # Брокер по ключу из Config.py словаря brokers
         portfolio_info = []
         portfolio_positions = []
-        # Получаем информацию по инструментам в портфеле
-        # Получаем все классы инструментов
-        class_codes = qp_provider.get_classes_list()['data']  # Режимы торгов через запятую
-        class_codes_list = class_codes[:-1].split(
-            ',')  # Удаляем последнюю запятую, разбиваем значения по запятой в список режимов торгов
-        trade_accounts = qp_provider.get_trade_accounts()['data']  # Все торговые счета
-        money_limits = qp_provider.get_money_limits()['data']  # Все денежные лимиты (остатки на счетах)
+        # for code, broker in brokers.items():  # Пробегаемся по всем брокерам
+        #     print(f'[{'SPBOPT'}] {broker.name}')
+        #     print('- Позиции:')
+        for position in broker.get_positions():  # Пробегаемся по всем позициям брокера
+            if position.dataname.split('.')[0] == 'SPBOPT': # Берём только SPBOPT (опционы)
+                print(f'  - {position}')
+                dataname = position.dataname
+                symbol = self.provider.get_symbol_by_dataname(dataname)
+                print(symbol)
 
-        i = 0  # Номер учетной записи
-        for trade_account in trade_accounts:  # Пробегаемся по всем счетам (Коды клиента/Фирма/Счет)
-            trade_account_class_codes = trade_account['class_codes'][1:-1].split(
-                '|')  # Режимы торгов счета. Удаляем первую и последнюю вертикальную черту, разбиваем значения по вертикальной черте
-            intersection_class_codes = list(set(trade_account_class_codes).intersection(
-                class_codes_list))  # Режимы торгов, которые есть и в списке и в торговом счете
-            firm_id = trade_account['firmid']  # Фирма
-            trade_account_id = trade_account['trdaccid']  # Счет
-            client_code = next(
-                (moneyLimit['client_code'] for moneyLimit in money_limits if moneyLimit['firmid'] == firm_id),
-                None)  # Код клиента
-            if firm_id == futures_firm_id:  # Для фирмы фьючерсов
-                # active_futures_holdings = [futuresHolding for futuresHolding in
-                #                            qp_provider.get_futures_holdings()['data'] if
-                #                            futuresHolding['totalnet'] != 0]  # Активные фьючерсные/опционные позиции
-                # print(f'active_futures_holdings {active_futures_holdings}')
-                futures_limit = qp_provider.get_futures_limit(firm_id, trade_account_id, 0, qp_provider.currency)[
-                    'data']  # Фьючерсные лимиты по денежным средствам (limit_type=0)
-                varmargin = futures_limit['varmargin']  # Вариационная маржа
-                accruedint = futures_limit['accruedint']  # Накопленный доход
-                ts_comission = futures_limit['ts_comission']  # ТС комиссия
-                pl_day = varmargin + accruedint  # Дневной P/L
-                cbplimit = futures_limit['cbplimit']  # Лимит открытых позиций
-                cbplused = futures_limit['cbplused']  # Текущие чистые позиции
-                cbplplanned = futures_limit['cbplplanned']  # Плановые чистые позиции
-                money = cbplused + cbplplanned - ts_comission  # Деньги
-                GM = (cbplused / money) * 100
+                
+                broker = brokers['АС']  # Брокер по ключу из Config.py словаря brokers
+                symbol = broker.get_symbol_by_dataname(dataname)  # Спецификация тикера брокера. Должна совпадать у всех брокеров
+                print(f'[{'SPBOPT'}] {symbol} Информация брокера: {symbol.broker_info}')
+                # quotes = ap_provider.get_quotes(f'{'MOEX'}:{symbol}')[0]  # Последнюю котировку получаем через запрос
+                # print(quotes)
+                exchange = symbol.broker_info['exchange']  # Биржа
+                quotes = broker.get_quotes(f'{exchange}:{symbol.symbol}')[0]  # Последнюю котировку получаем через запрос
+                print(quotes)
+                last_price = quotes['last_price'] if quotes else None  # Последняя цена сделки
+                print(last_price)
 
-                # Добавляем данные в список
-                portfolio_info.append({
-                    'VM': round(varmargin, 2),
-                    'PL day': round(pl_day, 2),
-                    'Comiss': round(ts_comission, 2),
-                    'GM': (f'{GM:.0f} %')
-                })
-                # print(f'portfolio_info: {portfolio_info}')
-                with open(temp_obj.substitute(name_file='QUIK_MyPortfolioInfo.csv'), "w", newline="",
-                          encoding="utf-8") as file:
-                    writer = csv.writer(file, delimiter=':')
-                    for item in portfolio_info:
-                        # Если хотите записать значения словаря отдельно
-                        for key, value in item.items():
-                            writer.writerow([key, value])
+                broker.close()  # Закрываем брокера
 
-        # Проверка статуса торговой сессии (1 - открыта, 0 - закрыта)
-        # Первый фьючерс в списке MAP
-        first_key = next(iter(MAP))
-        # print(first_key)
-        # Функция param_request заказывает получение параметров Quik
-        request_status = qp_provider.param_request('SPBFUT', first_key, 'TRADINGSTATUS', trans_id=0)[
-            'data']  # Функция заказывает получение параметров Quik
-        # print(f'request_status: {request_status}')
-        tradingstatus = qp_provider.get_param_ex('SPBFUT', first_key, 'TRADINGSTATUS', trans_id=0)['data']['param_value']
-        # print(f'Статус торговой сессии tradingstatus: {float(tradingstatus)}')
-        if float(tradingstatus) != 1:
-            print('sync_portfolio_positions: Эта сессия сейчас не идёт!')
-            return
+
+        # # Получаем информацию по инструментам в портфеле
+        # # Получаем все классы инструментов
+        # class_codes = qp_provider.get_classes_list()['data']  # Режимы торгов через запятую
+        # class_codes_list = class_codes[:-1].split(
+        #     ',')  # Удаляем последнюю запятую, разбиваем значения по запятой в список режимов торгов
+        # trade_accounts = qp_provider.get_trade_accounts()['data']  # Все торговые счета
+        # money_limits = qp_provider.get_money_limits()['data']  # Все денежные лимиты (остатки на счетах)
+
+        # i = 0  # Номер учетной записи
+        # for trade_account in trade_accounts:  # Пробегаемся по всем счетам (Коды клиента/Фирма/Счет)
+        #     trade_account_class_codes = trade_account['class_codes'][1:-1].split(
+        #         '|')  # Режимы торгов счета. Удаляем первую и последнюю вертикальную черту, разбиваем значения по вертикальной черте
+        #     intersection_class_codes = list(set(trade_account_class_codes).intersection(
+        #         class_codes_list))  # Режимы торгов, которые есть и в списке и в торговом счете
+        #     firm_id = trade_account['firmid']  # Фирма
+        #     trade_account_id = trade_account['trdaccid']  # Счет
+        #     client_code = next(
+        #         (moneyLimit['client_code'] for moneyLimit in money_limits if moneyLimit['firmid'] == firm_id),
+        #         None)  # Код клиента
+        #     if firm_id == futures_firm_id:  # Для фирмы фьючерсов
+        #         # active_futures_holdings = [futuresHolding for futuresHolding in
+        #         #                            qp_provider.get_futures_holdings()['data'] if
+        #         #                            futuresHolding['totalnet'] != 0]  # Активные фьючерсные/опционные позиции
+        #         # print(f'active_futures_holdings {active_futures_holdings}')
+        #         futures_limit = qp_provider.get_futures_limit(firm_id, trade_account_id, 0, qp_provider.currency)[
+        #             'data']  # Фьючерсные лимиты по денежным средствам (limit_type=0)
+        #         varmargin = futures_limit['varmargin']  # Вариационная маржа
+        #         accruedint = futures_limit['accruedint']  # Накопленный доход
+        #         ts_comission = futures_limit['ts_comission']  # ТС комиссия
+        #         pl_day = varmargin + accruedint  # Дневной P/L
+        #         cbplimit = futures_limit['cbplimit']  # Лимит открытых позиций
+        #         cbplused = futures_limit['cbplused']  # Текущие чистые позиции
+        #         cbplplanned = futures_limit['cbplplanned']  # Плановые чистые позиции
+        #         money = cbplused + cbplplanned - ts_comission  # Деньги
+        #         GM = (cbplused / money) * 100
+        #
+        #         # Добавляем данные в список
+        #         portfolio_info.append({
+        #             'VM': round(varmargin, 2),
+        #             'PL day': round(pl_day, 2),
+        #             'Comiss': round(ts_comission, 2),
+        #             'GM': (f'{GM:.0f} %')
+        #         })
+        #         # print(f'portfolio_info: {portfolio_info}')
+        #         with open(temp_obj.substitute(name_file='QUIK_MyPortfolioInfo.csv'), "w", newline="",
+        #                   encoding="utf-8") as file:
+        #             writer = csv.writer(file, delimiter=':')
+        #             for item in portfolio_info:
+        #                 # Если хотите записать значения словаря отдельно
+        #                 for key, value in item.items():
+        #                     writer.writerow([key, value])
+
+        # # Проверка статуса торговой сессии (1 - открыта, 0 - закрыта)
+        # # Первый фьючерс в списке MAP
+        # first_key = next(iter(MAP))
+        # # print(first_key)
+        # # Функция param_request заказывает получение параметров Quik
+        # request_status = qp_provider.param_request('SPBFUT', first_key, 'TRADINGSTATUS', trans_id=0)[
+        #     'data']  # Функция заказывает получение параметров Quik
+        # # print(f'request_status: {request_status}')
+        # tradingstatus = qp_provider.get_param_ex('SPBFUT', first_key, 'TRADINGSTATUS', trans_id=0)['data']['param_value']
+        # # print(f'Статус торговой сессии tradingstatus: {float(tradingstatus)}')
+        # if float(tradingstatus) != 1:
+        #     print('sync_portfolio_positions: Эта сессия сейчас не идёт!')
+        #     return
 
         # Получаем позиции по фьючерсам
         futures_holdings_response = qp_provider.get_futures_holdings()
@@ -356,7 +383,7 @@ def sync_portfolio_positions():
 
             for active_futures_holding in active_futures_holdings:
                 sec_code = active_futures_holding["sec_code"]
-                class_code_result = qp_provider.get_security_class(class_codes, sec_code)
+                class_code_result = qp_provider.get_security_class('SPBOPT', sec_code)
 
                 if class_code_result and class_code_result.get('data'):
                     class_code = class_code_result['data']
@@ -625,7 +652,7 @@ def MyPosHistorySave():
             # print(f'request_status: {request_status}')
             tradingstatus = qp_provider.get_param_ex('SPBFUT', first_key, 'TRADINGSTATUS', trans_id=0)['data'][
                 'param_value']
-            # print(f'Статус торговой сессии tradingstatus: {float(tradingstatus)}')
+            print(f'Статус торговой сессии tradingstatus: {float(tradingstatus)}')
             if float(tradingstatus) != 1:
                 print('MyPosHistorySave Эта сессия сейчас не идёт!')
                 time.sleep(30)
@@ -695,7 +722,7 @@ def MyPosHistorySave():
 
                         # Заменяем нулевые значения 'lastIV' на 'QuikVola' (theor)
                         lastIV_corrected = short_positions['lastIV'].replace(0, pd.NA).fillna(
-                            short_positions['QuikVola']).infer_objects(copy=False)
+                            short_positions['QuikVola']).infer_objects()
                         # lastIV_corrected = short_positions['lastIV'].replace(0, pd.NA).fillna(short_positions['QuikVola'])
                         # # lastIV_corrected = short_positions['lastIV'].replace(0, pd.NA).fillna(short_positions['QuikVola'])
                         # lastIV_corrected = short_positions['lastIV'].replace(0, pd.NA).fillna(

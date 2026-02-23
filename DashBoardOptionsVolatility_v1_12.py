@@ -507,7 +507,6 @@ app.layout = html.Div(children=[
             interval=1000 * 60 * 60,  # 60 минут
             n_intervals=0),
 
-
         # Слайдер
         dcc.Slider(0, 28,
                    id='my_slider',
@@ -522,7 +521,8 @@ app.layout = html.Div(children=[
                        20: '10d',
                        28: '14d'
                    },
-                   value=6
+                   value=6,
+                   className='dark-slider'
                    ),
         html.Div(id='slider-output-1'),
     ])
@@ -617,7 +617,7 @@ def update_output_smile(value, n):
         # Мои позиции BUY
         fig.add_trace(go.Scatter(x=df_table_buy['strike'], y=df_table_buy['OpenIV'],
                                  mode='markers+text', text=df_table_buy['OpenIV'], textposition='middle left',
-                                 marker=dict(size=11, symbol="star-triangle-up-open", color='darkgreen'),
+                                 marker=dict(size=11, symbol="star-triangle-up-open", color='lightgreen'),
                                  name='My Pos Buy',
                                  customdata=df_table_buy[['option_type', 'net_pos', 'expdate', 'ticker']],
                                  hovertemplate="<b>%{customdata}</b>"
@@ -626,7 +626,7 @@ def update_output_smile(value, n):
         # Мои позиции SELL
         fig.add_trace(go.Scatter(x=df_table_sell['strike'], y=df_table_sell['OpenIV'],
                                  mode='markers+text', text=df_table_sell['OpenIV'], textposition='middle left',
-                                 marker=dict(size=11, symbol="star-triangle-down-open", color='darkmagenta'),
+                                 marker=dict(size=11, symbol="star-triangle-down-open", color='magenta'),
                                  name='My Pos Sell',
                                  customdata=df_table_sell[['option_type', 'net_pos', 'expdate', 'ticker']],
                                  hovertemplate="<b>%{customdata}</b><br>"
@@ -635,7 +635,7 @@ def update_output_smile(value, n):
         # Мои ордерра BUY
         fig.add_trace(go.Scatter(x=df_orders_buy['strike'], y=df_orders_buy['volatility'],
                                  mode='markers+text', text=df_orders_buy['volatility'], textposition='middle left',
-                                 marker=dict(size=8, symbol="cross-thin", line=dict(width=1, color="darkgreen")),
+                                 marker=dict(size=8, symbol="cross-thin", line=dict(width=1, color="lightgreen")),
                                  name='My Orders BUY',
                                  customdata=df_orders_buy[['operation', 'option_type', 'expdate', 'price', 'ticker']],
                                  hovertemplate="<b>%{customdata}</b><br>"
@@ -644,7 +644,7 @@ def update_output_smile(value, n):
         # Мои ордерра SELL
         fig.add_trace(go.Scatter(x=df_orders_sell['strike'], y=df_orders_sell['volatility'],
                                  mode='markers+text', text=df_orders_sell['volatility'], textposition='middle left',
-                                 marker=dict(size=8, symbol="cross-thin", line=dict(width=1, color="darkmagenta")),
+                                 marker=dict(size=8, symbol="cross-thin", line=dict(width=1, color="magenta")),
                                  name='My Orders SELL',
                                  customdata=df_orders_sell[['operation', 'option_type', 'expdate', 'price', 'ticker']],
                                  hovertemplate="<b>%{customdata}</b><br>"
@@ -1291,7 +1291,7 @@ def update_output_history_naklon(dropdown_value, slider_value, n):
 @app.callback(Output('MyEquityHistory', 'figure'),
               [Input('dropdown-selection', 'value'),
                Input('my_slider', 'value'),
-               Input('interval-component', 'n_intervals * 2')],
+               Input('interval-component', 'interval-60min')],
               prevent_initial_call=True)
 def update_equity_history(dropdown_value, slider_value, n):
     global df_combined
@@ -1421,6 +1421,22 @@ def update_equity_history(dropdown_value, slider_value, n):
 
     # Убрать сетку левой оси
     fig['layout']['yaxis']['showgrid'] = False
+
+    # В конце функции update_output_history перед return fig
+    fig.update_layout(
+        xaxis=dict(
+            gridwidth=1,
+            gridcolor='rgba(128, 128, 128, 0.3)'
+        ),
+        yaxis=dict(
+            gridwidth=1,
+            gridcolor='rgba(128, 128, 128, 0.3)'
+        ),
+        yaxis2=dict(  # Для вторичной оси
+            gridwidth=1,
+            gridcolor='rgba(128, 128, 128, 0.3)'
+        )
+    )
 
     fig.update_layout(
         plot_bgcolor='rgb(30, 30, 30)',
