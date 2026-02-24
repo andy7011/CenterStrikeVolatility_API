@@ -274,19 +274,23 @@ def sync_active_orders():
     except Exception as e:
         print(f"Ошибка при синхронизации ордеров: {e}")
 
+def sync_portfolio_info():
+    try:
+        portfolio_info = []
+
+
+
+
+    except Exception as e:
+        print(f"Ошибка при синхронизации информации о портфеле: {e}")
 
 def sync_portfolio_positions():
     """Синхронизация позиций в портфеле"""
     global qp_provider, df_portfolio
 
-
     try:
         broker = brokers['Ф']  # Брокер по ключу из Config.py словаря brokers
-        portfolio_info = []
         portfolio_positions = []
-        # for code, broker in brokers.items():  # Пробегаемся по всем брокерам
-        #     print(f'[{'SPBOPT'}] {broker.name}')
-        #     print('- Позиции:')
         for position in broker.get_positions():  # Пробегаемся по всем позициям брокера
             if position.dataname.split('.')[0] == 'SPBOPT': # Берём только SPBOPT (опционы)
                 print(f'  - {position}')
