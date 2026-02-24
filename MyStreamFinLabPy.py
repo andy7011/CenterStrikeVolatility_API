@@ -942,6 +942,7 @@ def calculate_open_data_open_price_open_iv(sec_code, net_pos):
         return None, None, None
 
 
+# Расчет средневзвешенных значений
 def calculate_weighted_average(s):
     # Преобразуем deque в строку, если это необходимо
     if isinstance(s, deque):
