@@ -66,6 +66,7 @@ def fetch_api_data():
 
     # Список опционов
     option_list = model_from_api[1]
+    print(f'option_list: {option_list}')
 
     # Вычисление и добавление в словарь центрального страйка
     for asset in base_asset_list:

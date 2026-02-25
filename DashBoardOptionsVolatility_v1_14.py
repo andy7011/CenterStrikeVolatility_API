@@ -13,18 +13,26 @@ import requests
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pandas as pd
+
 from app.central_strike import _calculate_central_strike
+from model.option import Option
+import option_type
+import implied_volatility
 from app.supported_base_asset import MAP
+
 from FinLabPy.Config import brokers, default_broker  # Все брокеры и брокер по умолчанию
 from string import Template
 import time
 import random
 import inspect
+from accfifo import Entry, FIFO
+from collections import deque
+import re
 
 from FinLabPy.Config import brokers, default_broker  # Все брокеры и брокер по умолчанию
 from FinLabPy.Core import bars_to_df  # Перевод бар в pandas DataFrame
 
-temp_str = 'C:\\Users\\шадрин\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\ashad\\Yandex.Disk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 # Глобальные переменные для хранения данных
@@ -144,8 +152,6 @@ df = df.loc[df['_volatility'] > 0]
 df['_expiration_datetime'] = pd.to_datetime(df['_expiration_datetime'], format='%a, %d %b %Y %H:%M:%S GMT')
 df['_expiration_datetime'].dt.date
 df['expiration_date'] = df['_expiration_datetime'].dt.strftime('%d.%m.%Y')
-# print(df.columns)
-
 dff = df[(df._base_asset_ticker == first_key)]  # оставим только опционы базового актива
 
 for asset in base_asset_list:
@@ -258,6 +264,172 @@ def zero_to_nan(values):
     """Replace every 0 with 'nan' and return a copy."""
     return [float('nan') if x == 0 else x for x in values]
 
+def calculate_open_data_open_price_open_iv(sec_code, net_pos):
+    """
+    Вычисляет дату открытия позиции, цену и волатильность для заданного инструмента,
+    как средневзвешенные по объёму первых сделок до достижения нужного объёма.
+
+    :param sec_code: Код инструмента
+    :param net_pos: Текущая позиция (отрицательная для короткой позиции)
+    :return: tuple(OpenDateTime, OpenPrice, OpenIV)
+    """
+
+    try:
+        # Чтение CSV файла
+        df = pd.read_csv(temp_obj.substitute(name_file='QUIK_Stream_Trades.csv'), encoding='utf-8', delimiter=';')
+
+        # Фильтрация по инструменту (все сделки по инструменту)
+        instrument_trades_df = df[df['ticker'] == sec_code].copy()
+
+        if instrument_trades_df.empty:
+            print(f"Предупреждение: Нет данных для инструмента {sec_code}")
+            return None, None, None
+
+        # Преобразование datetime
+        instrument_trades_df['datetime'] = pd.to_datetime(instrument_trades_df['datetime'], format='%d.%m.%Y %H:%M:%S')
+
+        # Сортировка по дате
+        instrument_trades_df = instrument_trades_df.sort_values('datetime', ascending=False)  # обратный порядок
+        # instrument_trades_df = instrument_trades_df.sort_values('datetime')
+
+        # Применяем изменение знака для объема при продаже (умножаем объем сделки на -1)
+        instrument_trades_df.loc[instrument_trades_df['operation'] == 'Продажа', 'volume'] *= -1
+
+        # print(instrument_trades_df)
+        # print(instrument_trades_df.iloc[-1]['volume']) # последняя сделка
+        volume_last = instrument_trades_df.iloc[0]['volume']  # объем последней сделки
+
+        # Целевой объём
+        required_volume = net_pos
+        selected_trades = []
+        # Вычитаем сделки до достижения нужного объёма
+        for _, trade in instrument_trades_df.iterrows():
+            volume = trade['volume']
+            # Для положительного required_volume: вычитаем объем
+            if required_volume > 0:
+                if required_volume - volume >= 0:
+                    selected_trades.append(trade)
+                    required_volume -= volume
+                else:
+                    # Добавляем частичную сделку
+                    partial_trade = trade.copy()
+                    partial_trade['volume'] = required_volume
+                    selected_trades.append(partial_trade)
+                    required_volume = 0
+                    break
+            # Для отрицательного required_volume: прибавляем объем
+            else:
+                if required_volume - volume <= 0:
+                    selected_trades.append(trade)
+                    required_volume -= volume
+                else:
+                    # Добавляем частичную сделку
+                    partial_trade = trade.copy()
+                    partial_trade['volume'] = required_volume
+                    selected_trades.append(partial_trade)
+                    required_volume = 0
+                    break
+
+            # Прерываем цикл при достижении нуля
+            if required_volume == 0:
+                break
+
+        # Создаём DataFrame из выбранных сделок
+        selected_df = pd.DataFrame(selected_trades)
+
+        # Дата первой сделки (самой старой сделки, она в конце списка)
+        OpenDateTime = selected_df.iloc[-1]['datetime'].strftime('%d.%m.%Y %H:%M:%S')
+
+        # Удаляем из списка selected_trades сделки противоположной направленности
+        # для правильного расчета средневзвешенных значений цены и волатильности
+        if selected_trades:  # Проверяем, что список не пуст
+            # Создаем новый список без противоположных сделок
+            filtered_trades = []
+            # print(f"\nСписок до фильтрации {sec_code} net_pos {net_pos}: {len(selected_trades)}")
+
+            # Проходим по всем сделкам
+            for trade in selected_trades:
+                volume = trade['volume']
+
+                # Если required_volume положительный - удаляем сделки с отрицательным объемом
+                if net_pos > 0:
+                    if volume > 0:  # Оставляем только сделки с положительным объемом
+                        filtered_trades.append(trade)
+                        # print(f"Сделка LONG после фильтрации: {trade['datetime']}, {volume}, {trade['price']}, {trade['volatility']}")
+                # Если required_volume отрицательный - удаляем сделки с положительным объемом
+                else:
+                    if volume < 0:  # Оставляем только сделки с отрицательным объемом
+                        filtered_trades.append(trade)
+                        # print(f"Сделка SHORT после фильтрации: {trade['datetime']}, {volume}, {trade['price']}, {trade['volatility']}")
+
+            # print(f"Список после фильтрации {sec_code} net_pos {net_pos}: {len(filtered_trades)}")
+
+            # Заменяем исходный список отфильтрованными сделками
+            selected_trades = filtered_trades
+
+        # Расчет средневзвешенной цены и волатильности открытия методом FIFO
+        # selected_trades - это отфильтрованный на предыдущем этапе список словарей
+        fifo_entries = []
+        fifo_entries_volatility = []
+        for trade in selected_trades:
+            quantity = trade['volume']
+            price = trade['price']
+            volatility = trade['volatility']
+
+            # Создаем Entry с позиционными аргументами
+            fifo_entries.append(Entry(quantity=quantity, price=price))
+            fifo_entries_volatility.append(Entry(quantity=quantity, price=volatility))
+
+        fifo = FIFO(fifo_entries)
+        # print(f"Позиция {sec_code}: {fifo.stock}")
+        # print(f"Цены открытия позиции {sec_code}: {fifo.inventory}")
+        s = fifo.inventory
+        OpenPrice = calculate_weighted_average(s)
+        # print(f'Средневзвешенная цена {sec_code}: {OpenPrice}')
+
+        # print(f"Реализованный P&L {sec_code}: {sum([entry.price * entry.quantity for step in fifo.trace for entry in step])}")
+        fifo = FIFO(fifo_entries_volatility)
+        # print(f"Волатильность отрытых позиций {sec_code}: {fifo.inventory}")
+        # print(f"Реализованный P&L IV {sec_code}: {sum([entry.price * entry.quantity for step in fifo.trace for entry in step])}")
+        s = fifo.inventory
+        OpenIV = calculate_weighted_average(s)
+        # print(f'Средневзвешенная волатильность {sec_code}: {OpenIV}')
+        #
+        # print('\n')
+
+        if not selected_trades:
+            sum_volume_short = instrument_trades_df.loc[instrument_trades_df['operation'] == 'Продажа', 'volume'].sum()
+            count_short = (instrument_trades_df['operation'] == 'Продажа').sum()
+            sum_volume_long = instrument_trades_df.loc[instrument_trades_df['operation'] == 'Купля', 'volume'].sum()
+            count_long = (instrument_trades_df['operation'] == 'Купля').sum()
+            print(f"Предупреждение: Недостаточно сделок для инструмента {sec_code}")
+            print(f"Позиция: {net_pos}")
+            print(f"Сделок лонг: {count_long} Объем: {sum_volume_long}")
+            print(f"Сделок шорт: {count_short} Объем: {sum_volume_short}")
+            return None, None, None
+
+        return OpenDateTime, OpenPrice, OpenIV
+
+    except Exception as e:
+        print(f"Ошибка при вычислении данных открытия для {sec_code}: {e}")
+        return None, None, None
+
+# Расчет средневзвешенных значений
+def calculate_weighted_average(s):
+    # Преобразуем deque в строку, если это необходимо
+    if isinstance(s, deque):
+        s = str(s)  # или другой способ преобразования deque в строку
+    # Извлекаем элементы из строки
+    items = re.findall(r'(-?\d+(?:\.\d+)?) @(-?\d+(?:\.\d+)?)', s)
+
+    # Преобразуем в числа
+    items = [(float(w), float(v)) for w, v in items]
+
+    # Вычисляем средневзвешенное
+    weighted_sum = sum(w * v for w, v in items)
+    total_weight = sum(w for w, v in items)
+
+    return weighted_sum / total_weight if total_weight != 0 else 0
 
 # Список базовых активов, вычисление и добавление в словарь центрального страйка
 for asset in base_asset_list:
@@ -580,8 +752,6 @@ def update_output_smile(value, n):
         df['_expiration_datetime'] = pd.to_datetime(df['_expiration_datetime'], format='%a, %d %b %Y %H:%M:%S GMT')
         df['_expiration_datetime'].dt.date
         df['expiration_date'] = df['_expiration_datetime'].dt.strftime('%d.%m.%Y')
-        # print(df.columns)
-
         dff = df[(df._base_asset_ticker == value)]  # оставим только опционы базового актива
 
         for asset in base_asset_list:
@@ -1474,53 +1644,142 @@ def update_equity_history(dropdown_value, slider_value, n):
      Input('dropdown-selection', 'value')],
     prevent_initial_call=True)
 def updateTable(n, value):
+    #
+    asset_price = None
+    for asset in base_asset_list:
+        if asset['_ticker'] == value:
+            asset_price = asset['_last_price']
+            break
+    # print(f'asset_price - Цена базового актива {value}: {asset_price}')
+
     # Список опционов
     df_pos_finam = pd.DataFrame.from_dict(option_list, orient='columns')
     df_pos_finam = df_pos_finam.loc[df_pos_finam['_volatility'] > 0]
-    print(df_pos_finam.columns)
-
     # Получаем данные портфеля брокера Финам
-    portfolio_positions = []
+    portfolio_positions_finam = []
     broker = brokers['Ф']  # Брокер по ключу из Config.py словаря brokers
     for position in broker.get_positions():  # Пробегаемся по всем позициям брокера
         if position.dataname.split('.')[0] == 'SPBOPT' and position.quantity != 0:
             ticker = position.dataname.split('.')[1] # Тикер позиции
             # Найти значение '_base_asset_ticker' для заданного '_ticker'
-            # base_asset_ticker = df_pos_finam.loc[df_pos_finam['_ticker'] == ticker, '_base_asset_ticker'].iloc[0]
-            base_asset_ticker = None
             filtered_df = df_pos_finam[df_pos_finam['_ticker'] == ticker]
+            filtered_df['_expiration_datetime'] = pd.to_datetime(filtered_df['_expiration_datetime'], format='%a, %d %b %Y %H:%M:%S GMT')
+            filtered_df['_expiration_datetime'].dt.date
+            filtered_df['expiration_date'] = filtered_df['_expiration_datetime'].dt.strftime('%d.%m.%Y')
+            # print(filtered_df['expiration_date'])
+            base_asset_ticker = filtered_df['_base_asset_ticker'].iloc[0]
+            # Берём только SPBOPT (опционы) соответствующего базового актива value
             if not filtered_df.empty:
                 base_asset_ticker = filtered_df['_base_asset_ticker'].iloc[0]
-            else:
-                # Обработка случая, когда ticker не найден
-                print(f"Ticker {ticker} not found in df_pos_finam")
-            # Берём только SPBOPT (опционы) соответствующего базового актива value
-            if base_asset_ticker == value:
+                offer_price = filtered_df['_ask'].iloc[0]
+                opt_volatility_offer = filtered_df['_ask_iv'].iloc[0]
+                bid_price = filtered_df['_bid'].iloc[0]
+                opt_volatility_bid = filtered_df['_bid_iv'].iloc[0]
+                expiration_datetime = filtered_df['_expiration_datetime'].iloc[0]
+                opt_price = filtered_df['_last_price'].iloc[0]
+                opt_volatility_last = filtered_df['_last_price_iv'].iloc[0]
+                last_price_timestamp = filtered_df['_last_price_timestamp'].iloc[0]
+                real_vol = filtered_df['_real_vol'].iloc[0]
+                strike_price = filtered_df['_strike'].iloc[0]
+                option_type = filtered_df['_type'].iloc[0]
+                VOLATILITY = filtered_df['_volatility'].iloc[0]
+
                 # Получить количество позиций по соответствующему тикеру из portfolio_positions
-                net_pos = get_position_quantity_by_ticker(portfolio_positions, ticker)
-                print(f'Net position: {ticker}, количество: {net_pos}')
+                net_pos = position.quantity
+                # print(f'Net position: {ticker}, количество: {net_pos}')
 
-                dataname = position.dataname
-                # print(ticker)
-                # print(f'{dataname} {position.quantity}')
-                # symbol = self.provider.get_symbol_by_dataname(dataname)
-                # print(symbol)
+                # Время последней сделки last_time
+                last_datetime = utc_timestamp_to_msk_datetime(last_price_timestamp)
+                last_time = last_datetime.strftime("%H:%M:%S")
+                # print(f"Время последней сделки: {last_time}")
+
+                # Вычисляем данные открытия позиции
+                open_data_result = calculate_open_data_open_price_open_iv(ticker, net_pos)
+                # Проверяем, что функция вернула корректные данные
+                if open_data_result is not None and len(open_data_result) > 2:
+                    open_datetime = open_data_result[0]
+                    open_price = open_data_result[1] if open_data_result[1] is not None else 0.0
+                    open_iv = open_data_result[2] if open_data_result[2] is not None else 0.0
+                else:
+                    open_datetime = ""
+                    open_price = 0.0
+                    open_iv = 0.0
+
+                # Число дней до экспирации
+                DAYS_TO_MAT_DATE = (expiration_datetime - datetime.today()).days
+                # print(f"Число дней до исполнения инструмента: {DAYS_TO_MAT_DATE}")
+
+                option = Option(ticker, base_asset_ticker, datetime.combine(expiration_datetime, datetime.min.time()), strike_price,
+                                option_type)
+
+                # Время до исполнения инструмента в долях года
+                time_to_maturity = option.get_time_to_maturity()
+                # print(f'time_to_maturity - Время до исполнения инструмента в долях года: {time_to_maturity}')
+
+                # Вычисление Vega
+                sigma = VOLATILITY / 100
+                vega = implied_volatility._vega(asset_price, sigma, strike_price, time_to_maturity,
+                                                implied_volatility._RISK_FREE_INTEREST_RATE,
+                                                option_type)
+                Vega = vega / 100
+                # print(f"Vega: {Vega}")
+
+                # Вычисление TrueVega
+                if DAYS_TO_MAT_DATE == 0:
+                    TrueVega = 0
+                else:
+                    TrueVega = Vega / (DAYS_TO_MAT_DATE ** 0.5)
+
+                # Формируем словарь для DataFrame
+                position_data = {
+                    'ticker': ticker,
+                    'net_pos': net_pos,
+                    'strike': strike_price,
+                    'option_type': option_type,
+                    'expdate': expiration_datetime,
+                    'option_base': base_asset_ticker,
+                    'OpenDateTime': open_datetime,
+                    'OpenPrice': round(open_price, 2) if open_price is not None else open_price,
+                    'OpenIV': round(open_iv, 2) if open_iv is not None else open_iv,
+                    'time_last': last_time,
+                    'bid': bid_price,
+                    'last': opt_price,
+                    'ask': offer_price,
+                    # 'theor': theor_price,
+                    'QuikVola': VOLATILITY,
+                    'bidIV': round(opt_volatility_bid, 2) if opt_volatility_bid is not None else 0,
+                    'lastIV': round(opt_volatility_last, 2) if opt_volatility_last is not None else 0,
+                    'askIV': round(opt_volatility_offer, 2) if opt_volatility_offer is not None else 0,
+                    'P/L theor': round(VOLATILITY - open_iv, 2) if net_pos > 0 else round(open_iv - VOLATILITY, 2),
+                    'P/L last': 0 if opt_volatility_last == 0 else (round(opt_volatility_last - open_iv, 2) if net_pos > 0 else round(open_iv - opt_volatility_last, 2)),
+                    'P/L market': round(opt_volatility_bid - open_iv, 2) if (net_pos > 0 and opt_volatility_bid is not None) else round(open_iv - opt_volatility_offer, 2) if opt_volatility_offer is not None else None,
+                    'Vega': round(Vega * net_pos, 2),
+                    'TrueVega': round(TrueVega * net_pos, 2)
+                }
                 # Добавляем позиции в портфель
-                portfolio_positions.append(position)
-        # print(f'portfolio_positions {portfolio_positions}')
+                portfolio_positions_finam.append(position_data)
+    # print(f'portfolio_positions_finam {portfolio_positions_finam}')
 
-        portfolio_positions_finam = []
-        # Пробегаемся по всем позициям портфеля
-        for position in portfolio_positions:
-            ticker = position.dataname.split('.')[1]
-            # print(ticker)
+    # Сохраняем в CSV файл
+    if portfolio_positions_finam:
+        df_pos = pd.DataFrame(portfolio_positions_finam)
+        df_pos.to_csv(temp_obj.substitute(name_file='MyPosFinam.csv'),
+                            sep=';', encoding='utf-8', index=False)
+    else:
+        # Создаем пустой файл с заголовками
+        empty_df = pd.DataFrame(columns=[
+            'ticker', 'net_pos', 'strike', 'option_type', 'expdate', 'option_base',
+            'OpenDateTime', 'OpenPrice', 'OpenIV', 'time_last', 'bid', 'last', 'ask',
+            'QuikVola', 'bidIV', 'lastIV', 'askIV', 'P/L theor', 'P/L last', 'P/L market',
+            'Vega', 'TrueVega'
+        ])
+        empty_df.to_csv(temp_obj.substitute(name_file='MyPosFinam.csv'),
+                        sep=';', encoding='utf-8', index=False)
 
-            # Выбираем только опционы соответствующего базового актива value
-            if position.quantity != 0:
-                ticker = position.dataname.split('.')[1]
 
 
-    df_pos = pd.read_csv(temp_obj.substitute(name_file='QUIK_MyPos.csv'), sep=';')
+
+    # df_pos = pd.read_csv(temp_obj.substitute(name_file='QUIK_MyPos.csv'), sep=';')
     # Фильтрация строк по базовому активу
     df_pos = df_pos[df_pos['option_base'] == value]
 
@@ -1529,13 +1788,13 @@ def updateTable(n, value):
 
     # Вычисление итогов по колонке net_pos
     total_net_pos = df_pos['net_pos'].sum()
-    total_theor = df_pos['theor'].sum()
-    # total_theor = (df_pos['theor'] * df_pos['net_pos']).sum()
-    total_last = df_pos['last'].sum()
+    # total_theor = df_pos['theor'].sum()
+    # # total_theor = (df_pos['theor'] * df_pos['net_pos']).sum()
+    # total_last = df_pos['last'].sum()
 
-    # Theor
-    weights_theor = df_pos['theor'] * abs(df_pos['net_pos'])
-    total_weight_theor = weights_theor.sum()
+    # # Theor
+    # weights_theor = df_pos['theor'] * abs(df_pos['net_pos'])
+    # total_weight_theor = weights_theor.sum()
 
     # Last
     weights_last = df_pos['last'] * abs(df_pos['net_pos'])
@@ -1564,8 +1823,7 @@ def updateTable(n, value):
     weighted_pl_market = (weighted_pl_market_pos + weighted_pl_market_neg) / total_weight if total_weight != 0 else 0
 
     # Проверка на существование колонок перед вычислением
-    weighted_pl_theor = (df_pos[
-                             'P/L theor'] * weights_theor).sum() / total_weight_theor if 'P/L theor' in df_pos.columns and total_weight_theor != 0 else 0
+    # weighted_pl_theor = (df_pos['P/L theor'] * weights_theor).sum() / total_weight_theor if 'P/L theor' in df_pos.columns and total_weight_theor != 0 else 0
     weighted_pl_last = (df_pos[
                             'P/L last'] * weights_last).sum() / total_weight_last if 'P/L last' in df_pos.columns and total_weight_last != 0 else 0
 
@@ -1585,7 +1843,7 @@ def updateTable(n, value):
     total_row = {col: '' for col in df_pos.columns}
     total_row['ticker'] = 'Total'
     total_row['net_pos'] = total_net_pos
-    total_row['P/L theor'] = round(weighted_pl_theor, 2)
+    # total_row['P/L theor'] = round(weighted_pl_theor, 2)
     total_row['P/L last'] = round(weighted_pl_last, 2)
     total_row['P/L market'] = round(weighted_pl_market, 2)
     total_row['Vega'] = round(total_vega, 2)

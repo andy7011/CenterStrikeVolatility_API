@@ -23,7 +23,7 @@ import inspect
 from FinLabPy.Config import brokers, default_broker  # Все брокеры и брокер по умолчанию
 from FinLabPy.Core import bars_to_df  # Перевод бар в pandas DataFrame
 
-temp_str = 'C:\\Users\\шадрин\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\ashad\\Yandex.Disk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 # Глобальные переменные для хранения данных
@@ -35,7 +35,6 @@ global df_candles
 
 # Первый фьючерс в списке MAP
 first_key = next(iter(MAP))
-
 
 def utc_to_msk_datetime(dt, tzinfo=False):
     """Перевод времени из UTC в московское
@@ -58,7 +57,6 @@ def utc_timestamp_to_msk_datetime(seconds) -> datetime:
     """
     dt_utc = datetime.fromtimestamp(seconds)  # Переводим кол-во секунд, прошедших с 01.01.1970 в UTC
     return utc_to_msk_datetime(dt_utc)  # Переводим время из UTC в московское
-
 
 # Функция для получения данных с API при первом запуске приложения, далее каждые 10 секунд по запуску функции обратного вызова update_time(n)
 def fetch_api_data():
@@ -84,7 +82,6 @@ def fetch_api_data():
         })
 
     return model_from_api
-
 
 def get_object_from_json_endpoint_with_retry(url, method='GET', params={}, max_delay=180, timeout=10):
     """
@@ -128,7 +125,6 @@ def get_object_from_json_endpoint_with_retry(url, method='GET', params={}, max_d
             print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} Timeout при запросе к {url}")
             raise
 
-
 # Выполняем запрос при запуске
 fetch_api_data()
 
@@ -156,8 +152,8 @@ dff_call = dff[(dff._type == 'C')]  # оставим только коллы
 # My positions data
 with open(temp_obj.substitute(name_file='QUIK_MyPos.csv'), 'r') as file:
     df_table = pd.read_csv(file, sep=';')
-    df_table_buy = df_table.loc[(df_table.option_base == first_key) & (df_table.net_pos > 0) & (df_table.OpenIV > 0)]
-    df_table_sell = df_table.loc[(df_table.option_base == first_key) & (df_table.net_pos < 0) & (df_table.OpenIV > 0)]
+    df_table_buy = df_table[(df_table.option_base == first_key) & (df_table.net_pos > 0) & (df_table.OpenIV > 0)]
+    df_table_sell = df_table[(df_table.option_base == first_key) & (df_table.net_pos < 0) & (df_table.OpenIV > 0)]
     MyPos_ticker_list = []
     for i in range(len(df_table)):
         MyPos_ticker_list.append(df_table['ticker'][i])
@@ -206,7 +202,6 @@ dt_from = datetime.now() - timedelta(days=140)
 dataname = f'SPBFUT.{first_key}'
 time_frame = 'M15'
 
-
 # Получаем историю баров для указанного инструмента и временного интервала
 def get_candles_request(dataname, time_frame, dt_from):
     """
@@ -219,42 +214,16 @@ def get_candles_request(dataname, time_frame, dt_from):
     global df_candles
     broker = brokers['АС']  # Брокер по ключу из Config.py словаря brokers
     symbol = broker.get_symbol_by_dataname(dataname)  # Тикер по названию
-    try:
-        bars = broker.get_history(symbol, time_frame, dt_from=dt_from)  # Получаем историю тикера за 140 дней
-        print(f"Запрос свечей: {dataname} {time_frame} начиная с даты {dt_from}")
-        df_candles = bars_to_df(bars)  # Все бары в pandas DataFrame pd_bars
-        return df_candles
-    except Exception as e:
-        print(f"Ошибка при получении свечей для {dataname}: {e}")
-        # Создаем пустой DataFrame с нужными колонками
-        df_candles = pd.DataFrame({
-            'datetime': pd.to_datetime([]),
-            'open': pd.Series([], dtype='float64'),
-            'high': pd.Series([], dtype='float64'),
-            'low': pd.Series([], dtype='float64'),
-            'close': pd.Series([], dtype='float64'),
-            'volume': pd.Series([], dtype='int64')
-        })
-        return df_candles
-
+    bars = broker.get_history(symbol, time_frame, dt_from=dt_from)  # Получаем историю тикера за 140 дней
+    print(f"Запрос свечей: {dataname} {time_frame} начиная с даты {dt_from}")
+    # print(f"Первый бар: {bars[0]}")  # Первый бар
+    # print(f"Последний бар: {bars[-1]}")  # Последний бар
+    df_candles = bars_to_df(bars)  # Все бары в pandas DataFrame pd_bars
+    # print(df_candles)  # Все бары в pandas DataFrame pd_bars
+    return df_candles
 
 # Вызов функции после её определения
 df_candles = get_candles_request(dataname, time_frame, dt_from)
-try:
-    df_candles = get_candles_request(dataname, time_frame, dt_from)
-    if df_candles.empty:
-        print("Предупреждение: DataFrame свечей пуст")
-except Exception as e:
-    print(f"Ошибка при инициализации свечей: {e}")
-    # Создаем пустой DataFrame с нужными колонками
-    df_candles = pd.DataFrame({
-        'datetime': pd.to_datetime([]),
-        'open': pd.Series([], dtype='float64'),
-        'high': pd.Series([], dtype='float64'),
-        'low': pd.Series([], dtype='float64'),
-        'close': pd.Series([], dtype='float64'),
-        'volume': pd.Series([], dtype='int64')
-    })
 
 # Сборка основного файла истории
 try:
@@ -277,11 +246,9 @@ df_combined = df_combined.sort_values('Date').reset_index(drop=True)
 # Сохранить df_combined в файл MyEquity.CSV с разделителем запятая
 df_combined.to_csv(temp_obj.substitute(name_file='MyEquity.CSV'), sep=',', index=False)
 
-
 def zero_to_nan(values):
     """Replace every 0 with 'nan' and return a copy."""
     return [float('nan') if x == 0 else x for x in values]
-
 
 # Список базовых активов, вычисление и добавление в словарь центрального страйка
 for asset in base_asset_list:
@@ -309,6 +276,7 @@ df['_expiration_datetime'] = pd.to_datetime(df['_expiration_datetime'], format='
 df['_expiration_datetime'].dt.date
 df['expiration_date'] = df['_expiration_datetime'].dt.strftime('%d.%m.%Y')
 
+
 # ОФОРМЛЕНИЕ ВКЛАДОК TAB
 # Tabs content
 tab1_content = [dcc.Graph(id='MyPosTiltHistory', style={'margin-top': 10})]
@@ -331,19 +299,19 @@ tab4_content = [  # Таблица моих позиций
             style_table={'max-width': '50px'},
             style_header={
                 'fontWeight': 'bold',
-                'backgroundColor': 'rgb(40, 40, 40)',  # Темный фон заголовка
+                'backgroundColor': 'rgb(50, 50, 50)',  # Темный фон заголовка
                 'color': 'white',  # Белый текст заголовка
                 'textAlign': 'center'
             },
             style_data={
-                'backgroundColor': 'rgb(20, 20, 20)',  # Темный фон ячеек
+                'backgroundColor': 'rgb(30, 30, 30)',  # Темный фон ячеек
                 'color': 'white'  # Белый текст ячеек
             },
             style_data_conditional=[
                 {
                     'if': {'filter_query': '{ticker} = "Total"'},
                     'fontWeight': 'bold',
-                    'backgroundColor': 'rgb(40, 40, 40)'  # Темный фон Total
+                    'backgroundColor': 'rgb(60, 60, 60)'  # Темный фон Total
                 },
                 {'if': {'filter_query': '{P/L theor} > 1', 'column_id': 'P/L theor'},
                  'backgroundColor': '#3D9970', 'color': 'white'},
@@ -371,12 +339,12 @@ tab5_content = [  # Таблица моих сделок
             style_table={'max-width': '50px'},
             style_header={
                 'fontWeight': 'bold',
-                'backgroundColor': 'rgb(40, 40, 40)',
+                'backgroundColor': 'rgb(50, 50, 50)',
                 'color': 'white',
                 'textAlign': 'center'
             },
             style_data={
-                'backgroundColor': 'rgb(20, 20, 20)',
+                'backgroundColor': 'rgb(30, 30, 30)',
                 'color': 'white'
             },
             style_data_conditional=[
@@ -406,23 +374,23 @@ tab6_content = [  # Таблица моих ордеров
             style_table={'max-width': '50px'},
             style_header={
                 'fontWeight': 'bold',
-                'backgroundColor': 'rgb(40, 40, 40)',
+                'backgroundColor': 'rgb(50, 50, 50)',
                 'color': 'white',
                 'textAlign': 'center'
             },
             style_data={
-                'backgroundColor': 'rgb(20, 20, 20)',
+                'backgroundColor': 'rgb(30, 30, 30)',
                 'color': 'white'
             },
             style_data_conditional=[
                 {
                     'if': {'filter_query': '{operation} eq "Купля"'},
-                    'backgroundColor': 'rgb(20, 20, 20)',
+                    'backgroundColor': 'rgb(30, 30, 30)',
                     'color': '#3D9970'
                 },
                 {
                     'if': {'filter_query': '{operation} eq "Продажа"'},
-                    'backgroundColor': 'rgb(20, 20, 20)',
+                    'backgroundColor': 'rgb(30, 30, 30)',
                     'color': '#FF0000'
                 },
             ]
@@ -524,7 +492,7 @@ app.layout = html.Div(children=[
         # Интервал обновления данных - 1 минута
         dcc.Interval(
             id='interval-1min',
-            interval=1000 * 60,  # 1 минута
+            interval=1000 * 60,   # 1 минута
             n_intervals=0),
 
         # Интервал обновления данных - 5 минут
@@ -553,7 +521,8 @@ app.layout = html.Div(children=[
                        20: '10d',
                        28: '14d'
                    },
-                   value=6
+                   value=6,
+                   className='dark-slider'
                    ),
         html.Div(id='slider-output-1'),
     ])
@@ -583,7 +552,6 @@ def update_time(n):
         html.Br(),
         html.Pre(info)
     ]
-
 
 # Обновление графика улыбки волатильности
 @app.callback(Output('plot_smile', 'figure', allow_duplicate=True),
@@ -617,8 +585,8 @@ def update_output_smile(value, n):
         # My positions data
         with open(temp_obj.substitute(name_file='QUIK_MyPos.csv'), 'r') as file:
             df_table = pd.read_csv(file, sep=';')
-            df_table_buy = df_table.loc[(df_table.option_base == first_key) & (df_table.net_pos > 0) & (df_table.OpenIV > 0)]
-            df_table_sell = df_table.loc[(df_table.option_base == first_key) & (df_table.net_pos < 0) & (df_table.OpenIV > 0)]
+            df_table_buy = df_table[(df_table.option_base == value) & (df_table.net_pos > 0) & (df_table.OpenIV > 0)]
+            df_table_sell = df_table[(df_table.option_base == value) & (df_table.net_pos < 0) & (df_table.OpenIV > 0)]
             MyPos_ticker_list = []
             for i in range(len(df_table)):
                 MyPos_ticker_list.append(df_table['ticker'][i])
@@ -645,9 +613,6 @@ def update_output_smile(value, n):
             dff_smile = dff_call[dff_call.expiration_date == exp_day]
             fig.add_trace(go.Scatter(x=dff_smile['_strike'], y=dff_smile['_volatility'], mode='lines+text',
                                      name=exp_day), secondary_y=False, )
-        # Задаем шаг тиков и форматирование
-        strike_step = MAP[value]['strike_step']
-        fig.update_xaxes(dtick=strike_step * 2, tickformat=",d")
 
         # Мои позиции BUY
         fig.add_trace(go.Scatter(x=df_table_buy['strike'], y=df_table_buy['OpenIV'],
@@ -692,13 +657,11 @@ def update_output_smile(value, n):
         # dff_MyPosOrders = dff_MyPosOrders.apply(lambda x: round(x, 2))
         # Применяем округление только к числовым столбцам
         numeric_columns = dff_MyPosOrders.select_dtypes(include=['number']).columns
-        # dff_MyPosOrders[numeric_columns] = dff_MyPosOrders[numeric_columns].round(2)
-        dff_MyPosOrders.loc[:, numeric_columns] = dff_MyPosOrders.loc[:, numeric_columns].round(2)
+        dff_MyPosOrders[numeric_columns] = dff_MyPosOrders[numeric_columns].round(2)
         dff_MyPosOrders.loc[dff_MyPosOrders['_type'] == 'C', '_type'] = 'Call'
         dff_MyPosOrders.loc[dff_MyPosOrders['_type'] == 'P', '_type'] = 'Put'
         # Создаем пустую колонку для хранения преобразованного времени
-        # dff_MyPosOrders.loc[:, 'converted_time'] = ''
-        dff_MyPosOrders = dff_MyPosOrders.assign(converted_time='')
+        dff_MyPosOrders['converted_time'] = ''
         # Преобразование времени из UTC_seconds в MSK_time
         for i in dff_MyPosOrders['_last_price_timestamp']:
             if not isnan(i):  # Проверяем, что значение не NaN
@@ -798,7 +761,7 @@ def update_output_smile(value, n):
         fig['layout']['yaxis2']['showgrid'] = False
 
         fig.update_layout(
-            plot_bgcolor='rgb(10, 10, 10)',
+            plot_bgcolor='rgb(30, 30, 30)',
             paper_bgcolor='rgb(30, 30, 30)',
             font_color='white',
             xaxis=dict(
@@ -832,10 +795,6 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
     global df_candles  # Добавляем объявление глобальной переменной
     limit_time = datetime.now() - timedelta(hours=12 * slider_value)
     # Сброс индекса с сохранением datetime как столбца
-    # Удаление столбца с индексом
-    if 'level_0' in df_candles.columns:
-        df_candles = df_candles.drop(columns=['level_0'])
-    # Сброс индекса
     df_candles = df_candles.reset_index()
     df_candles = df_candles[(df_candles.datetime > limit_time)]
 
@@ -948,15 +907,15 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
     fig['layout']['yaxis']['showgrid'] = False
 
     fig.update_layout(
-        plot_bgcolor='rgb(10, 10, 10)',  # Фон графика
-        paper_bgcolor='rgb(30, 30, 30)',  # Фон области рисования
+        plot_bgcolor='rgb(30, 30, 30)', # Фон графика
+        paper_bgcolor='rgb(30, 30, 30)', # Фон области рисования
         font_color='white',  # Цвет текста
-        xaxis=dict(  # Цвет вертикальных линий сетки
+        xaxis=dict( # Цвет вертикальных линий сетки
             gridcolor='rgb(60, 60, 60)',
             gridwidth=1,
             zerolinecolor='rgb(60, 60, 60)'
         ),
-        yaxis=dict(  # Цвет горизонтальных линий сетки
+        yaxis=dict( # Цвет горизонтальных линий сетки
             gridcolor='rgb(50, 50, 50)',
             gridwidth=0.5,
             zerolinecolor='rgb(50, 50, 50)'
@@ -986,9 +945,6 @@ def update_output_MyPosHistory(dropdown_value, slider_value, n):
 
     df_candles = get_candles_request(dataname, time_frame, dt_from)
 
-    # Удаление столбца с индексом
-    if 'level_0' in df_candles.columns:
-        df_candles = df_candles.drop(columns=['level_0'])
     # Сброс индекса с сохранением datetime как столбца
     df_candles = df_candles.reset_index()
     df_candles = df_candles[(df_candles.datetime > limit_time)]
@@ -1000,7 +956,7 @@ def update_output_MyPosHistory(dropdown_value, slider_value, n):
         df_MyPosHistory = df_MyPosHistory[(df_MyPosHistory.option_base == dropdown_value)]
 
         df_MyPosHistory['DateTime'] = pd.to_datetime(df_MyPosHistory['DateTime'],
-                                                     format='%Y-%m-%d %H:%M:%S')
+                                                  format='%Y-%m-%d %H:%M:%S')
         df_MyPosHistory.index = pd.DatetimeIndex(df_MyPosHistory['DateTime'])
         # df_MyPosHistory = df_MyPosHistory[(df_vol_history.type == radiobutton_value)]
         df_MyPosHistory = df_MyPosHistory[(df_MyPosHistory.DateTime > limit_time)]
@@ -1171,7 +1127,7 @@ def update_output_MyPosHistory(dropdown_value, slider_value, n):
     fig['layout']['yaxis']['showgrid'] = False
 
     fig.update_layout(
-        plot_bgcolor='rgb(10, 10, 10)',
+        plot_bgcolor='rgb(30, 30, 30)',
         paper_bgcolor='rgb(30, 30, 30)',
         font_color='white',
         xaxis=dict(
@@ -1199,9 +1155,6 @@ def update_output_MyPosHistory(dropdown_value, slider_value, n):
 def update_output_history_naklon(dropdown_value, slider_value, n):
     global df_candles  # Добавляем объявление глобальной переменной
     limit_time = datetime.now() - timedelta(hours=12 * slider_value)
-    # Удаление столбца с индексом
-    if 'level_0' in df_candles.columns:
-        df_candles = df_candles.drop(columns=['level_0'])
     # Сброс индекса с сохранением datetime как столбца
     df_candles = df_candles.reset_index()
     df_candles = df_candles[(df_candles.datetime > limit_time)]
@@ -1286,7 +1239,7 @@ def update_output_history_naklon(dropdown_value, slider_value, n):
     )
 
     fig.update_layout(
-        plot_bgcolor='rgb(10, 10, 10)',
+        plot_bgcolor='rgb(30, 30, 30)',
         paper_bgcolor='rgb(30, 30, 30)',
         font_color='white',
         xaxis=dict(
@@ -1338,7 +1291,7 @@ def update_output_history_naklon(dropdown_value, slider_value, n):
 @app.callback(Output('MyEquityHistory', 'figure'),
               [Input('dropdown-selection', 'value'),
                Input('my_slider', 'value'),
-               Input('interval-component', 'n_intervals * 2')],
+               Input('interval-component', 'interval-60min')],
               prevent_initial_call=True)
 def update_equity_history(dropdown_value, slider_value, n):
     global df_combined
@@ -1486,7 +1439,7 @@ def update_equity_history(dropdown_value, slider_value, n):
     )
 
     fig.update_layout(
-        plot_bgcolor='rgb(10, 10, 10)',
+        plot_bgcolor='rgb(30, 30, 30)',
         paper_bgcolor='rgb(30, 30, 30)',
         font_color='white'
     )

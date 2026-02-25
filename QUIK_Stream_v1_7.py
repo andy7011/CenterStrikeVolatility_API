@@ -15,11 +15,12 @@ from app.supported_base_asset import MAP
 from accfifo import Entry, FIFO
 from collections import deque
 import re
+import sys  # Выход из точки входа
 
-pd.set_option('future.no_silent_downcasting', True)
+# pd.set_option('future.no_silent_downcasting', True)
 
 # Конфигурация для работы с файлами
-temp_str = 'C:\\Users\\шадрин\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\ashad\\Yandex.Disk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 futures_firm_id = 'SPBFUT'  # Код фирмы для фьючерсов
@@ -82,6 +83,14 @@ def start_main_functions():
     try:
         # Подключение к QUIK
         qp_provider = QuikPy()
+        # Проверяем соединение с терминалом QUIK
+        is_connected = qp_provider.is_connected()['data']  # Состояние подключения терминала к серверу QUIK
+        if is_connected == 0:  # Если нет подключения терминала QUIK к серверу
+            qp_provider.close_connection_and_thread()  # Перед выходом закрываем соединение для запросов и поток обработки функций обратного вызова
+            print("Нет подключения терминала QUIK к серверу!")
+            sys.exit()  # Выходим, дальше не продолжаем
+        else:
+            print("Подключение к терминалу QUIK успешно")
         # Сразу выполняем синхронизацию инструментов портфеля и активных ордеров
         sync_portfolio_positions()
         sync_active_orders()

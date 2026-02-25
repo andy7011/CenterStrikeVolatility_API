@@ -239,7 +239,7 @@ def sync_portfolio_positions():
             dataname = position.dataname
             # print(ticker)
             # print(f'{dataname} {position.quantity}')
-            symbol = broker.get_symbol_by_dataname(dataname)
+            # symbol = self.provider.get_symbol_by_dataname(dataname)
             # print(symbol)
             # Добавляем позиции в портфель
             portfolio_positions.append(position)
@@ -335,7 +335,6 @@ def sync_portfolio_positions():
             from datetime import datetime
             option = Option(ticker, underlyingSymbol, datetime.combine(EXPDATE, datetime.min.time()), strike_price,
                             opt_type_converted)
-            # print(option)
 
             # Время до исполнения инструмента в долях года
             time_to_maturity = option.get_time_to_maturity()
@@ -347,7 +346,7 @@ def sync_portfolio_positions():
                                             implied_volatility._RISK_FREE_INTEREST_RATE,
                                             opt_type_converted)
             Vega = vega / 100
-            print(f"Vega: {Vega}")
+            # print(f"Vega: {Vega}")
 
             # Вычисление TrueVega
             if DAYS_TO_MAT_DATE == 0:
