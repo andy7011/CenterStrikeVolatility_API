@@ -15,6 +15,7 @@ from plotly.subplots import make_subplots
 import pandas as pd
 from app.central_strike import _calculate_central_strike
 from app.supported_base_asset import MAP
+from FinLabPy.Config import brokers, default_broker  # Все брокеры и брокер по умолчанию
 from string import Template
 import time
 import random
@@ -156,8 +157,8 @@ dff_call = dff[(dff._type == 'C')]  # оставим только коллы
 # My positions data
 with open(temp_obj.substitute(name_file='QUIK_MyPos.csv'), 'r') as file:
     df_table = pd.read_csv(file, sep=';')
-    df_table_buy = df_table.loc[(df_table.option_base == first_key) & (df_table.net_pos > 0) & (df_table.OpenIV > 0)]
-    df_table_sell = df_table.loc[(df_table.option_base == first_key) & (df_table.net_pos < 0) & (df_table.OpenIV > 0)]
+    df_table_buy = df_table[(df_table.option_base == first_key) & (df_table.net_pos > 0) & (df_table.OpenIV > 0)]
+    df_table_sell = df_table[(df_table.option_base == first_key) & (df_table.net_pos < 0) & (df_table.OpenIV > 0)]
     MyPos_ticker_list = []
     for i in range(len(df_table)):
         MyPos_ticker_list.append(df_table['ticker'][i])
@@ -219,42 +220,17 @@ def get_candles_request(dataname, time_frame, dt_from):
     global df_candles
     broker = brokers['АС']  # Брокер по ключу из Config.py словаря brokers
     symbol = broker.get_symbol_by_dataname(dataname)  # Тикер по названию
-    try:
-        bars = broker.get_history(symbol, time_frame, dt_from=dt_from)  # Получаем историю тикера за 140 дней
-        print(f"Запрос свечей: {dataname} {time_frame} начиная с даты {dt_from}")
-        df_candles = bars_to_df(bars)  # Все бары в pandas DataFrame pd_bars
-        return df_candles
-    except Exception as e:
-        print(f"Ошибка при получении свечей для {dataname}: {e}")
-        # Создаем пустой DataFrame с нужными колонками
-        df_candles = pd.DataFrame({
-            'datetime': pd.to_datetime([]),
-            'open': pd.Series([], dtype='float64'),
-            'high': pd.Series([], dtype='float64'),
-            'low': pd.Series([], dtype='float64'),
-            'close': pd.Series([], dtype='float64'),
-            'volume': pd.Series([], dtype='int64')
-        })
-        return df_candles
+    bars = broker.get_history(symbol, time_frame, dt_from=dt_from)  # Получаем историю тикера за 140 дней
+    print(f"Запрос свечей: {dataname} {time_frame} начиная с даты {dt_from}")
+    # print(f"Первый бар: {bars[0]}")  # Первый бар
+    # print(f"Последний бар: {bars[-1]}")  # Последний бар
+    df_candles = bars_to_df(bars)  # Все бары в pandas DataFrame pd_bars
+    # print(df_candles)  # Все бары в pandas DataFrame pd_bars
+    return df_candles
 
 
 # Вызов функции после её определения
 df_candles = get_candles_request(dataname, time_frame, dt_from)
-try:
-    df_candles = get_candles_request(dataname, time_frame, dt_from)
-    if df_candles.empty:
-        print("Предупреждение: DataFrame свечей пуст")
-except Exception as e:
-    print(f"Ошибка при инициализации свечей: {e}")
-    # Создаем пустой DataFrame с нужными колонками
-    df_candles = pd.DataFrame({
-        'datetime': pd.to_datetime([]),
-        'open': pd.Series([], dtype='float64'),
-        'high': pd.Series([], dtype='float64'),
-        'low': pd.Series([], dtype='float64'),
-        'close': pd.Series([], dtype='float64'),
-        'volume': pd.Series([], dtype='int64')
-    })
 
 # Сборка основного файла истории
 try:
@@ -617,8 +593,8 @@ def update_output_smile(value, n):
         # My positions data
         with open(temp_obj.substitute(name_file='QUIK_MyPos.csv'), 'r') as file:
             df_table = pd.read_csv(file, sep=';')
-            df_table_buy = df_table.loc[(df_table.option_base == first_key) & (df_table.net_pos > 0) & (df_table.OpenIV > 0)]
-            df_table_sell = df_table.loc[(df_table.option_base == first_key) & (df_table.net_pos < 0) & (df_table.OpenIV > 0)]
+            df_table_buy = df_table[(df_table.option_base == value) & (df_table.net_pos > 0) & (df_table.OpenIV > 0)]
+            df_table_sell = df_table[(df_table.option_base == value) & (df_table.net_pos < 0) & (df_table.OpenIV > 0)]
             MyPos_ticker_list = []
             for i in range(len(df_table)):
                 MyPos_ticker_list.append(df_table['ticker'][i])
@@ -688,17 +664,16 @@ def update_output_smile(value, n):
         # Last Bid Ask for MyPos and MyOrders
         favorites_list = MyPos_ticker_list + tikers  # слияние списков
         favorites_ticker_list = set(favorites_list)
-        dff_MyPosOrders = df[(df._base_asset_ticker == value) & (df._ticker.isin(favorites_ticker_list))]
-        # dff_MyPosOrders = dff_MyPosOrders.apply(lambda x: round(x, 2))
+        # dff_MyPosOrders = df[(df._base_asset_ticker == value) & (df._ticker.isin(favorites_ticker_list))]
+        dff_MyPosOrders = df[(df._base_asset_ticker == value) & (df._ticker.isin(favorites_ticker_list))].copy()
         # Применяем округление только к числовым столбцам
         numeric_columns = dff_MyPosOrders.select_dtypes(include=['number']).columns
-        # dff_MyPosOrders[numeric_columns] = dff_MyPosOrders[numeric_columns].round(2)
-        dff_MyPosOrders.loc[:, numeric_columns] = dff_MyPosOrders.loc[:, numeric_columns].round(2)
+        dff_MyPosOrders[numeric_columns] = dff_MyPosOrders[numeric_columns].round(2)
         dff_MyPosOrders.loc[dff_MyPosOrders['_type'] == 'C', '_type'] = 'Call'
         dff_MyPosOrders.loc[dff_MyPosOrders['_type'] == 'P', '_type'] = 'Put'
         # Создаем пустую колонку для хранения преобразованного времени
-        # dff_MyPosOrders.loc[:, 'converted_time'] = ''
-        dff_MyPosOrders = dff_MyPosOrders.assign(converted_time='')
+        # dff_MyPosOrders['converted_time'] = ''
+        dff_MyPosOrders.loc[:, 'converted_time'] = ''
         # Преобразование времени из UTC_seconds в MSK_time
         for i in dff_MyPosOrders['_last_price_timestamp']:
             if not isnan(i):  # Проверяем, что значение не NaN
@@ -831,11 +806,10 @@ def update_output_smile(value, n):
 def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
     global df_candles  # Добавляем объявление глобальной переменной
     limit_time = datetime.now() - timedelta(hours=12 * slider_value)
-    # Сброс индекса с сохранением datetime как столбца
     # Удаление столбца с индексом
     if 'level_0' in df_candles.columns:
         df_candles = df_candles.drop(columns=['level_0'])
-    # Сброс индекса
+    # Сброс индекса с сохранением datetime как столбца
     df_candles = df_candles.reset_index()
     df_candles = df_candles[(df_candles.datetime > limit_time)]
 
@@ -985,7 +959,6 @@ def update_output_MyPosHistory(dropdown_value, slider_value, n):
     dt_from = datetime.now() - timedelta(days=140)
 
     df_candles = get_candles_request(dataname, time_frame, dt_from)
-
     # Удаление столбца с индексом
     if 'level_0' in df_candles.columns:
         df_candles = df_candles.drop(columns=['level_0'])
@@ -1501,6 +1474,49 @@ def update_equity_history(dropdown_value, slider_value, n):
      Input('dropdown-selection', 'value')],
     prevent_initial_call=True)
 def updateTable(n, value):
+    # Список опционов
+    df_pos_finam = pd.DataFrame.from_dict(option_list, orient='columns')
+    df_pos_finam = df_pos_finam.loc[df_pos_finam['_volatility'] > 0]
+    print(df_pos_finam.columns)
+
+    # Получаем данные портфеля брокера Финам
+    portfolio_positions = []
+    broker = brokers['Ф']  # Брокер по ключу из Config.py словаря brokers
+    for position in broker.get_positions():  # Пробегаемся по всем позициям брокера
+        if position.dataname.split('.')[0] == 'SPBOPT' and position.quantity != 0:
+            ticker = position.dataname.split('.')[1] # Тикер позиции
+            # Найти значение '_base_asset_ticker' для заданного '_ticker'
+            # base_asset_ticker = df_pos_finam.loc[df_pos_finam['_ticker'] == ticker, '_base_asset_ticker'].iloc[0]
+            base_asset_ticker = None
+            filtered_df = df_pos_finam[df_pos_finam['_ticker'] == ticker]
+            if not filtered_df.empty:
+                base_asset_ticker = filtered_df['_base_asset_ticker'].iloc[0]
+            else:
+                # Обработка случая, когда ticker не найден
+                print(f"Ticker {ticker} not found in df_pos_finam")
+            # Берём только SPBOPT (опционы) соответствующего базового актива value
+            if base_asset_ticker == value:
+
+                dataname = position.dataname
+                print(ticker)
+                # print(f'{dataname} {position.quantity}')
+                # symbol = self.provider.get_symbol_by_dataname(dataname)
+                # print(symbol)
+                # Добавляем позиции в портфель
+                portfolio_positions.append(position)
+        # print(f'portfolio_positions {portfolio_positions}')
+
+        portfolio_positions_finam = []
+        # Пробегаемся по всем позициям портфеля
+        for position in portfolio_positions:
+            ticker = position.dataname.split('.')[1]
+            # print(ticker)
+
+            # Выбираем только опционы соответствующего базового актива value
+            if position.quantity != 0:
+                ticker = position.dataname.split('.')[1]
+
+
     df_pos = pd.read_csv(temp_obj.substitute(name_file='QUIK_MyPos.csv'), sep=';')
     # Фильтрация строк по базовому активу
     df_pos = df_pos[df_pos['option_base'] == value]

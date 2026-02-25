@@ -13,7 +13,6 @@ from collections import deque
 import re
 
 from QuikPy.QuikPy import QuikPy  # Работа с QUIK из Python через LUA скрипты QUIK#
-from Token import ap_provider
 
 from model.option import Option
 import option_type
@@ -240,7 +239,7 @@ def sync_portfolio_positions():
             dataname = position.dataname
             # print(ticker)
             # print(f'{dataname} {position.quantity}')
-            # symbol = self.provider.get_symbol_by_dataname(dataname)
+            symbol = broker.get_symbol_by_dataname(dataname)
             # print(symbol)
             # Добавляем позиции в портфель
             portfolio_positions.append(position)
@@ -348,7 +347,7 @@ def sync_portfolio_positions():
                                             implied_volatility._RISK_FREE_INTEREST_RATE,
                                             opt_type_converted)
             Vega = vega / 100
-            # print(f"Vega: {Vega}")
+            print(f"Vega: {Vega}")
 
             # Вычисление TrueVega
             if DAYS_TO_MAT_DATE == 0:
