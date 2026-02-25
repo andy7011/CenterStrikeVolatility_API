@@ -1496,9 +1496,12 @@ def updateTable(n, value):
                 print(f"Ticker {ticker} not found in df_pos_finam")
             # Берём только SPBOPT (опционы) соответствующего базового актива value
             if base_asset_ticker == value:
+                # Получить количество позиций по соответствующему тикеру из portfolio_positions
+                net_pos = get_position_quantity_by_ticker(portfolio_positions, ticker)
+                print(f'Net position: {ticker}, количество: {net_pos}')
 
                 dataname = position.dataname
-                print(ticker)
+                # print(ticker)
                 # print(f'{dataname} {position.quantity}')
                 # symbol = self.provider.get_symbol_by_dataname(dataname)
                 # print(symbol)
