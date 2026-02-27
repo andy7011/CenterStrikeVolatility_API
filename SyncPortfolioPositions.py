@@ -1,19 +1,16 @@
 import logging  # Выводим лог на консоль и в файл
-from datetime import datetime
+from datetime import datetime, date
 import pytz
-from pytz import timezone
+from pytz import utc
+from pytz import timezone, UTC
 from scipy.stats import norm
 import pandas as pd
 import csv
 from string import Template
-import threading
 import time  # Подписка на события по времени
 from accfifo import Entry, FIFO
 from collections import deque
 import re
-
-from QuikPy.QuikPy import QuikPy  # Работа с QUIK из Python через LUA скрипты QUIK#
-
 from model.option import Option
 import option_type
 import implied_volatility
@@ -31,6 +28,27 @@ from FinLabPy.Schedule.MOEX import Futures  # Расписание торгов 
 # Конфигурация для работы с файлами
 temp_str = 'C:\\Users\\шадрин\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
+
+def utc_to_msk_datetime(dt, tzinfo=False):
+    """Перевод времени из UTC в московское
+
+    :param datetime dt: Время UTC
+    :param bool tzinfo: Отображать временнУю зону
+    :return: Московское время
+    """
+    dt_utc = utc.localize(dt)  # Задаем временнУю зону UTC
+    # dt_msk = dt_utc.astimezone(tz_msk)  # Переводим в МСК
+    dt_msk = dt_utc  # Не требуется перевод в МСК
+    return dt_msk if tzinfo else dt_msk.replace(tzinfo=None)
+
+def utc_timestamp_to_msk_datetime(seconds) -> datetime:
+    """Перевод кол-ва секунд, прошедших с 01.01.1970 00:00 UTC в московское время
+
+    :param int seconds: Кол-во секунд, прошедших с 01.01.1970 00:00 UTC
+    :return: Московское время без временнОй зоны
+    """
+    dt_utc = datetime.fromtimestamp(seconds)  # Переводим кол-во секунд, прошедших с 01.01.1970 в UTC
+    return utc_to_msk_datetime(dt_utc)  # Переводим время из UTC в московское
 
 def calculate_open_data_open_price_open_iv(sec_code, net_pos):
     """
@@ -200,6 +218,8 @@ def calculate_weighted_average(s):
     return weighted_sum / total_weight if total_weight != 0 else 0
 
 def sync_portfolio_info():
+    # Добавлено измерение времени выполнения
+    start_time = datetime.now()
     portfolio_info = []
     broker = brokers['Ф']  # Брокер по ключу из Config.py словаря brokers
     value = broker.get_value()  # Стоимость портфеля
@@ -221,6 +241,11 @@ def sync_portfolio_info():
         'GM': (f'{GM:.0f} %')
     })
     print(f'portfolio_info: {portfolio_info}')
+
+    # Добавлен вывод времени выполнения
+    end_time = datetime.now()
+    execution_time = end_time - start_time
+    print(f"Время выполнения sync_portfolio_info: {execution_time}")
     return portfolio_info
 
 # Получить количество позиций по соответствующему тикеру из portfolio_positions
@@ -231,6 +256,9 @@ def get_position_quantity_by_ticker(portfolio_positions, ticker):
     return 0  # Если позиция не найдена
 
 def sync_portfolio_positions():
+    # Добавлено измерение времени выполнения
+    start_time = datetime.now()
+
     portfolio_positions = []
     broker = brokers['Ф']  # Брокер по ключу из Config.py словаря brokers
     for position in broker.get_positions():  # Пробегаемся по всем позициям брокера
@@ -268,7 +296,7 @@ def sync_portfolio_positions():
             # Время последней сделки last_time
             last_time = ""
             if quotes and len(quotes) > 0 and 'last_price_timestamp' in quotes[0]:
-                last_time = quotes[0]['last_price_timestamp']
+                last_time = utc_timestamp_to_msk_datetime(quotes[0]['last_price_timestamp']).strftime('%H:%M:%S')
             # print(f"Время последней сделки: {last_time}")
 
             # Цена последней сделки по опциону (LAST) opt_price
@@ -317,24 +345,21 @@ def sync_portfolio_positions():
 
             # Дата исполнения инструмента "%Y-%m-%d" <class 'datetime.date'>
             EXPDATE_image = option_info['endExpiration']
-            from datetime import date, datetime
+            EXPDATE = datetime.strptime(EXPDATE_image.split('.')[0], '%Y-%m-%dT%H:%M:%S').date()
             EXPDATE_iso = datetime.strptime(EXPDATE_image.split('.')[0], '%Y-%m-%dT%H:%M:%S').date()
             formatted_exp_date = EXPDATE_iso.strftime("%d.%m.%Y")
-            from datetime import datetime
-            EXPDATE = datetime.fromisoformat(EXPDATE_image.replace('Z', '+00:00')).date()
-            # print(f"Дата исполнения инструмента: {EXPDATE} {type(EXPDATE)}")
+            EXPDATE_DT = datetime.combine(EXPDATE, datetime.min.time())
+            # print(f"Дата исполнения инструмента: {EXPDATE_DT} {type(EXPDATE_DT)}")
 
             # Число дней до экспирации
-            from datetime import date
             # DAYS_TO_MAT_DATE = (EXPDATE - datetime.now().date()).days
-            DAYS_TO_MAT_DATE = (EXPDATE - date.today()).days
+            current_date = datetime.today().date()
+            # print(f"Текущая дата: {current_date} {type(current_date)}")
+            DAYS_TO_MAT_DATE = EXPDATE - current_date
             # print(f"Число дней до исполнения инструмента: {DAYS_TO_MAT_DATE}")
 
             # Создание опциона
-            # option = Option(ticker, underlyingSymbol, EXPDATE, strike_price, opt_type_converted)
-            from datetime import datetime
-            option = Option(ticker, underlyingSymbol, datetime.combine(EXPDATE, datetime.min.time()), strike_price,
-                            opt_type_converted)
+            option = Option(ticker, underlyingSymbol, EXPDATE, strike_price, opt_type_converted)
 
             # Время до исполнения инструмента в долях года
             time_to_maturity = option.get_time_to_maturity()
@@ -352,7 +377,8 @@ def sync_portfolio_positions():
             if DAYS_TO_MAT_DATE == 0:
                 TrueVega = 0
             else:
-                TrueVega = Vega / (DAYS_TO_MAT_DATE ** 0.5)
+                # TrueVega = Vega / (DAYS_TO_MAT_DATE ** 0.5)
+                TrueVega = Vega / (DAYS_TO_MAT_DATE.days ** 0.5)
 
             # Волатильность опциона IMPLIED_VOLATILITY (IV) - через расчет по цене опциона
             opt_volatility_last = 0.0
@@ -403,20 +429,17 @@ def sync_portfolio_positions():
                 'bidIV': round(opt_volatility_bid, 2) if opt_volatility_bid is not None else 0,
                 'lastIV': round(opt_volatility_last, 2) if opt_volatility_last is not None else 0,
                 'askIV': round(opt_volatility_offer, 2) if opt_volatility_offer is not None else 0,
-                'P/L theor': round(VOLATILITY - open_iv, 2) if net_pos > 0 else round(open_iv - VOLATILITY,
-                                                                                      2),
-                # 'P/L last': round(opt_volatility_last - open_iv, 2) if net_pos > 0 else round(open_iv - opt_volatility_last, 2),
+                'P/L theor': round(VOLATILITY - open_iv, 2) if net_pos > 0 else round(open_iv - VOLATILITY, 2),
                 'P/L last': 0 if opt_volatility_last == 0 else (
                     round(opt_volatility_last - open_iv, 2) if net_pos > 0 else round(
                         open_iv - opt_volatility_last, 2)),
-                # 'P/L market': round(opt_volatility_bid - open_iv, 2) if net_pos > 0 else round(open_iv - opt_volatility_offer, 2),
                 'P/L market': round(opt_volatility_bid - open_iv, 2) if (
                         net_pos > 0 and opt_volatility_bid is not None) else round(
                     open_iv - opt_volatility_offer, 2) if opt_volatility_offer is not None else None,
                 'Vega': round(Vega * net_pos, 2),
                 'TrueVega': round(TrueVega * net_pos, 2)
             })
-    # print(f'portfolio_positions_finam: {portfolio_positions_finam}')
+            print(f'portfolio_positions_finam: {ticker} {net_pos} {strike_price} iv_last {round(opt_volatility_last, 2)} {last_time} {underlyingSymbol}')
     # Сохраняем в CSV файл
     if portfolio_positions_finam:
         df_portfolio = pd.DataFrame(portfolio_positions_finam)
@@ -446,8 +469,12 @@ def sync_portfolio_positions():
     df.to_csv(temp_obj.substitute(name_file='QUIK_Stream_Trades.csv'), encoding='utf-8', index=False, sep=';')
 
 
-    # Не забываем закрыть соединение
-    ap_provider.close_web_socket()
+    broker.close()  # Закрываем брокера
+
+    # Добавлен вывод времени выполнения
+    end_time = datetime.now()
+    execution_time = end_time - start_time
+    print(f"Время выполнения sync_portfolio_info: {execution_time}")
 
 if __name__ == '__main__':  # Точка входа при запуске этого скрипта
     sync_portfolio_info()

@@ -20,7 +20,6 @@ import option_type
 import implied_volatility
 from app.supported_base_asset import MAP
 
-from FinLabPy.Config import brokers, default_broker  # Все брокеры и брокер по умолчанию
 from string import Template
 import time
 import random
@@ -31,8 +30,9 @@ import re
 
 from FinLabPy.Config import brokers, default_broker  # Все брокеры и брокер по умолчанию
 from FinLabPy.Core import bars_to_df  # Перевод бар в pandas DataFrame
+from AlorPy import AlorPy  # Работа с Alor OpenAPI V2 из Python через REST/WebSockets
 
-temp_str = 'C:\\Users\\ashad\\Yandex.Disk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\шадрин\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 # Глобальные переменные для хранения данных
@@ -206,6 +206,22 @@ with open(temp_obj.substitute(name_file='Equity.CSV'), 'r') as file:
     df_equity[cols_to_convert] = df_equity[cols_to_convert].apply(pd.to_numeric, errors='coerce')
 file.close()
 
+# Получаем информацию о тикере из Алор брокера
+def get_ticker_info_alor(dataname):
+    option_ticker = dataname.split('.')[1]  # Тикер
+    broker = brokers['АС']  # Брокер по ключу из Config.py словаря brokers
+    ap_provider = AlorPy()
+    symbol = broker.get_symbol_by_dataname(dataname)  # Спецификация тикера брокера. Должна совпадать у всех брокеров
+    exchange = symbol.broker_info['exchange']  # Биржа
+    option_info = ap_provider.get_symbol(exchange, option_ticker)  # Биржа и тикер опциона
+    broker.close()  # Закрываем брокера
+
+    # Цена опциона theor_price
+    theor_price = 0.0
+    if option_info['theorPrice']:
+        theor_price = float(option_info['theorPrice'])
+    return theor_price
+
 # СВЕЧИ Данные для графика базового актива (для первой прорисовки, первый фьючерс из списка MAP)
 
 # Будем запрашивать глубину истории 140 дней
@@ -232,6 +248,7 @@ def get_candles_request(dataname, time_frame, dt_from):
     # print(f"Последний бар: {bars[-1]}")  # Последний бар
     df_candles = bars_to_df(bars)  # Все бары в pandas DataFrame pd_bars
     # print(df_candles)  # Все бары в pandas DataFrame pd_bars
+    broker.close()  # Закрываем брокера
     return df_candles
 
 
@@ -769,8 +786,7 @@ def update_output_smile(value, n):
             for i in range(len(df_table)):
                 MyPos_ticker_list.append(df_table['ticker'][i])
             # DataFrame для отрисовки баланса TrueVega
-            df_table_base = df_table
-            df_table_base = df_table_base[df_table_base.option_base == value]
+            df_table_base = df_table[df_table.option_base == value].copy()  # Добавлен .copy()
         # Close the file explicitly file.close()
         file.close()
 
@@ -1644,7 +1660,9 @@ def update_equity_history(dropdown_value, slider_value, n):
      Input('dropdown-selection', 'value')],
     prevent_initial_call=True)
 def updateTable(n, value):
-    #
+    # Инициализируем df_pos заранее
+    df_pos = pd.DataFrame()
+    # Находим цену базового актива
     asset_price = None
     for asset in base_asset_list:
         if asset['_ticker'] == value:
@@ -1652,25 +1670,41 @@ def updateTable(n, value):
             break
     # print(f'asset_price - Цена базового актива {value}: {asset_price}')
 
-    # Список опционов
+    # Список опционов из Damp
     df_pos_finam = pd.DataFrame.from_dict(option_list, orient='columns')
     df_pos_finam = df_pos_finam.loc[df_pos_finam['_volatility'] > 0]
     # Получаем данные портфеля брокера Финам
     portfolio_positions_finam = []
     broker = brokers['Ф']  # Брокер по ключу из Config.py словаря brokers
     for position in broker.get_positions():  # Пробегаемся по всем позициям брокера
+        # Проверяем, что позиция принадлежит SPBOPT и не равна 0
         if position.dataname.split('.')[0] == 'SPBOPT' and position.quantity != 0:
             ticker = position.dataname.split('.')[1] # Тикер позиции
+            # print(f'ticker - Тикер позиции: {ticker}')
             # Найти значение '_base_asset_ticker' для заданного '_ticker'
-            filtered_df = df_pos_finam[df_pos_finam['_ticker'] == ticker]
-            filtered_df['_expiration_datetime'] = pd.to_datetime(filtered_df['_expiration_datetime'], format='%a, %d %b %Y %H:%M:%S GMT')
-            filtered_df['_expiration_datetime'].dt.date
-            filtered_df['expiration_date'] = filtered_df['_expiration_datetime'].dt.strftime('%d.%m.%Y')
+            # Создаем копию DataFrame
+            filtered_df = df_pos_finam[df_pos_finam['_ticker'] == ticker].copy()
+            # print(f'filtered_df - Фильтрованный DataFrame: {filtered_df}')
+            filtered_df.loc[:, '_expiration_datetime'] = pd.to_datetime(filtered_df['_expiration_datetime'],
+                                                                        format='%a, %d %b %Y %H:%M:%S GMT')
+            # filtered_df.loc[:, 'expiration_date'] = filtered_df['_expiration_datetime'].dt.strftime('%d.%m.%Y')
+            # Преобразуем дату с обработкой ошибок
+            filtered_df['_expiration_datetime'] = pd.to_datetime(filtered_df['_expiration_datetime'],
+                                                                 format='%a, %d %b %Y %H:%M:%S GMT',
+                                                                 errors='coerce')
+
+            # Проверяем, что дата корректна, прежде чем использовать .dt accessor
+            mask = filtered_df['_expiration_datetime'].notna()
+            filtered_df.loc[mask, 'expiration_date'] = filtered_df.loc[mask, '_expiration_datetime'].dt.strftime(
+                '%d.%m.%Y')
+            filtered_df.loc[~mask, 'expiration_date'] = None  # Для некорректных дат
             # print(filtered_df['expiration_date'])
-            base_asset_ticker = filtered_df['_base_asset_ticker'].iloc[0]
+            # base_asset_ticker = filtered_df['_base_asset_ticker'].iloc[0]
+            # print(f'base_asset_ticker - Базовый актив {value}: {base_asset_ticker}')
+
             # Берём только SPBOPT (опционы) соответствующего базового актива value
-            if not filtered_df.empty:
-                base_asset_ticker = filtered_df['_base_asset_ticker'].iloc[0]
+            if not filtered_df.empty and filtered_df['_base_asset_ticker'].iloc[0] == value:
+                base_asset_ticker = value
                 offer_price = filtered_df['_ask'].iloc[0]
                 opt_volatility_offer = filtered_df['_ask_iv'].iloc[0]
                 bid_price = filtered_df['_bid'].iloc[0]
@@ -1730,13 +1764,15 @@ def updateTable(n, value):
                 else:
                     TrueVega = Vega / (DAYS_TO_MAT_DATE ** 0.5)
 
+                # theor_price = get_ticker_info_alor(position.dataname)
+
                 # Формируем словарь для DataFrame
                 position_data = {
                     'ticker': ticker,
                     'net_pos': net_pos,
                     'strike': strike_price,
-                    'option_type': option_type,
-                    'expdate': expiration_datetime,
+                    'option_type': 'Call' if option_type == 'C' else 'Put',
+                    'expdate': expiration_datetime.strftime('%d.%m.%Y'),
                     'option_base': base_asset_ticker,
                     'OpenDateTime': open_datetime,
                     'OpenPrice': round(open_price, 2) if open_price is not None else open_price,
@@ -1745,13 +1781,15 @@ def updateTable(n, value):
                     'bid': bid_price,
                     'last': opt_price,
                     'ask': offer_price,
-                    # 'theor': theor_price,
+                    # 'theor': 0, # theor_price,
                     'QuikVola': VOLATILITY,
                     'bidIV': round(opt_volatility_bid, 2) if opt_volatility_bid is not None else 0,
                     'lastIV': round(opt_volatility_last, 2) if opt_volatility_last is not None else 0,
                     'askIV': round(opt_volatility_offer, 2) if opt_volatility_offer is not None else 0,
                     'P/L theor': round(VOLATILITY - open_iv, 2) if net_pos > 0 else round(open_iv - VOLATILITY, 2),
-                    'P/L last': 0 if opt_volatility_last == 0 else (round(opt_volatility_last - open_iv, 2) if net_pos > 0 else round(open_iv - opt_volatility_last, 2)),
+                    # 'P/L last': 0 if opt_volatility_last == 0 else (round(opt_volatility_last - open_iv, 2) if net_pos > 0 else round(open_iv - opt_volatility_last, 2)),
+                    'P/L last': 0 if opt_volatility_last is None or opt_volatility_last == 0 or open_iv is None else (
+                        round(opt_volatility_last - open_iv, 2) if net_pos > 0 else round(open_iv - opt_volatility_last, 2)),
                     'P/L market': round(opt_volatility_bid - open_iv, 2) if (net_pos > 0 and opt_volatility_bid is not None) else round(open_iv - opt_volatility_offer, 2) if opt_volatility_offer is not None else None,
                     'Vega': round(Vega * net_pos, 2),
                     'TrueVega': round(TrueVega * net_pos, 2)
@@ -1779,9 +1817,13 @@ def updateTable(n, value):
 
 
 
-    # df_pos = pd.read_csv(temp_obj.substitute(name_file='QUIK_MyPos.csv'), sep=';')
+
+
+    # df_pos = pd.read_csv(temp_obj.substitute(name_file='MyPosFinam.csv'), sep=';')
     # Фильтрация строк по базовому активу
-    df_pos = df_pos[df_pos['option_base'] == value]
+    # df_pos = df_pos[df_pos['option_base'] == value]
+    if value is not None:
+        df_pos = df_table_base[df_table_base.option_base == value]
 
     # Замена нулевых значений 'P/L last' на значения 'P/L theor'
     df_pos['P/L last'] = df_pos['P/L last'].mask(df_pos['P/L last'] == 0, df_pos['P/L theor'])
@@ -1789,10 +1831,10 @@ def updateTable(n, value):
     # Вычисление итогов по колонке net_pos
     total_net_pos = df_pos['net_pos'].sum()
     # total_theor = df_pos['theor'].sum()
-    # # total_theor = (df_pos['theor'] * df_pos['net_pos']).sum()
-    # total_last = df_pos['last'].sum()
+    # total_theor = (df_pos['theor'] * df_pos['net_pos']).sum()
+    total_last = df_pos['last'].sum()
 
-    # # Theor
+    # # Расчет весов theor
     # weights_theor = df_pos['theor'] * abs(df_pos['net_pos'])
     # total_weight_theor = weights_theor.sum()
 
@@ -1824,8 +1866,7 @@ def updateTable(n, value):
 
     # Проверка на существование колонок перед вычислением
     # weighted_pl_theor = (df_pos['P/L theor'] * weights_theor).sum() / total_weight_theor if 'P/L theor' in df_pos.columns and total_weight_theor != 0 else 0
-    weighted_pl_last = (df_pos[
-                            'P/L last'] * weights_last).sum() / total_weight_last if 'P/L last' in df_pos.columns and total_weight_last != 0 else 0
+    weighted_pl_last = (df_pos['P/L last'] * weights_last).sum() / total_weight_last if 'P/L last' in df_pos.columns and total_weight_last != 0 else 0
 
     # Вычисление сумм по Vega и TrueVega
     total_vega = df_pos['Vega'].sum() if 'Vega' in df_pos.columns else 0
