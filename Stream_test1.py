@@ -68,7 +68,7 @@ def _on_quote(quote: SubscribeQuoteResponse):
     # Обновляем основной словарь только измененными значениями
     if changed_data:
         quote_data.update(changed_data)
-        print(f"Измененные данные словаря quote_data: {quote_data}")
+        print(f"Котировка {dataname} quote_data: {quote_data}")
 
 
 def _on_order_book(order_book: SubscribeOrderBookResponse): logger.info(f'Стакан - {order_book.order_book[0] if len(order_book.order_book) > 0 else "Нет стакана"}')

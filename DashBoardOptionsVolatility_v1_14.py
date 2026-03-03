@@ -32,7 +32,7 @@ from FinLabPy.Config import brokers, default_broker  # Все брокеры и 
 from FinLabPy.Core import bars_to_df  # Перевод бар в pandas DataFrame
 from AlorPy import AlorPy  # Работа с Alor OpenAPI V2 из Python через REST/WebSockets
 
-temp_str = 'C:\\Users\\шадрин\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\ashad\\Yandex.Disk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 # Глобальные переменные для хранения данных
@@ -1685,8 +1685,9 @@ def updateTable(n, value):
             # Создаем копию DataFrame
             filtered_df = df_pos_finam[df_pos_finam['_ticker'] == ticker].copy()
             # print(f'filtered_df - Фильтрованный DataFrame: {filtered_df}')
-            filtered_df.loc[:, '_expiration_datetime'] = pd.to_datetime(filtered_df['_expiration_datetime'],
-                                                                        format='%a, %d %b %Y %H:%M:%S GMT')
+            if not pd.api.types.is_datetime64_any_dtype(filtered_df['_expiration_datetime']):
+                filtered_df['_expiration_datetime'] = pd.to_datetime(filtered_df['_expiration_datetime'],
+                                                                     errors='coerce')
             # filtered_df.loc[:, 'expiration_date'] = filtered_df['_expiration_datetime'].dt.strftime('%d.%m.%Y')
             # Преобразуем дату с обработкой ошибок
             filtered_df['_expiration_datetime'] = pd.to_datetime(filtered_df['_expiration_datetime'],
