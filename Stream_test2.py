@@ -11,12 +11,11 @@ from FinLabPy.Config import brokers, default_broker  # Все брокеры и 
 
 # Словарь для хранения данных котировок
 quote_data = {}
-# Словарь для хранения последних ненулевых значений опционов
-last_option_data = {}
-# Словарь для хранения предыдущих значений
+# Глобальные переменные для хранения состояния
 previous_values = {}
+last_option_data = {}
 
-def portfolio_positions():
+def get_portfolio_positions():
     # Получаем данные портфеля брокера Финам в список
     portfolio_positions_finam = []
     broker = brokers['Ф']  # Брокер по ключу из Config.py словаря brokers
@@ -32,8 +31,10 @@ def portfolio_positions():
     broker.close()  # Закрываем брокера
     return portfolio_positions_finam
 
+
 def _on_quote(quote: SubscribeQuoteResponse):
-    portfolio_positions()
+    global previous_values, last_option_data
+
     if not quote.quote:  # Если котировка отсутствует
         logger.info("Нет котировки")
         return
@@ -50,7 +51,6 @@ def _on_quote(quote: SubscribeQuoteResponse):
         'implied_volatility') and q.option.implied_volatility.value else last_option_data.get('implied_volatility', 0.0)
     theoretical_price = float(q.option.theoretical_price.value) if q.HasField('option') and q.option.HasField(
         'theoretical_price') and q.option.theoretical_price.value else last_option_data.get('theoretical_price', 0.0)
-    print(ask, bid, last, implied_volatility, theoretical_price)
 
     # Обновляем словарь последних значений только если есть новое ненулевое значение
     if q.HasField('option'):
@@ -83,12 +83,19 @@ def _on_quote(quote: SubscribeQuoteResponse):
         changed_data['theoretical_price'] = theoretical_price
         previous_values['theoretical_price'] = theoretical_price
 
-    # print(portfolio_positions)
+    # Выводим только измененные данные
+    if changed_data:
+        print(changed_data)
+    # print(quote_data)
+ # {'ticker': 'RI115000BC6', 'ask': 2710.0, 'bid': 2500.0, 'last': 2500.0, 'theoretical_price': 2690.0, 'implied_volatility': 22.91575}
 
-def _on_order_book(order_book: SubscribeOrderBookResponse): logger.info(f'Стакан - {order_book.order_book[0] if len(order_book.order_book) > 0 else "Нет стакана"}')
+def _on_order_book(order_book: SubscribeOrderBookResponse):
+    logger.info(f'Стакан - {order_book.order_book[0] if len(order_book.order_book) > 0 else "Нет стакана"}')
 
 
-def _on_latest_trades(latest_trade: SubscribeLatestTradesResponse): logger.info(f'Сделка - {latest_trade.trades[0] if len(latest_trade.trades) > 0 else "Нет сделки"}')
+def _on_latest_trades(latest_trade: SubscribeLatestTradesResponse):
+    logger.info(f'Сделка - {latest_trade.trades[0] if len(latest_trade.trades) > 0 else "Нет сделки"}')
+
 
 # # Здесь можно временно отключить логгер
 # logger = logging.getLogger('FinamPy.Stream')
@@ -102,15 +109,17 @@ if __name__ == '__main__':  # Точка входа при запуске это
     logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',  # Формат сообщения
                         datefmt='%d.%m.%Y %H:%M:%S',  # Формат даты
                         level=logging.INFO,  # Уровень логируемых событий NOTSET/DEBUG/INFO/WARNING/ERROR/CRITICAL
-                        handlers=[logging.FileHandler('Stream.log', encoding='utf-8'), logging.StreamHandler()])  # Лог записываем в файл и выводим на консоль
-    logging.Formatter.converter = lambda *args: datetime.now(tz=fp_provider.tz_msk).timetuple()  # В логе время указываем по МСК
+                        handlers=[logging.FileHandler('Stream.log', encoding='utf-8'),
+                                  logging.StreamHandler()])  # Лог записываем в файл и выводим на консоль
+    logging.Formatter.converter = lambda *args: datetime.now(
+        tz=fp_provider.tz_msk).timetuple()  # В логе время указываем по МСК
 
     dataname = 'SPBOPT.RI115000BC6'  # Тикер
 
     finam_board, ticker = fp_provider.dataname_to_finam_board_ticker(dataname)  # Код режима торгов Финама и тикер
     mic = fp_provider.get_mic(finam_board, ticker)  # Биржа тикера
 
-    # # Подписываемся на стакан и сделки один раз
+    # Подписываемся на стакан и сделки один раз
     # fp_provider.on_order_book.subscribe(_on_order_book)  # Подписываемся на стакан
     # Thread(target=fp_provider.subscribe_order_book_thread, name='OrderBookThread', args=(f'{ticker}@{mic}',)).start()  # Создаем и запускаем поток подписки на стакан
 
@@ -123,12 +132,21 @@ if __name__ == '__main__':  # Точка входа при запуске это
             # Котировки
             sleep_secs = 60  # Кол-во секунд получения котировок
             logger.info(f'Секунд котировок: {sleep_secs}')
-            fp_provider.on_quote.subscribe(_on_quote)  # Подписываемся на котировки
+
+
+            # Создаем уникальную функцию для подписки
+            def on_quote_handler(quote):
+                _on_quote(quote)
+
+
+            fp_provider.on_quote.subscribe(on_quote_handler)  # Подписываемся на котировки
             Thread(target=fp_provider.subscribe_quote_thread, name='QuoteThread',
                    args=((f'{ticker}@{mic}',),)).start()  # Создаем и запускаем поток подписки на котировки
             sleep(sleep_secs)  # Ждем кол-во секунд получения котировок
-            fp_provider.on_quote.unsubscribe(_on_quote)  # Отменяем подписку на котировки
+            fp_provider.on_quote.unsubscribe(on_quote_handler)  # Отменяем подписку на котировки
+
         except KeyboardInterrupt:
             # Прерывание цикла по Ctrl+C
             fp_provider.close_channel()  # Закрываем канал перед выходом
             break
+
