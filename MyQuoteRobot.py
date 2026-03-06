@@ -1,76 +1,154 @@
-from datetime import datetime, timedelta  # Работа с датой и временем
+from datetime import datetime  # Дата и время
+from time import sleep  # Задержка в секундах перед выполнением операций
+import logging  # Выводим лог на консоль и в файл
+from threading import Thread  # Запускаем поток подписки
 
-from FinLabPy.Config import brokers, default_broker  # Все брокеры и брокер по умолчанию
-from FinLabPy.Core import Bar, Order
-from FinLabPy.Schedule.MOEX import Futures  # Расписание торгов срочного рынка
+from FinamPy import FinamPy
+from FinamPy.grpc.assets.assets_service_pb2 import GetAssetRequest, GetAssetResponse  # Информация по тикеру
+from FinamPy.grpc.orders.orders_service_pb2 import Order, OrderState, OrderType, CancelOrderRequest, StopCondition  # Заявки
+import FinamPy.grpc.side_pb2 as side  # Направление заявки
+from FinamPy.grpc.marketdata.marketdata_service_pb2 import QuoteRequest, QuoteResponse  # Последняя цена сделки
+
+from google.type.decimal_pb2 import Decimal
 
 
-def exec_order(bars: list[Bar], order: Order, market_dt: datetime) -> None:
-    print(f'{order} - {market_dt}')
-    if schedule.trade_session(market_dt) is None:  # Если биржа не работает
-        print('Биржа не работает')
-        return
-    order_open_dt = schedule.trade_bar_open_datetime(market_dt, tf)  # Дата и время открытия последнего бара
-    if order.exec_type == Order.Market:  # Рыночная заявка
-        price = next(bar.open for bar in bars if bar.datetime == order_open_dt)  # Вход по цене открытия последнего бара, т.к. внутри бара цены неизвестны
-        print(f'Рыночная заявка {"на покупку" if order.buy else "на продажу"} исполнена {order_open_dt} по цене {price}')
-    elif order.exec_type == Order.Limit:  # Лимитная заявка
-        print(f'Лимитная заявка {"на покупку" if order.buy else "на продажу"} выставлена {order_open_dt} по цене {order.price}')
-        bar = next((bar for bar in bars if bar.datetime >= order_open_dt and bar.low <= order.price), None) if order.buy \
-            else next((bar for bar in bars if bar.datetime >= order_open_dt and bar.high >= order.price), None)  # Бар исполнения заявки
-        if bar is None or bar.datetime.date() > order_open_dt.date():  # Если бара исполнения заявки нет, или она за пределами торговой сессии постановки бара
-            print('Лимитная заявка снята на бирже')
-        else:  # Заявка исполнена
-            price = min(order.price, bar.open) if order.buy else max(order.price, bar.open)  # Возможно, лучшей ценой будет цена открытия, а не лимитная цена
-            print(f'Лимитная заявка исполнена {bar.datetime} по цене {price}')
-    elif order.exec_type in (Order.Stop, Order.StopLimit):  # Стоп заявка
-        print(f'Стоп заявка {"на покупку" if order.buy else "на продажу"} выставлена {order_open_dt} по цене {order.stop_price}')
-        stop_bar = next((bar for bar in bars if bar.datetime >= order_open_dt and bar.low <= order.stop_price <= bar.high), None)  # Бар исполнения стоп заявки
-        if stop_bar is None:  # Если бара исполнения заявки нет
-            print('Стоп заявка не исполнилась (активна)')
-        else:  # Стоп заявка исполнилась
-            print(f'Стоп заявка исполнена {stop_bar.datetime} по цене {order.stop_price}')
-            if order.exec_type == Order.Stop:  # Рыночная стоп заявка
-                print(f'Рыночная заявка {"на покупку" if order.buy else "на продажу"} исполнена {stop_bar.datetime} по цене {order.stop_price}')
-            else:  # Лимитная стоп заявка
-                exec_order(bars, Order(order.broker, '2', order.buy, Order.Limit, order.dataname, order.decimals, order.quantity, order.price), stop_bar.datetime)
+def _on_order(order): logger.info(f'Заявка - {order}')
 
+
+def _on_trade(trade): logger.info(f'Сделка - {trade}')
+
+# Получение последней котировки по инструменту
+def get_last_quotes(symbol):
+    quote_response: QuoteResponse = fp_provider.call_function(fp_provider.marketdata_stub.LastQuote,
+                                                              QuoteRequest(symbol=symbol))
+    # print(f'quote_response {quote_response}')
+    ask = float(quote_response.quote.ask.value)  # Последняя цена продажи
+    bid = float(quote_response.quote.bid.value)  # Последняя цена покупки
+    last_price = float(quote_response.quote.last.value)  # Последняя цена сделки
+    theoretical_price = float(quote_response.quote.option.theoretical_price.value)  # Теоретическая цена
+    implied_volatility = float(quote_response.quote.option.implied_volatility.value)  # Волатильность
+    print(f'Последние котировки по инструменту {symbol}: ask:{ask} bid:{bid} last_price:{last_price} theoretical_price:{theoretical_price} volatility:{implied_volatility}')
+    return ask, bid, last_price, theoretical_price, implied_volatility
 
 if __name__ == '__main__':  # Точка входа при запуске этого скрипта
-    dataname = 'SPBOPT.Si72000BO6B'
-    tf = 'M5'  # 5-и минутный временной интервал
-    # tf = 'M60'  # Часовой временной интервал
-    # tf = 'D1'  # Дневной временной интервал
+    logger = logging.getLogger('FinamPy.Transactions')  # Будем вести лог
+    fp_provider = FinamPy()  # Подключаемся ко всем торговым счетам
 
-    # broker = default_broker  # Брокер по умолчанию
-    broker = brokers['Ф']  # Брокер по ключу из Config.py словаря brokers
-    schedule = Futures()  # Расписание срочного рынка Московской Биржи
-    # schedule.delta = timedelta(seconds=5)  # Для Т-Инвестиций 3 секунды задержки недостаточно для получения нового бара. Увеличиваем задержку
-    symbol = broker.get_symbol_by_dataname(dataname)  # Получаем тикер по названию
-    bars = broker.get_history(symbol, tf, datetime(2026, 2, 1))  # Получаем ответ на запрос истории рынка
+    logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',  # Формат сообщения
+                        datefmt='%d.%m.%Y %H:%M:%S',  # Формат даты
+                        level=logging.INFO,  # Уровень логируемых событий NOTSET/DEBUG/INFO/WARNING/ERROR/CRITICAL
+                        handlers=[logging.FileHandler('Transactions.log', encoding='utf-8'), logging.StreamHandler()])  # Лог записываем в файл и выводим на консоль
+    logging.Formatter.converter = lambda *args: datetime.now(tz=fp_provider.tz_msk).timetuple()  # В логе время указываем по МСК
 
-    print(f'Временной интервал     : {tf}')
-    print(f'Рассинхронизация часов : {schedule.delta.seconds} с')
+    # Исходные данные
+    dataname_buy = 'SPBOPT.RI130000BC6'  # Option BUY
+    dataname_sell = 'SPBOPT.RI102500BO6'  # Option SELL
 
-    # market_order = Order(broker, '1', True, Order.Market, dataname, 2, 10, 0, 0)  # Рыночная заявка
-    # exec_order(bars, market_order, datetime(2025, 3, 30))  # Биржа не работает
-    # exec_order(bars, market_order, datetime(2025, 3, 31, 7, 0))  # Рыночная заявка на покупку исполнена 2025-03-31 07:00:00 по цене 300.07
+    # Параметры опциона BUY
+    dataname = dataname_buy
+    finam_board, ticker = fp_provider.dataname_to_finam_board_ticker(dataname)  # Код режима торгов Финама и тикер
+    mic = fp_provider.get_mic(finam_board, ticker)  # Биржа тикера
+    symbol = f'{ticker}@{mic}'  # Тикер Финама
+    account_id = fp_provider.account_ids[0]  # Торговый счет, где будут выставляться заявки
+    si: GetAssetResponse = fp_provider.call_function(fp_provider.assets_stub.GetAsset, GetAssetRequest(symbol=symbol, account_id=account_id))
+    quantity = Decimal(value=str(int(float(si.lot_size.value))))  # Количество в шт
+
+    # Параметры опциона SELL
+    dataname = dataname_sell
+    finam_board, ticker = fp_provider.dataname_to_finam_board_ticker(dataname)  # Код режима торгов Финама и тикер
+    mic = fp_provider.get_mic(finam_board, ticker)  # Биржа тикера
+    symbol = f'{ticker}@{mic}'  # Тикер Финама
+
+
+
+    # Свои заявки и сделки
+    fp_provider.on_order.subscribe(_on_order)  # Подписываемся на заявки
+    fp_provider.on_trade.subscribe(_on_trade)  # Подписываемся на сделки
+    Thread(target=fp_provider.subscribe_orders_thread, name='SubscriptionOrdersThread').start()  # Создаем и запускаем поток обработки своих заявок
+    Thread(target=fp_provider.subscribe_trades_thread, name='SubscriptionTradesThread').start()  # Создаем и запускаем поток обработки своих сделок
+    sleep(100)  # Ждем 10 секунд
+
+
+
+    # Новая рыночная заявка на покупку (открытие позиции)
+    # logger.info(f'Заявка {symbol} на покупку минимального лота {quantity} шт. по рыночной цене')
+    # order_state: OrderState = fp_provider.call_function(
+    #     fp_provider.orders_stub.PlaceOrder,
+    #     Order(account_id=account_id, symbol=symbol, quantity=quantity, side=side.SIDE_BUY, type=OrderType.ORDER_TYPE_MARKET,
+    #           client_order_id=str(int(datetime.now().timestamp())))
+    # )  # Выставление заявки
+    # logger.debug(order_state)
+    # logger.info(f'Номер заявки: {order_state.order_id}')
+    # logger.info(f'Номер исполнения заявки: {order_state.exec_id}')
+    # logger.info(f'Статус заявки: {order_state.status}')
     #
-    limit_order = Order(broker, '1', True, Order.Limit, dataname, 2, 1, 5, 0)  # Лимитная заявка
-    exec_order(bars, limit_order, datetime(2026, 1, 31, 7, 0))  # Лимитная заявка исполнена 2025-03-31 07:00:00 по цене 300.07
-    limit_order.price = 6
-    exec_order(bars, limit_order, datetime(2025, 3, 31, 10, 5))  # Лимитная заявка снята на бирже
-    limit_order.price = 7
-    exec_order(bars, limit_order, datetime(2025, 3, 31, 10, 5))  # Лимитная заявка исполнена 2025-03-31 10:55:00 по цене 305
+    # sleep(10)  # Ждем 10 секунд
+
+    # Новая рыночная заявка на продажу (закрытие позиции)
+    # logger.info(f'Заявка {symbol} на продажу минимального лота {quantity} шт. по рыночной цене')
+    # order_state: OrderState = fp_provider.call_function(
+    #     fp_provider.orders_stub.PlaceOrder,
+    #     Order(account_id=account_id, symbol=symbol, quantity=quantity, side=side.SIDE_SELL, type=OrderType.ORDER_TYPE_MARKET,
+    #           client_order_id=str(int(datetime.now().timestamp())))
+    # )  # Выставление заявки
+    # logger.debug(order_state)
+    # logger.info(f'Номер заявки: {order_state.order_id}')
+    # logger.info(f'Номер исполнения заявки: {order_state.exec_id}')
+    # logger.info(f'Статус заявки: {order_state.status}')
     #
-    # stop_order = Order(broker, '1', True, Order.Stop, dataname, 2, 10, 0, 305)  # Стоп заявка
-    # exec_order(bars, stop_order, datetime(2025, 3, 31, 10, 5))  # Стоп заявка исполнена 2025-03-31 10:55:00 по цене 305, Рыночная заявка на покупку исполнена 2025-03-31 10:55:00 по цене 305
-    # stop_order.stop_price = 299
-    # exec_order(bars, stop_order, datetime(2025, 3, 31, 10, 5))  # Стоп заявка исполнена 2025-04-03 18:25:00 по цене 299, Рыночная заявка на покупку исполнена 2025-04-03 18:25:00 по цене 299
-    # stop_order.stop_price = 200
-    # exec_order(bars, stop_order, datetime(2025, 3, 31, 10, 5))  # Стоп заявка не исполнилась (активна)
+    # sleep(10)  # Ждем 10 секунд
+
+
+
+    # # Новая лимитная заявка на покупку
+    # limit_price = round(last_price * 0.9, si.decimals)  # Лимитная цена на 10% ниже последней цены сделки
+    # logger.info(f'Заявка на покупку минимального лота {quantity} шт. {dataname} по лимитной цене {limit_price}')
+    # order_state: OrderState = fp_provider.call_function(
+    #     fp_provider.orders_stub.PlaceOrder,
+    #     Order(account_id=account_id, symbol=symbol, quantity=quantity, side=side.SIDE_BUY, type=OrderType.ORDER_TYPE_LIMIT,
+    #           limit_price=Decimal(value=str(limit_price)), client_order_id=str(int(datetime.now().timestamp())))
+    # )  # Выставление заявки
+    # logger.debug(order_state)
+    # order_id = order_state.order_id  # Номер заявки
+    # logger.info(f'Номер заявки: {order_id}')
+    # logger.info(f'Статус заявки: {order_state.status}')
     #
-    # stop_order = Order(broker, '1', True, Order.StopLimit, dataname, 2, 10, 304, 305)  # Стоп заявка
-    # exec_order(bars, stop_order, datetime(2025, 3, 31, 10, 5))  # Стоп заявка исполнена 2025-03-31 10:55:00 по цене 305, Лимитная заявка исполнена 2025-03-31 11:45:00 по цене 304
-    # stop_order.price = 200
-    # exec_order(bars, stop_order, datetime(2025, 3, 31, 10, 5))  # Стоп заявка исполнена 2025-03-31 10:55:00 по цене 305, Лимитная заявка снята на бирже
+    # sleep(5)  # Ждем 5 секунд
+
+    # # Удаление существующей лимитной заявки
+    # logger.info(f'Удаление заявки: {order_id}')
+    # order_state: OrderState = fp_provider.call_function(fp_provider.orders_stub.CancelOrder, CancelOrderRequest(account_id=account_id, order_id=order_id))  # Удаление заявки
+    # logger.debug(order_state)
+    # logger.info(f'Статус заявки: {order_state.status}')
+
+    # sleep(10)  # Ждем 10 секунд
+
+    # # Новая стоп заявка на покупку
+    # stop_price = round(last_price * 1.01, si.decimals)  # Стоп цена на 1% выше последней цены сделки
+    # logger.info(f'Заявка на покупку минимального лота {quantity} шт. {dataname} по стоп цене {stop_price}')
+    # order_state: OrderState = fp_provider.call_function(
+    #     fp_provider.orders_stub.PlaceOrder,
+    #     Order(account_id=account_id, symbol=symbol, quantity=quantity, side=side.SIDE_BUY, type=OrderType.ORDER_TYPE_STOP,
+    #           stop_price=Decimal(value=str(stop_price)), stop_condition=StopCondition.STOP_CONDITION_LAST_UP, client_order_id=str(int(datetime.now().timestamp())))
+    # )  # Выставление заявки
+    # logger.debug(order_state)
+    # order_id = order_state.order_id  # Номер заявки
+    # logger.info(f'Номер заявки: {order_id}')
+    # logger.info(f'Статус заявки: {order_state.status}')
+
+    # sleep(10)  # Ждем 10 секунд
+
+    # # Удаление существующей стоп заявки
+    # logger.info(f'Удаление стоп заявки: {order_id}')
+    # order_state: OrderState = fp_provider.call_function(fp_provider.orders_stub.CancelOrder, CancelOrderRequest(account_id=account_id, order_id=order_id))  # Удаление заявки
+    # logger.debug(order_state)
+    # logger.info(f'Статус заявки: {order_state.status}')
+    #
+    # sleep(10)  # Ждем 10 секунд
+
+    # Отмена подписок
+    fp_provider.on_order.unsubscribe(_on_order)  # Сбрасываем обработчик заявок
+    fp_provider.on_trade.unsubscribe(_on_trade)  # Сбрасываем обработчик сделок
+
+    # Выход
+    fp_provider.close_channel()  # Закрываем канал перед выходом
