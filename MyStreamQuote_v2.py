@@ -49,8 +49,8 @@ def update_quote_dataframe(quote_data):
 
     return quote_df
 
+# Получаем данные портфеля брокера Финам в список
 def get_portfolio_positions():
-    # Получаем данные портфеля брокера Финам в список
     portfolio_positions_finam = []
     try:
         broker = brokers['Ф']  # Брокер по ключу из Config.py словаря brokers

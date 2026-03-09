@@ -37,8 +37,9 @@ def exec_order(bars: list[Bar], order: Order, market_dt: datetime) -> None:
 
 
 if __name__ == '__main__':  # Точка входа при запуске этого скрипта
-    dataname = 'SPBOPT.Si72000BO6B'
-    tf = 'M5'  # 5-и минутный временной интервал
+    dataname = 'SPBOPT.RI127500BC6'
+    tf = 'M1'  # 1 минутный временной интервал
+    # tf = 'M5'  # 5-и минутный временной интервал
     # tf = 'M60'  # Часовой временной интервал
     # tf = 'D1'  # Дневной временной интервал
 
@@ -48,6 +49,8 @@ if __name__ == '__main__':  # Точка входа при запуске это
     # schedule.delta = timedelta(seconds=5)  # Для Т-Инвестиций 3 секунды задержки недостаточно для получения нового бара. Увеличиваем задержку
     symbol = broker.get_symbol_by_dataname(dataname)  # Получаем тикер по названию
     bars = broker.get_history(symbol, tf, datetime(2026, 2, 1))  # Получаем ответ на запрос истории рынка
+    print(f'Получено {len(bars)} баров')
+    print(f'Последний бар: {bars[-1].datetime}')
 
     print(f'Временной интервал     : {tf}')
     print(f'Рассинхронизация часов : {schedule.delta.seconds} с')
@@ -55,14 +58,14 @@ if __name__ == '__main__':  # Точка входа при запуске это
     # market_order = Order(broker, '1', True, Order.Market, dataname, 2, 10, 0, 0)  # Рыночная заявка
     # exec_order(bars, market_order, datetime(2025, 3, 30))  # Биржа не работает
     # exec_order(bars, market_order, datetime(2025, 3, 31, 7, 0))  # Рыночная заявка на покупку исполнена 2025-03-31 07:00:00 по цене 300.07
-    #
+
     limit_order = Order(broker, '1', True, Order.Limit, dataname, 2, 1, 5, 0)  # Лимитная заявка
-    exec_order(bars, limit_order, datetime(2026, 1, 31, 7, 0))  # Лимитная заявка исполнена 2025-03-31 07:00:00 по цене 300.07
-    limit_order.price = 6
-    exec_order(bars, limit_order, datetime(2025, 3, 31, 10, 5))  # Лимитная заявка снята на бирже
-    limit_order.price = 7
-    exec_order(bars, limit_order, datetime(2025, 3, 31, 10, 5))  # Лимитная заявка исполнена 2025-03-31 10:55:00 по цене 305
-    #
+    exec_order(bars, limit_order, datetime(2026, 3, 9, 9, 0))  # Лимитная заявка исполнена 2025-03-31 07:00:00 по цене 300.07
+    # limit_order.price = 6
+    # exec_order(bars, limit_order, datetime(2025, 3, 31, 10, 5))  # Лимитная заявка снята на бирже
+    # limit_order.price = 7
+    # exec_order(bars, limit_order, datetime(2025, 3, 31, 10, 5))  # Лимитная заявка исполнена 2025-03-31 10:55:00 по цене 305
+
     # stop_order = Order(broker, '1', True, Order.Stop, dataname, 2, 10, 0, 305)  # Стоп заявка
     # exec_order(bars, stop_order, datetime(2025, 3, 31, 10, 5))  # Стоп заявка исполнена 2025-03-31 10:55:00 по цене 305, Рыночная заявка на покупку исполнена 2025-03-31 10:55:00 по цене 305
     # stop_order.stop_price = 299

@@ -25,7 +25,7 @@ if __name__ == '__main__':  # Точка входа при запуске это
                                  'SPBOPT.RI97500BO6',
                                  'SPBOPT.RI127500BC6', 'SPBOPT.RI107500BR6', 'SPBOPT.RI102500BO6', 'SPBOPT.RI95000BO6']
 
-    sleep_secs = 600  # Кол-во секунд получения котировок
+    sleep_secs = 60 # Кол-во секунд получения котировок
     logger.info(f'Секунд котировок: {sleep_secs}')
 
     # Подписываемся на события
