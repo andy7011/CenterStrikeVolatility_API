@@ -154,11 +154,10 @@ if __name__ == '__main__':  # Точка входа при запуске это
             logger.info(f'Подписка на котировки {guid} тикера {dataname} создана')
         except Exception as e:
             logger.error(f'Ошибка подписки на {dataname}: {e}')
-    print(f'opions_data {opions_data}')
+    # print(f'opions_data {opions_data}')
 
     # Из словаря opions_data получить все значения 'base_asset_ticker' занести в список base_asset_tickers, удалить дубликаты
     base_asset_tickers = list(set(option_data['base_asset_ticker'] for option_data in opions_data.values()))
-    print(base_asset_tickers)
     # Получаем данные по базовому активу, подписываемся на котировки для каждого тикера
     for ba_tiker in base_asset_tickers:
         alor_board, symbol = ap_provider.dataname_to_alor_board_symbol(ba_tiker)  # Код режима торгов Алора и код и тикер
@@ -190,40 +189,41 @@ if __name__ == '__main__':  # Точка входа при запуске это
     si: GetAssetResponse = fp_provider.call_function(fp_provider.assets_stub.GetAsset, GetAssetRequest(symbol=symbol, account_id=account_id))
     quantity = Decimal(value=str(int(float(si.lot_size.value))))  # Количество в шт
     step_price = int(float(si.min_step)) # Минимальный шаг цены
-    print(f'Минимальный шаг цены step_price: {step_price}')
-    print(f'Количество в шт: {net_pos}')
+    # print(f'Минимальный шаг цены step_price: {step_price}')
+    print(f'Количество проданных {ticker} в шт: {net_pos}')
     print(f'Open IV: {open_iv}')
     profit_iv_buy = open_iv - expected_profit
     print(f'Profit IV buy: {profit_iv_buy}')
     theoretical_price_buy = opions_data[dataname]['theorPrice']
     base_asset_ticker = opions_data[dataname]['base_asset_ticker']
     S = float(new_quotes[base_asset_ticker]['last_price'])
-    print(f'S: {S}')
+    # print(f'S: {S}')
     sigma = opions_data[dataname]['volatility'] / 100
     # sigma = 41.40 / 100
-    print(f'Sigma: {sigma}')
+    # print(f'Sigma: {sigma}')
     K = float(opions_data[dataname]['strikePrice'])
-    print(f'K: {K}')
+    # print(f'K: {K}')
     expiration_datetime = opions_data[dataname]['endExpiration']
     # print(f'Expiration datetime: {expiration_datetime}')
     expiration_dt = datetime.fromisoformat(expiration_datetime.replace('Z', '+00:00'))
     T_razn = (expiration_dt - datetime.today()).days
     T = float((T_razn + 1.151) / 365)
-    print(f'T: {T}')
+    # print(f'T: {T}')
     option_type = CALL if opions_data[dataname]['optionSide'] == 'Call' else PUT
-    print(f'Option type: {option_type}')
+    # print(f'Option type: {option_type}')
 
     # Далее вычисляем profit_price_buy из profit_iv_buy по формуле Блэка-Шоулза
     profit_price_buy = option_price(S, sigma, K, T, r, opt_type=option_type)
     limit_price = (profit_price_buy // step_price) * step_price
-    print(f'{option_type} {ticker}: profit_price_buy {profit_price_buy} limit_price: {limit_price}')
+    profit_price_buy = (profit_price_buy // step_price) * step_price
+    print(f'Profit_price_buy {profit_price_buy}')
 
     # Получаем ask из потока котировок по подписке из обновляемого словаря new_quotes
     ask_buy = new_quotes[ticker]['ask']
     bid_buy = new_quotes[ticker]['bid']
-    print(f'Котировки  ask {ask_buy} bid {bid_buy}')
+    print(f'Котировки ask {ask_buy} bid {bid_buy}')
 
-    saldo_buy = opions_data[dataname]['volatility'] - open_iv
+    saldo_buy = open_iv - opions_data[dataname]['volatility']
     print(f'Saldo buy: {saldo_buy}')
 
 
@@ -248,38 +248,39 @@ if __name__ == '__main__':  # Точка входа при запуске это
     si: GetAssetResponse = fp_provider.call_function(fp_provider.assets_stub.GetAsset, GetAssetRequest(symbol=symbol, account_id=account_id))
     quantity = Decimal(value=str(int(float(si.lot_size.value))))  # Количество в шт
     step_price = int(float(si.min_step))  # Минимальный шаг цены
-    print(f'Минимальный шаг цены step_price: {step_price}')
-    print(f'Количество в шт: {net_pos}')
+    # print(f'Минимальный шаг цены step_price: {step_price}')
+    print(f'Количество купленных {ticker} в шт: {net_pos}')
     print(f'Open IV: {open_iv}')
-    profit_iv_sell = open_iv - expected_profit
-    print(f'Profit IV buy: {profit_iv_sell}')
+    profit_iv_sell = open_iv + expected_profit
+    print(f'Profit IV sell: {profit_iv_sell}')
     theoretical_price_sell = opions_data[dataname]['theorPrice']
     base_asset_ticker = opions_data[dataname]['base_asset_ticker']
     S = float(new_quotes[base_asset_ticker]['last_price'])
-    print(f'S: {S}')
+    # print(f'S: {S}')
     sigma = opions_data[dataname]['volatility'] / 100
     # sigma = 41.40 / 100
-    print(f'Sigma: {sigma}')
+    # print(f'Sigma: {sigma}')
     K = float(opions_data[dataname]['strikePrice'])
-    print(f'K: {K}')
+    # print(f'K: {K}')
     expiration_datetime = opions_data[dataname]['endExpiration']
     # print(f'Expiration datetime: {expiration_datetime}')
     expiration_dt = datetime.fromisoformat(expiration_datetime.replace('Z', '+00:00'))
     T_razn = (expiration_dt - datetime.today()).days
     T = float((T_razn + 1.151) / 365)
-    print(f'T: {T}')
+    # print(f'T: {T}')
     option_type = CALL if opions_data[dataname]['optionSide'] == 'Call' else PUT
-    print(f'Option type: {option_type}')
+    # print(f'Option type: {option_type}')
 
     # Далее вычисляем profit_price_sell из profit_iv_buy по формуле Блэка-Шоулза
     profit_price_sell = option_price(S, sigma, K, T, r, opt_type=option_type)
-    limit_price = (profit_price_buy // step_price) * step_price
-    print(f'{option_type} {ticker}: profit_price_buy {profit_price_buy} limit_price: {limit_price}')
+    limit_price = (profit_price_sell // step_price) * step_price
+    profit_price_sell = (profit_price_sell // step_price) * step_price
+    print(f'Profit_price_sell {profit_price_sell}')
 
     # Получаем ask из потока котировок по подписке из обновляемого словаря new_quotes
     ask_sell = new_quotes[ticker]['ask']
     bid_sell = new_quotes[ticker]['bid']
-    print(f'из котироки ask: {ask_sell} bid: {bid_sell}')
+    print(f'Котироки ask: {ask_sell} bid: {bid_sell}')
 
     saldo_sell = opions_data[dataname]['volatility'] - open_iv
     print(f'Saldo sell: {saldo_sell}')
@@ -290,28 +291,34 @@ if __name__ == '__main__':  # Точка входа при запуске это
     if saldo_sell >= saldo_buy: # Если прибыльная нога - SELL
         print(f'Лучшая нога - на продажу!')
         limit_price_buy = ask_buy # Фиксируем цену покупки, заявку пока не выставляем
-        print(f'limit_price_buy: {limit_price_buy}')
-        print(f'Фиксируем цену покупки. Заявку на покупку пока не выставляем - ждём сигнала после совершённой продажи!')
-        if profit_price_sell > theoretical_price_sell and profit_price_sell < ask_sell: # Если профитная цена на продажу больше теории, но меньше лучшей продажи
-            print(f'Профитная цена на продажу больше теории, но меньше лучшей продажи')
+        print(f'Фиксируем цену покупки по цене {limit_price_buy}. Заявку на покупку пока не выставляем - ждём сигнала после совершённой продажи!')
+        if profit_price_sell >= theoretical_price_sell and profit_price_sell < ask_sell: # Если профитная цена на продажу больше теории, но меньше лучшей продажи
+            print(f'Профитная цена на продажу {profit_price_sell} больше теории {theoretical_price_sell}, но меньше лучшей продажи {ask_sell}')
             limit_price_sell = ask_sell - step_price # Ставим лимитную цену на шаг ниже лучшей продажи
-            print(f'Выставляем заявку по цене на шаг ниже лучшей продажи: {limit_price_sell}')
-        else:
-            print(f'Профитная цена на продажу меньше теории или больше лучшей продажи')
-            print(f'Заявку не выставляем! Ждём sleep_time, завершаем цикл.')
+            print(f'Выставляем лимитную заявку по цене на шаг ниже лучшей продажи: {limit_price_sell}. Ждём sleep_time.')
+
+            sleep(sleep_time)
+            print(f'Сделка не совершилась, удаляем существующую лимитную заявку, завершаем цикл, идём в начало цикла.')
+
+        elif profit_price_sell > ask_sell:
+            print(f'Профитная цена на продажу {profit_price_sell} больше лучшей продажи {ask_sell}')
+            print(f'Заявку не выставляем! Ждём sleep_time, завершаем цикл, идём в начало цикла.')
             sleep(sleep_time)
     else: # Если прибыльная нога - BUY
         print(f'Лучшая нога - на покупку!')
         limit_price_sell = ask_sell  # Фиксируем цену продажи, заявку пока не выставляем
-        print(f'limit_price_buy: {limit_price_sell}')
-        print(f'Фиксируем цену продажи. Заявку на продажу пока не выставляем - ждём сигнала после совершённой покупки!')
+        print(f'Фиксируем цену продажи {limit_price_sell}. Заявку на продажу пока не выставляем - ждём сигнала после совершённой покупки!')
         if profit_price_buy < theoretical_price_buy and profit_price_buy > bid_buy: # Если профитная цена на покупку меньше теории, но больше лучшей покупки
-            print(f'Профитная цена на покупку меньше теории, но больше лучшей покупки')
+            print(f'Профитная цена на покупку {profit_price_buy} меньше теории {theoretical_price_buy}, но больше лучшей покупки {bid_buy}')
             limit_price_buy = bid_buy + step_price # Ставим лимитную цену на шаг ниже лучшей продажи
-            print(f'Выставляем заявку по цене на шаг выше лучшей покупки: {limit_price_buy}')
+            print(f'Выставляем лимитную заявку по цене на шаг выше лучшей покупки: {limit_price_buy}. Ждём sleep_time.')
+
+            sleep(sleep_time)
+            print(f'Сделка не совершилась, удаляем существующую лимитную заявку, завершаем цикл, идём в начало цикла.')
+
         else:
-            print(f'Профитная цена на покупку больше теории или меньше лучшей покупки')
-            print(f'Заявку не выставляем! Ждём sleep_time, завершаем цикл.')
+            print(f'Профитная цена на покупку {profit_price_buy} больше теории {theoretical_price_buy} или меньше лучшей покупки {bid_buy}')
+            print(f'Заявку не выставляем! Ждём sleep_time, завершаем цикл, идём в начало цикла.')
             sleep(sleep_time)
 
 
