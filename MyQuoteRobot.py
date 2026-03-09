@@ -44,10 +44,14 @@ def _on_new_quotes(response):
 
     # print(f"Котировки для {description}: ask={ask}, bid={bid}, last_price={last_price}")
 
-def _on_order(order): logger.info(f'Заявка - {order}')
+def _on_order(order):
+    # logger.info(f'Заявка - {order}')
+    print(f'Заявка - {order.order.symbol} {order.order.side} {order.order.quantity.value} {order.order.limit_price.value}')
 
 
-def _on_trade(trade): logger.info(f'Сделка - {trade}')
+def _on_trade(trade):
+    # logger.info(f'Сделка - {trade}')
+    print(f'Сделка - {trade.symbol} {trade.side} {trade.size.value} {trade.price.value}')
 
 # Получаем данные портфеля брокера Финам в список
 def get_portfolio_positions():
@@ -121,7 +125,7 @@ if __name__ == '__main__':  # Точка входа при запуске это
     dataname_buy = 'SPBOPT.RI102500BO6' # Option BUY
     dataname_sell = 'SPBOPT.RI130000BC6'  # Option SELL
     expected_profit = 2  # Ожидаемый profit в %
-    sleep_time = 5  # Время ожидания в секундах
+    sleep_time = 50  # Время ожидания в секундах
 
     ap_provider = AlorPy()  # Подключаемся ко всем торговым счетам
     # Подписываемся на события
