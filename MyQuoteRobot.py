@@ -305,7 +305,7 @@ if __name__ == '__main__':  # Точка входа при запуске это
         limit_price_sell = ask_sell  # Фиксируем цену продажи, заявку пока не выставляем
         print(f'limit_price_buy: {limit_price_sell}')
         print(f'Фиксируем цену продажи. Заявку на продажу пока не выставляем - ждём сигнала после совершённой покупки!')
-        if profit_price_buy < theoretical_price and profit_price_buy > bid_buy: # Если профитная цена на покупку меньше теории, но больше лучшей покупки
+        if profit_price_buy < theoretical_price_buy and profit_price_buy > bid_buy: # Если профитная цена на покупку меньше теории, но больше лучшей покупки
             print(f'Профитная цена на покупку меньше теории, но больше лучшей покупки')
             limit_price_buy = bid_buy + step_price # Ставим лимитную цену на шаг ниже лучшей продажи
             print(f'Выставляем заявку по цене на шаг выше лучшей покупки: {limit_price_buy}')
