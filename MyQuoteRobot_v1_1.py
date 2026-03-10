@@ -249,8 +249,8 @@ if __name__ == '__main__':  # Точка входа при запуске это
     guids = []
 
     # Исходные данные
-    dataname_buy = 'SPBOPT.RI107500BR6'  # Option BUY
-    dataname_sell = 'SPBOPT.RI127500BF6'  # Option SELL
+    dataname_buy = 'SPBOPT.RI102500BO6'  # Option BUY
+    dataname_sell = 'SPBOPT.RI130000BC6'  # Option SELL
     expected_profit = 2  # Ожидаемый profit в %
     sleep_time = 5  # Время ожидания в секундах
 
