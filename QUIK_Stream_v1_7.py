@@ -20,7 +20,7 @@ import sys  # Выход из точки входа
 # pd.set_option('future.no_silent_downcasting', True)
 
 # Конфигурация для работы с файлами
-temp_str = 'C:\\Users\\ashad\\Yandex.Disk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\шадрин\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 futures_firm_id = 'SPBFUT'  # Код фирмы для фьючерсов
