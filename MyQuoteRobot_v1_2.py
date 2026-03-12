@@ -1,7 +1,8 @@
+import logging # Выводим лог на консоль и в файл
+logging.basicConfig(level=logging.WARNING) # уровень логгирования
 from datetime import datetime, timezone  # Дата и время
 from zoneinfo import ZoneInfo
 from time import sleep  # Задержка в секундах перед выполнением операций
-import logging  # Выводим лог на консоль и в файл
 from threading import Thread  # Запускаем поток подписки
 import threading
 
@@ -30,6 +31,7 @@ running = True
 CALL = 'C'
 PUT = 'P'
 r = 0 # Безрисковая ставка
+guids = []
 
 # Обработчик сигнала
 def signal_handler(sig, frame):
@@ -78,55 +80,85 @@ def _on_new_quotes(response):
 
     # print(f"Котировки для {description}: ask={ask}, bid={bid}, last_price={last_price}")
 
+def _on_order(order): logger.info(f'Заявка - {order}')
 
-# Словарь для хранения данных по заявкам
-orders_dict = {}
-def _on_order(order):
-    logger.info(f'Заявка - {order}')
-    # Преобразуем side в текстовую строку
-    # side_text = "Продажа" if order.order.side == 2 else "Купля"
 
-    # Преобразуем статус в текстовую строку
-    # status_text = "Активна" if order.status == 1 else "Снята" if order.status == 5 else f"Статус {order.status}"
-
-    # Сохраняем данные в словарь по ключу symbol (заменяет предыдущие данные)
-    symbol = order.order.symbol
-    orders_dict[symbol] = {
-        'order_id': order.order_id,
-        # 'side_text': side_text,
-        'side': order.order.side,
-        # 'status_text': status_text,
-        'status': order.status,
-        'quantity': order.order.quantity.value,
-        'limit_price': order.order.limit_price.value
-    }
-
-    # print(f'Заявка - {order.order.symbol} {order.order_id} {side_text} {status_text} {order.order.quantity.value} {order.order.limit_price.value}')
-    # print(f'orders_dict - {orders_dict}')
-
-# Словарь для хранения данных по сделкам
 trade_dict = {}
 def _on_trade(trade):
     logger.info(f'Сделка - {trade}')
-    # Преобразуем side в текстовую строку
-    side_text = "Продажа" if trade.side == 2 else "Купля"
+    # Извлекаем данные из объекта trade
+    trade_id = trade.trade_id
+    order_id = trade.order_id
+    timestamp = trade.timestamp
+    side = trade.side
+    size = trade.size.value
+    price = trade.price.value
 
-    # Сохраняем данные в словарь по ключу symbol, вложенный словарь по trade_id
-    symbol = trade.symbol
-    if symbol not in trade_dict:
-        trade_dict[symbol] = {}
-
-    trade_dict[symbol][trade.trade_id] = {
-        'timestamp': fp_provider.timestamp_to_msk_datetime(trade.timestamp.seconds),
-        'trade_id': trade.trade_id,
-        'order_id': trade.order_id,
-        'side': trade.side,
-        'side_text': side_text,
-        'size': trade.size.value,
-        'price': trade.price.value
+    # Сохраняем данные в словарь по ключу trade_id
+    trade_dict[trade_id] = {
+        'timestamp': timestamp,
+        'trade_id': trade_id,
+        'order_id': order_id,
+        'side': side,
+        'size': size,
+        'price': price
     }
 
-    # print(f'trade_dict - {trade_dict}')
+
+
+# Выставление лимитной заявки на продажу инструмента symbol_sell в количестве quantity_sell
+# по цене limit_price_sell. Возвращаем номер заявки order_id
+def get_order_sell(account_id, symbol_sell, quantity_sell, limit_price_sell):
+    order_state = fp_provider.call_function(
+        fp_provider.orders_stub.PlaceOrder,
+        Order(
+            account_id=account_id,
+            symbol=symbol_sell,
+            quantity=Decimal(value=str(quantity_sell)),
+            side=side.SIDE_SELL,
+            type=OrderType.ORDER_TYPE_LIMIT,
+            limit_price=Decimal(value=str(limit_price_sell)),
+            client_order_id=str(int(datetime.now().timestamp()))
+        )
+    )
+    logger.debug(order_state)
+    order_id = order_state.order_id  # Номер заявки
+    logger.info(f'Номер заявки: {order_id}')
+    logger.info(f'Статус заявки: {order_state.status}')
+    status = order_state.status
+    return order_id, status
+
+# Выставление лимитной заявки на покупку инструмента symbol_buy в количестве quantity_buy
+# по цене limit_price_buy. Возвращаем номер заявки order_id
+def get_order_buy(account_id, symbol_buy, quantity_buy, limit_price_buy):
+    order_state = fp_provider.call_function(
+        fp_provider.orders_stub.PlaceOrder,
+        Order(
+            account_id=account_id,
+            symbol=symbol_buy,
+            quantity=Decimal(value=str(quantity_buy)),
+            side=side.SIDE_BUY,
+            type=OrderType.ORDER_TYPE_LIMIT,
+            limit_price=Decimal(value=str(limit_price_buy)),
+            client_order_id=str(int(datetime.now().timestamp()))
+        )
+    )
+    logger.debug(order_state)
+    order_id = order_state.order_id  # Номер заявки
+    logger.info(f'Номер заявки: {order_id}')
+    logger.info(f'Статус заявки: {order_state.status}')
+    return order_id
+
+# Удаление существующей лимитной заявки
+def get_cancel_order(account_id, order_id):
+    # print(f'Отмена заявки {order_id}')
+    logger.info(f'Удаление заявки: {order_id}')
+    order_state: OrderState = fp_provider.call_function(fp_provider.orders_stub.CancelOrder,
+                                                        CancelOrderRequest(account_id=account_id,
+                                                                           order_id=order_id))  # Удаление заявки
+    logger.debug(order_state)
+    logger.info(f'Статус заявки: {order_state.status}')
+    return order_state.status
 
 # Получаем данные портфеля брокера Финам в словарь portfolio_positions_finam
 def get_portfolio_positions():
@@ -309,11 +341,11 @@ if __name__ == '__main__':  # Точка входа при запуске это
     # Подписываемся на события
     ap_provider.on_new_quotes.subscribe(_on_new_quotes)
     # Список GUID для отписки
-    guids = []
+
 
     # Исходные данные
-    dataname_buy = 'SPBOPT.RI97500BO6'  # Option BUY
-    dataname_sell = 'SPBOPT.RI130000BC6'  # Option SELL
+    dataname_buy = 'SPBOPT.RI95000BO6'  # Option BUY
+    dataname_sell = 'SPBOPT.RI127500BC6'  # Option SELL
     expected_profit = -18 # Ожидаемый profit в %
     sleep_time = 5  # Время ожидания в секундах
     Lot_count = 1 # Количество лотов
@@ -561,153 +593,70 @@ if __name__ == '__main__':  # Точка входа при запуске это
 
             print(f'\n')
             print(f'Выставление заявок:')
+
             if saldo_sell >= saldo_buy: # Если прибыльная нога - SELL
                 print(f'\n')
                 print(f'Лучшая нога - на продажу! Real profit sell: {Real_profit_sell}')
-                if Real_profit_sell >= expected_profit: # Если реальный профит больше или равен ожидаемому профиту
+                if Real_profit_sell >= expected_profit:  # Если реальный профит больше или равен ожидаемому профиту
                     print(f'Если реальный профит {Real_profit_sell} больше или равен ожидаемому профиту {expected_profit}')
                     # Новая лимитная заявка на продажу
                     last_sell_order_id = None
                     # limit_price_sell = ask_sell - step_price  # Ставим лимитную цену на шаг ниже лучшей продажи
-                    limit_price_sell = ask_sell + step_price  # Test
+                    # limit_price_sell = ask_sell - step_price # Test
+                    limit_price_sell = bid_sell  # По рынку
                     print(f'Выставляем лимитную заявку по цене {limit_price_sell} - на шаг ниже лучшей продажи опциона: {dataname_sell}. Ждём sleep_time.')
-
-                    logger.info(f'Заявка на продажу минимального лота {quantity_sell} шт. {dataname_sell} по лимитной цене {limit_price_sell}')
-
-                    order_state = fp_provider.call_function(
-                        fp_provider.orders_stub.PlaceOrder,
-                        Order(
-                            account_id=account_id,
-                            symbol=symbol_sell,
-                            quantity=Decimal(value=str(quantity_sell)),
-                            side=side.SIDE_SELL,
-                            type=OrderType.ORDER_TYPE_LIMIT,
-                            limit_price=Decimal(value=str(limit_price_sell)),
-                            client_order_id=str(int(datetime.now().timestamp()))
-                        )
-                    )  # Выставление заявки
-
-                    logger.debug(order_state)
-                    order_id = order_state.order_id  # Номер заявки
-                    logger.info(f'Номер заявки: {order_id}')
-                    logger.info(f'Статус заявки: {order_state.status}')
-
+                    # Вызов функции выставления заявки на продажу
+                    order_id, status = get_order_sell(
+                        account_id=account_id,  # Укажите реальный номер счета
+                        symbol_sell=symbol_sell,  # Укажите реальный тикер
+                        quantity_sell=quantity_sell,  # Укажите количество
+                        limit_price_sell=limit_price_sell  # Укажите цену
+                    )
+                    print(f'Заявка выставлена: {order_id}, статус: {status} ')
                     sleep(Timeout)
-
-                    if order_state is None:
-                        logger.error("Ошибка: PlaceOrder вернул None. Вероятно сессия не активна.")
-                        continue # переход в начало цикла
-
-                    # Функция для проверки исполнения сделки по заявке
-                    def check_if_trade_completed(order_id):
-                        for symbol, trades in trade_dict.items():
-                            for trade_id, trade in trades.items():
-                                if trade['order_id'] == order_id and trade['side'] == 'SIDE_SELL':
-                                    print(
-                                        f'Сделка по заявке {order_id} по опциону {symbol} состоялась. order_id: {trade["order_id"]}, side_text: {trade["side_text"]}, side: {trade["side"]}, price: {trade["price"]}, quantity: {trade["quantity"]}')
-                                    return True
+                    # Если заявка на продажу исполнена, выставляем заявку на покупку
+                    # print(f'trade_dict: {trade_dict}')
+                    # Перебор позиций словаря trade_dict
+                    for trade_id, trade_data in trade_dict.items():
+                        if trade_data and trade_data['order_id'] == order_id:
+                            print(f"ID сделки: {trade_id}")
+                            print(f"Время: {trade_data['timestamp']}")
+                            print(f"Цена: {trade_data['price']}")
+                            print(f"Объем: {trade_data['size']}")
+                            # print(f'Заявка на продажу исполнена: {trade_dict['order_id']}')
+                            print(f'Выставляем лимитную заявку на покупку по цене {limit_price_buy} опциона {dataname_buy}')
+                            limit_price_buy = ask_buy  # Test
+                            # Вызов функции выставления заявки на покупку
+                            order_id =''
+                            order_id, status = get_order_buy(
+                                account_id=account_id,  # Укажите реальный номер счета
+                                symbol_buy=symbol_buy,  # Укажите реальный тикер
+                                quantity_buy=quantity_buy,  # Укажите количество
+                                limit_price_buy=limit_price_buy  # Укажите цену
+                            )
+                            sleep(Timeout)
+                            for trade_id, trade_data in trade_dict.items():
+                                # Если заявка на покупку исполнена, выходим из цикла
+                                if trade_data and trade_data['order_id'] == order_id:
+                                    print(f"ID сделки: {trade_id}")
+                                    print(f"Время: {trade_data['timestamp']}")
+                                    print(f"Цена: {trade_data['price']}")
+                                    print(f"Объем: {trade_data['size']}")
+                                    # print(f'Заявка на покупку исполнена: {trade_data['order_id']}')
+                                    running = False
                                 else:
-                                    print(
-                                        f'Сделка на продажу опциона {dataname_sell} за время Timeout не совершилась, удаляем существующую лимитную заявку, завершаем цикл, идём в начало цикла.')
-                                    # Удаление существующей лимитной заявки
-                                    logger.info(f'Удаление заявки: {order_id}')
-                                    try:
-                                        order_state: OrderState = fp_provider.call_function(
-                                            fp_provider.orders_stub.CancelOrder,
-                                            CancelOrderRequest(
-                                                account_id=account_id,
-                                                order_id=order_id)
-                                        )  # Удаление заявки
-                                        logger.debug(order_state)
-                                        logger.info(f'Статус заявки: {order_state.status}')
-                                    except Exception as e:
-                                        logger.error(f'Ошибка при удалении заявки: {e}')
-                                    sleep(1)
-                        return False
-
-
-                    # Проверяем, исполнилась ли сделка
-                    if check_if_trade_completed(order_id):
-                        print(f'Сделка по заявке {order_id} по опциону {symbol} состоялась. order_id: {trade["order_id"]}, side_text: {trade["side_text"]}, side: {trade["side"]}, price: {trade["price"]}, quantity: {trade["quantity"]}')
-                        # Здесь продолжаем логику покупки
-                        limit_price_buy = ask_buy  # Фиксируем цену покупки
-                        print(f'Выставляем лимитную заявку на покупку по цене {limit_price_buy} опциона {dataname_buy}')
-                        # Новая лимитная заявка на покупку
-                        limit_price_buy = round(limit_price_buy, decimals)  # Лимитная цена limit_price_buy
-                        logger.info(f'Заявка на покупку минимального лота {quantity_buy} шт. {dataname_buy} по лимитной цене {limit_price_buy}')
-
-                        # order_state = fp_provider.call_function(
-                        #     fp_provider.orders_stub.PlaceOrder,
-                        #     Order(
-                        #         account_id=account_id,
-                        #         symbol=symbol_buy,
-                        #         quantity=Decimal(value=str(quantity_buy)),
-                        #         side=side.SIDE_BUY,
-                        #         type=OrderType.ORDER_TYPE_LIMIT,
-                        #         limit_price=Decimal(value=str(limit_price_buy)),
-                        #         client_order_id=str(int(datetime.now().timestamp()))
-                        #     )
-                        # )  # Выставление заявки
-                        #
-                        # logger.debug(order_state)
-                        # order_id = order_state.order_id  # Номер заявки
-                        # logger.info(f'Номер заявки: {order_id}')
-                        # logger.info(f'Статус заявки: {order_state.status}')
-                        #
-                        # sleep(Timeout)
-                        #
-                        # # Если сделка (на покупку) совершились удачно, увеличиваем счетчик проторгованных лотов
-                        # if check_if_trade_completed(order_id):
-                        #     Lot_count_step = Lot_count_step + 1
-                        #     # Сравниваем с требуемым количеством лотов Lot_count, и если они совпадают, то завершаем цикл
-                        #     if Lot_count_step == Lot_count:
-                        #         print(f'Сделка на покупку опциона {dataname_buy} совершилась. Программа завершена.')
-                        #         break
-                        # else:
-                        #     continue # переход в начало цикла
-
+                                    print(f'Заявка на покупку не исполнена: {trade_data['order_id']}')
+                                    continue
+                            else:
+                                print(f'Заявка на продажу не исполнена')
+                                continue
                     else:
-                        print(f'Сделка на продажу опциона {dataname_sell} за время Timeout не совершилась, удаляем существующую лимитную заявку, завершаем цикл, идём в начало цикла.')
-
-                        sleep(1)
+                        # Снятие заявки на продажу
+                        get_cancel_order(account_id, order_id)
                         continue
 
-                else:
-                    print(f'Реальный профит {Real_profit_sell} меньше ожидаемого профита {expected_profit}. Ждём sleep_time, завершаем цикл, идём в начало цикла.')
-                    sleep(sleep_time)
-                    continue
-            else: # Если прибыльная нога - BUY
-                print(f'\n')
-                print(f'Лучшая нога - на покупку! Real profit buy: {Real_profit_buy}')
-                if Real_profit_buy >= expected_profit:  # Если реальный профит больше или равен ожидаемому профиту
-                    print(f'Если реальный профит {Real_profit_buy} больше или равен ожидаемому профиту {expected_profit}')
-                    limit_price_buy = bid_buy + step_price  # Ставим лимитную цену на шаг выше лучшей покупки
-                    print(f'Выставляем лимитную заявку по цене на шаг выше лучшей покупки: {limit_price_buy} опциона {dataname_buy}. Ждём sleep_time.')
-                    # Здесь должна быть логика для выставления лимитной заявки на покупку опциона dataname_buy
-                    sleep(sleep_time)
-                    print(f'Если сделка на покупку опциона {dataname_buy} совершилась, переходим к продаже опциона {dataname_sell}')
-                    # Здесь должна быть логика подтверждения сделки на покупку опциона dataname_buy
-                    limit_price_sell = ask_sell  # Фиксируем цену продажи
-                    print(f'Выставляем лимитную заявку на продажу по цене {limit_price_sell} опциона {dataname_sell}.')
-                    # Здесь должна быть логика для выставления лимитной заявки на продажу опциона dataname_sell
-
-                    # if условие:
-                    print(f'Если сделка на покупку опциона {dataname_buy} за время sleep_time не совершилась, удаляем существующую лимитную заявку, завершаем цикл, идём в начало цикла.')
-                    # Здесь должна быть логика для удаления существующей лимитной заявки на покупку опциона dataname_buy и выхода в начало цикла.
-
-                    #     continue # переход в начало цикла
-
-                    # Если обе сделки (на покупку и последующую продажу) совершились удачно, увеличиваем счетчик проторгованных лотов
-                    # Lot_count_step = Lot_count_step + 1
-                    # Сравниваем с требуемым количеством лотов Lot_count, и если они совпадают, то завершаем цикл
-
-                else:
-                    print(f'Реальный профит {Real_profit_buy} меньше ожидаемого профита {expected_profit}. Ждём sleep_time, завершаем цикл, идём в начало цикла.')
-                    sleep(sleep_time)
-                    continue
-
-            sleep(sleep_time)
-        pass
+        running = False
+        # pass
     except Exception as e:
         print(f'Ошибка в цикле: {e}')
         sleep(1)
@@ -716,81 +665,6 @@ if __name__ == '__main__':  # Точка входа при запуске это
         sys.exit(0)
     finally:
         print("Завершение программы")
-
-    # # Новая лимитная заявка на покупку
-    # limit_price = round(last_price * 0.9, si.decimals)  # Лимитная цена на 10% ниже последней цены сделки
-    # logger.info(f'Заявка на покупку минимального лота {quantity} шт. {dataname} по лимитной цене {limit_price}')
-    # order_state: OrderState = fp_provider.call_function(
-    #     fp_provider.orders_stub.PlaceOrder,
-    #     Order(account_id=account_id, symbol=symbol, quantity=quantity, side=side.SIDE_BUY, type=OrderType.ORDER_TYPE_LIMIT,
-    #           limit_price=Decimal(value=str(limit_price)), client_order_id=str(int(datetime.now().timestamp())))
-    # )  # Выставление заявки
-    # logger.debug(order_state)
-    # order_id = order_state.order_id  # Номер заявки
-    # logger.info(f'Номер заявки: {order_id}')
-    # logger.info(f'Статус заявки: {order_state.status}')
-    #
-    # sleep(5)  # Ждем 5 секунд
-
-    # # Удаление существующей лимитной заявки
-    # logger.info(f'Удаление заявки: {order_id}')
-    # order_state: OrderState = fp_provider.call_function(fp_provider.orders_stub.CancelOrder, CancelOrderRequest(account_id=account_id, order_id=order_id))  # Удаление заявки
-    # logger.debug(order_state)
-    # logger.info(f'Статус заявки: {order_state.status}')
-
-    # sleep(10)  # Ждем 10 секунд
-
-    # Новая рыночная заявка на покупку (открытие позиции)
-    # logger.info(f'Заявка {symbol} на покупку минимального лота {quantity} шт. по рыночной цене')
-    # order_state: OrderState = fp_provider.call_function(
-    #     fp_provider.orders_stub.PlaceOrder,
-    #     Order(account_id=account_id, symbol=symbol, quantity=quantity, side=side.SIDE_BUY, type=OrderType.ORDER_TYPE_MARKET,
-    #           client_order_id=str(int(datetime.now().timestamp())))
-    # )  # Выставление заявки
-    # logger.debug(order_state)
-    # logger.info(f'Номер заявки: {order_state.order_id}')
-    # logger.info(f'Номер исполнения заявки: {order_state.exec_id}')
-    # logger.info(f'Статус заявки: {order_state.status}')
-    #
-    # sleep(10)  # Ждем 10 секунд
-
-    # Новая рыночная заявка на продажу (закрытие позиции)
-    # logger.info(f'Заявка {symbol} на продажу минимального лота {quantity} шт. по рыночной цене')
-    # order_state: OrderState = fp_provider.call_function(
-    #     fp_provider.orders_stub.PlaceOrder,
-    #     Order(account_id=account_id, symbol=symbol, quantity=quantity, side=side.SIDE_SELL, type=OrderType.ORDER_TYPE_MARKET,
-    #           client_order_id=str(int(datetime.now().timestamp())))
-    # )  # Выставление заявки
-    # logger.debug(order_state)
-    # logger.info(f'Номер заявки: {order_state.order_id}')
-    # logger.info(f'Номер исполнения заявки: {order_state.exec_id}')
-    # logger.info(f'Статус заявки: {order_state.status}')
-    #
-    # sleep(10)  # Ждем 10 секунд
-
-
-    # # Новая стоп заявка на покупку
-    # stop_price = round(last_price * 1.01, si.decimals)  # Стоп цена на 1% выше последней цены сделки
-    # logger.info(f'Заявка на покупку минимального лота {quantity} шт. {dataname} по стоп цене {stop_price}')
-    # order_state: OrderState = fp_provider.call_function(
-    #     fp_provider.orders_stub.PlaceOrder,
-    #     Order(account_id=account_id, symbol=symbol, quantity=quantity, side=side.SIDE_BUY, type=OrderType.ORDER_TYPE_STOP,
-    #           stop_price=Decimal(value=str(stop_price)), stop_condition=StopCondition.STOP_CONDITION_LAST_UP, client_order_id=str(int(datetime.now().timestamp())))
-    # )  # Выставление заявки
-    # logger.debug(order_state)
-    # order_id = order_state.order_id  # Номер заявки
-    # logger.info(f'Номер заявки: {order_id}')
-    # logger.info(f'Статус заявки: {order_state.status}')
-
-    # sleep(10)  # Ждем 10 секунд
-
-    # # Удаление существующей стоп заявки
-    # logger.info(f'Удаление стоп заявки: {order_id}')
-    # order_state: OrderState = fp_provider.call_function(fp_provider.orders_stub.CancelOrder, CancelOrderRequest(account_id=account_id, order_id=order_id))  # Удаление заявки
-    # logger.debug(order_state)
-    # logger.info(f'Статус заявки: {order_state.status}')
-    #
-    # sleep(10)  # Ждем 10 секунд
 
     # Отписываемся от всех котировок
     for guid in guids:
