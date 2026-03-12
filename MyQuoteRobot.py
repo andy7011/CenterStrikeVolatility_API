@@ -458,7 +458,7 @@ if __name__ == '__main__':  # Точка входа при запуске это
     fp_provider.on_trade.subscribe(_on_trade)  # Подписываемся на сделки
     Thread(target=fp_provider.subscribe_orders_thread, name='SubscriptionOrdersThread').start()  # Создаем и запускаем поток обработки своих заявок
     Thread(target=fp_provider.subscribe_trades_thread, name='SubscriptionTradesThread').start()  # Создаем и запускаем поток обработки своих сделок
-    sleep(10)  # Ждем 10 секунд
+    # sleep(10)  # Ждем 10 секунд
 
     # # Новая лимитная заявка на покупку
     # limit_price = round(last_price * 0.9, si.decimals)  # Лимитная цена на 10% ниже последней цены сделки

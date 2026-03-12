@@ -94,8 +94,8 @@ def _on_trade(trade):
     size = trade.size.value
     price = trade.price.value
 
-    # Сохраняем данные в словарь по ключу trade_id
-    trade_dict[trade_id] = {
+    # Сохраняем данные в словарь по ключу order_id
+    trade_dict[order_id] = {
         'timestamp': timestamp,
         'trade_id': trade_id,
         'order_id': order_id,
@@ -103,8 +103,6 @@ def _on_trade(trade):
         'size': size,
         'price': price
     }
-
-
 
 # Выставление лимитной заявки на продажу инструмента symbol_sell в количестве quantity_sell
 # по цене limit_price_sell. Возвращаем номер заявки order_id
@@ -346,7 +344,7 @@ if __name__ == '__main__':  # Точка входа при запуске это
 
     # Исходные данные
     dataname_buy = 'SPBOPT.RI97500BO6'  # Option BUY
-    dataname_sell = 'SPBOPT.RI127500BC6'  # Option SELL
+    dataname_sell = 'SPBOPT.RI130000BC6'  # Option SELL
     expected_profit = -18 # Ожидаемый profit в %
     sleep_time = 5  # Время ожидания в секундах
     Lot_count = 1 # Количество лотов
@@ -614,46 +612,46 @@ if __name__ == '__main__':  # Точка входа при запуске это
                     )
                     print(f'Заявка на продажу выставлена: {order_id}, статус: {status} ')
                     sleep(Timeout)
-                    # Перебор позиций словаря trade_dict
-                    for trade_id, trade_data in trade_dict.items():
-                        if trade_data and trade_data['order_id'] == order_id:
-                            print(f"ID сделки: {trade_id}")
-                            print(f"Время: {trade_data['timestamp']}")
-                            print(f"Цена: {trade_data['price']}")
-                            print(f"Объем: {trade_data['size']}")
-
-                            limit_price_buy = ask_buy  # Test
-                            print(f'Выставляем лимитную заявку на покупку опциона {dataname_buy} по цене {limit_price_buy}')
-                            # Вызов функции выставления заявки на покупку
-                            order_id_buy, status_buy = get_order_buy(
-                                account_id=account_id,  # Укажите реальный номер счета
-                                symbol_buy=symbol_buy,  # Укажите реальный тикер
-                                quantity_buy=quantity_buy,  # Укажите количество
-                                limit_price_buy=limit_price_buy  # Укажите цену
-                            )
-                            print(f'Заявка на покупку выставлена: order_id_buy {order_id_buy}, status {status_buy}')
-                            print(trade_dict)
-                            sleep(Timeout)
-                            for trade_id, trade_data in trade_dict.items():
-                                if trade_data and trade_data['order_id'] == order_id_buy:
-                                    print(f"ID сделки: {trade_id}")
-                                    print(f"Время: {trade_data['timestamp']}")
-                                    print(f"Цена: {trade_data['price']}")
-                                    print(f"Объем: {trade_data['size']}")
-                                    print(f'Заявка на покупку исполнена: {trade_data['order_id']}')
-                                    # running = False
-                                # else:
-                                #     print(f'Заявка на покупку не исполнена: {trade_data['order_id']}')
-                                #     continue
-                        # else:
-                        #     print(f'Заявка на продажу не исполнена')
-                        #     continue
+                    position = trade_dict.get(order_id)
+                    if position:
+                        print(f'timestamp - {position['timestamp']}')
+                        print(f'trade_id - {position['trade_id']}')
+                        print(f'side - {position['side']}')
+                        print(f'size - {position['size']}')
+                        print(f'price - {position['price']}')
                     else:
+                        print(f'Заявка на покупку не исполнена: order_id - {order_id}')
                         # Снятие заявки на продажу
                         get_cancel_order(account_id, order_id)
                         continue
 
-        running = False
+                    limit_price_buy = ask_buy  # Test
+                    print(f'Выставляем лимитную заявку на покупку опциона {dataname_buy} по цене {limit_price_buy}')
+                    # Вызов функции выставления заявки на покупку
+                    order_id_buy, status_buy = get_order_buy(
+                        account_id=account_id,  # Укажите реальный номер счета
+                        symbol_buy=symbol_buy,  # Укажите реальный тикер
+                        quantity_buy=quantity_buy,  # Укажите количество
+                        limit_price_buy=limit_price_buy  # Укажите цену
+                    )
+                    print(f'Заявка на покупку выставлена: order_id_buy {order_id_buy}, status {status_buy}')
+                    sleep(Timeout)
+                    position = trade_dict.get(order_id_buy)
+                    if position:
+                        print(f'timestamp - {position['timestamp']}')
+                        print(f'trade_id - {position['trade_id']}')
+                        print(f'side - {position['side']}')
+                        print(f'size - {position['size']}')
+                        print(f'price - {position['price']}')
+
+                        running = False
+                    else:
+                        print(f'Заявка на покупку не исполнена: order_id_buy - {order_id_buy}')
+                        # Снятие заявки на покупку
+                        get_cancel_order(account_id, order_id_buy)
+                        continue
+
+
         # pass
     except Exception as e:
         print(f'Ошибка в цикле: {e}')
