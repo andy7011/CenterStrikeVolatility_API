@@ -129,7 +129,7 @@ def get_order_sell(account_id, symbol_sell, quantity_sell, limit_price_sell):
     return order_id, status
 
 # Выставление лимитной заявки на покупку инструмента symbol_buy в количестве quantity_buy
-# по цене limit_price_buy. Возвращаем номер заявки order_id
+# по цене limit_price_buy. Возвращаем номер заявки order_id_buy
 def get_order_buy(account_id, symbol_buy, quantity_buy, limit_price_buy):
     order_state = fp_provider.call_function(
         fp_provider.orders_stub.PlaceOrder,
@@ -152,7 +152,6 @@ def get_order_buy(account_id, symbol_buy, quantity_buy, limit_price_buy):
 
 # Удаление существующей лимитной заявки
 def get_cancel_order(account_id, order_id):
-    # print(f'Отмена заявки {order_id}')
     logger.info(f'Удаление заявки: {order_id}')
     order_state: OrderState = fp_provider.call_function(fp_provider.orders_stub.CancelOrder,
                                                         CancelOrderRequest(account_id=account_id,
@@ -169,12 +168,10 @@ def get_portfolio_positions():
         if broker is None:
             print("Ошибка: брокер не инициализирован")
             return []
-
         positions = broker.get_positions()  # Пробегаемся по всем позициям брокера
         if positions is None:
             print(f"Ошибка: не удалось получить позиции")
             return []
-
         for position in positions:  # Пробегаемся по всем позициям брокера
             # Проверяем, что позиция не равна 0
             if position.quantity != 0 or position.quantity != None:
@@ -343,11 +340,10 @@ if __name__ == '__main__':  # Точка входа при запуске это
     ap_provider.on_new_quotes.subscribe(_on_new_quotes)
     # Список GUID для отписки
 
-
     # Исходные данные
     dataname_buy = 'SPBOPT.RI97500BO6'  # Option BUY
     dataname_sell = 'SPBOPT.RI127500BC6'  # Option SELL
-    expected_profit = -18 # Ожидаемый profit в %
+    expected_profit = 1 # Ожидаемый profit в %
     sleep_time = 5  # Время ожидания в секундах
     Lot_count = 1 # Количество лотов
     Lot_count_step = 0
@@ -407,7 +403,7 @@ if __name__ == '__main__':  # Точка входа при запуске это
            name='SubscriptionOrdersThread').start()  # Создаем и запускаем поток обработки своих заявок
     Thread(target=fp_provider.subscribe_trades_thread,
            name='SubscriptionTradesThread').start()  # Создаем и запускаем поток обработки своих сделок
-    sleep(1)  # Ждем 10 секунд
+    sleep(1)  # Ждем 1 секунду
 
     # Начинаем бесконечный цикл с этого места
     try:

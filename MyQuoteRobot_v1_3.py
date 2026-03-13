@@ -1,10 +1,12 @@
+# Импортируем конфиг
+from MyQuoteRobot_Config import dataname_buy, dataname_sell, stop_iv_sell, stop_iv_buy, expected_profit, Lot_count, Timeout
+
 import logging # Выводим лог на консоль и в файл
 logging.basicConfig(level=logging.WARNING) # уровень логгирования
 from datetime import datetime, timezone  # Дата и время
 from zoneinfo import ZoneInfo
 from time import sleep  # Задержка в секундах перед выполнением операций
 from threading import Thread  # Запускаем поток подписки
-import threading
 
 import math
 import numpy as np
@@ -21,9 +23,7 @@ from FinamPy.grpc.marketdata.marketdata_service_pb2 import QuoteRequest, QuoteRe
 from FinLabPy.Config import brokers, default_broker  # Все брокеры и брокер по умолчанию
 
 from QUIK_Stream_v1_7 import calculate_open_data_open_price_open_iv
-
 from AlorPy import AlorPy  # Работа с Alor OpenAPI V2
-
 from google.type.decimal_pb2 import Decimal
 
 # Глобальная переменная для управления циклом
@@ -191,6 +191,19 @@ def get_portfolio_positions():
         print(f"Ошибка получения позиций: {e}")
         return []
 
+# Сбор данных по опциону и БА для расчета цены опциона
+def get_option_data_for_calc_price(dataname):
+    base_asset_ticker = opions_data[dataname]['base_asset_ticker']
+    S = float(new_quotes[base_asset_ticker]['last_price'])
+    K = float(opions_data[dataname]['strikePrice'])
+    expiration_datetime = opions_data[dataname]['endExpiration']
+    expiration_dt = datetime.fromisoformat(expiration_datetime.replace('Z', '+00:00'))
+    T_razn = (expiration_dt - datetime.today()).days
+    T = float((T_razn + 1.151) / 365)
+    opt_type = CALL if opions_data[dataname]['optionSide'] == 'Call' else PUT
+    print(f'S: {S}, K: {K}, T: {T}, opt_type: {opt_type}')
+    return S, K, T, opt_type
+
 # Вычисление стоимости опциона по формуле Black-Scholes
 def option_price(S, sigma, K, T, r: float, opt_type):
     d1 = (math.log(S / K) + (r + .5 * sigma ** 2) * T) / (sigma * T ** .5)
@@ -343,13 +356,18 @@ if __name__ == '__main__':  # Точка входа при запуске это
 
 
     # Исходные данные
-    dataname_buy = 'SPBOPT.RI97500BO6'  # Option BUY
-    dataname_sell = 'SPBOPT.RI130000BC6'  # Option SELL
-    expected_profit = -18 # Ожидаемый profit в %
-    sleep_time = 5  # Время ожидания в секундах
-    Lot_count = 1 # Количество лотов
+    print(f'Исходные данные:')
+    print(f'Опцион на покупку dataname_buy: {dataname_buy}')
+    print(f'Стоп iv покупки (если 0, то стопом будет теоретическая цена QUIK) stop_iv_buy: {stop_iv_buy}')
+    print(f'Опцион на продажу dataname_sell: {dataname_sell}')
+    print(f'Стоп iv продажи (если 0, то стопом будет теоретическая цена QUIK) stop_iv_sell: {stop_iv_sell}')
+    print(f'Ожидаемый profit в % expected_profit: {expected_profit}')
+    print(f'Количество лотов Lot_count: {Lot_count}')
+    print(f'Срок действия ордера в секундах Timeout: {Timeout}')
+
     Lot_count_step = 0
-    Timeout = 5 # Срок действия ордера в секундах
+    sleep_time = 5  # Время ожидания в секундах
+
 
     logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',  # Формат сообщения
                         datefmt='%d.%m.%Y %H:%M:%S',  # Формат даты
@@ -426,10 +444,13 @@ if __name__ == '__main__':  # Точка входа при запуске это
                 open_data_result = calculate_open_data_open_price_open_iv(ticker, net_pos)  # Вычисление OpenDateTime, OpenPrice, OpenIV
             else:
                 print(f'Нет данных о позиции {dataname} количество {net_pos}')
-                # Завершаем работу программы
-                running = False
-                # Вызываем сигнал для корректного завершения
-                signal.raise_signal(signal.SIGTERM)
+                print(f'Начинаем цикл заново.')
+                sleep(5)
+                continue
+                # # Завершаем работу программы
+                # running = False
+                # # Вызываем сигнал для корректного завершения
+                # signal.raise_signal(signal.SIGTERM)
             # Проверяем, что функция вернула корректные данные
             if open_data_result is not None and len(open_data_result) > 2:
                 open_datetime = open_data_result[0]
@@ -476,7 +497,12 @@ if __name__ == '__main__':  # Точка входа при запуске это
             profit_price_buy = option_price(S, sigma, K, T, r, opt_type=option_type)
             limit_price = int(round((profit_price_buy // step_price) * step_price, decimals))
             profit_price_buy = int(round((profit_price_buy // step_price) * step_price, decimals))
-            print(f'Profit_price_buy {profit_price_buy}')
+            print(f'Profit_price_buy: {profit_price_buy}')
+            # Вычисляем стоп цену на покупку
+            sima = stop_iv_buy / 100
+            stop_price_buy = option_price(S, sigma, K, T, r, opt_type=option_type)
+            stop_price_buy = int(round((profit_price_buy // step_price) * step_price, decimals))
+            print(f'stop_price_buy: {stop_price_buy}')
             # Получаем ask, bid из потока котировок по подписке из обновляемого словаря new_quotes
             if ticker not in new_quotes:
                 print(f'Нет котировок для тикера {ticker}')
@@ -484,7 +510,7 @@ if __name__ == '__main__':  # Точка входа при запуске это
                 continue
             ask_buy = int(round(new_quotes[ticker]['ask'], decimals))
             bid_buy = int(round(new_quotes[ticker]['bid'], decimals))
-            print(f'Котировки ask_buy {ask_buy} bid_buy {bid_buy}')
+            print(f'Котировки ask_buy: {ask_buy} bid_buy: {bid_buy}')
             # Вычисляем волатильность ask_buy
             # print(f'{S}, {K}, {T}, {ask_buy}, {r}, {sigma} {option_type}')
             if option_type == 'C':
@@ -496,7 +522,8 @@ if __name__ == '__main__':  # Точка входа при запуске это
                 ask_iv_buy = newton_vol_put(S, K, T, ask_buy, r, sigma) * 100
                 bid_iv_buy = newton_vol_put(S, K, T, bid_buy, r, sigma) * 100
             print(f'Волатильность ask_iv_buy: {round(ask_iv_buy, 2)} bid_iv_buy: {round(bid_iv_buy, 2)}')
-            saldo_buy = open_iv_buy - opions_data[dataname]['volatility'] # open_iv - IV-theor
+            # saldo_buy = open_iv_buy - opions_data[dataname]['volatility'] # open_iv - IV-theor
+            saldo_buy = open_iv_buy - bid_iv_buy  # open_iv - IV-bid
             print(f'Saldo buy: {round(saldo_buy, 2)}')
 
 
@@ -512,10 +539,13 @@ if __name__ == '__main__':  # Точка входа при запуске это
                 open_data_result = calculate_open_data_open_price_open_iv(ticker, net_pos)  # Вычисление OpenDateTime, OpenPrice, OpenIV
             else:
                 print(f'Нет данных о позиции {dataname} количество {net_pos}')
-                # Завершаем работу программы
-                running = False
-                # Вызываем сигнал для корректного завершения
-                signal.raise_signal(signal.SIGTERM)
+                print(f'Начинаем цикл заново.')
+                sleep(5)
+                continue
+                # # Завершаем работу программы
+                # running = False
+                # # Вызываем сигнал для корректного завершения
+                # signal.raise_signal(signal.SIGTERM)
             # Проверяем, что функция вернула корректные данные
             if open_data_result is not None and len(open_data_result) > 2:
                 open_datetime = open_data_result[0]
@@ -564,6 +594,11 @@ if __name__ == '__main__':  # Точка входа при запуске это
             limit_price_sell = int(round((profit_price_sell // step_price) * step_price, decimals))
             profit_price_sell = int(round((profit_price_sell // step_price) * step_price, decimals))
             print(f'Profit_price_sell {profit_price_sell}')
+            # Вычисляем стоп цену на продажку
+            sima = stop_iv_sell / 100
+            stop_price_sell = option_price(S, sigma, K, T, r, opt_type=option_type)
+            stop_price_sell = int(round((profit_price_buy // step_price) * step_price, decimals))
+            print(f'Stop_price_sell {stop_price_sell}')
             # Получаем ask, bid из потока котировок по подписке из обновляемого словаря new_quotes
             if ticker not in new_quotes:
                 print(f'Нет котировок для тикера {ticker}')
@@ -583,15 +618,50 @@ if __name__ == '__main__':  # Точка входа при запуске это
                 ask_iv_sell = newton_vol_put(S, K, T, ask_sell, r, sigma) * 100
                 bid_iv_sell = newton_vol_put(S, K, T, bid_sell, r, sigma) * 100
             print(f'Волатильность ask_sell: {round(ask_iv_sell, 2)} bid_iv_sell: {round(bid_iv_sell, 2)}')
-            saldo_sell = opions_data[dataname]['volatility'] - open_iv # IV-theor - open_iv
+            # saldo_sell = opions_data[dataname]['volatility'] - open_iv # IV-theor - open_iv
+            saldo_sell = ask_iv_sell - open_iv  # IV-ask - open_iv
             print(f'Saldo sell: {round(saldo_sell, 2)}')
+            limit_price_sell = profit_price_sell
 
+            print(f'\n')
             Real_profit_sell = round((ask_iv_sell - open_iv_sell) + (open_iv_buy - ask_iv_buy), 2)
+            print(f'Real profit sell: {Real_profit_sell}')
             Real_profit_buy = round((open_iv_buy - bid_iv_buy) + (bid_iv_sell - open_iv_sell), 2)
+            print(f'Real profit buy: {Real_profit_buy}')
+
+            print(f'\n')
+            # Расчёт целевой цены продажи/купли target_price (сначала продаем)
+            target_iv_sell = bid_iv_sell # Целевая IV для мгновенной продажи
+            print(f'Целевая IV для мгновенной продажи: {round(target_iv_sell, 2)}')
+            target_price_sell = bid_sell # Целевая цена для мгновенной продажи
+            print(f'Целевая цена для мгновенной продажи: {round(target_price_sell, 2)}')
+            target_profit_sell = bid_iv_sell - open_iv_sell # Целевая прибыль для мгновенной продажи
+            print(f'Целевая прибыль для мгновенной продажи: {round(target_profit_sell, 2)}')
+            target_profit_buy = open_iv_buy - ask_iv_buy # Целевая прибыль для мгновенной покупки
+            print(f'Целевая прибыль для мгновенной покупки: {round(target_profit_buy, 2)}')
+            target_profit_buy = open_iv_buy - ask_iv_buy # Целевая прибыль для мгновенной покупки
+            print(f'Целевая прибыль для мгновенной покупки: {round(target_profit_buy, 2)}')
+            target_iv_buy = open_iv_buy + (expected_profit - target_profit_sell)
+            print(f'Целевая IV для мгновенной покупки: {round(target_iv_buy, 2)}')
+            S, K, T, opt_type = get_option_data_for_calc_price(dataname_buy)
+            target_price_buy_ = option_price(S, target_iv_buy / 100, K, T, r, opt_type=opt_type)
+            target_price_buy = int(round((target_price_buy_ // step_price) * step_price, decimals))
+            print(f'Целевая цена для мгновенной продажи: {target_price_sell}')
+            print(f'Целевая цена для мгновенной покупки: {target_price_buy}')
+
+            # Расчёт целевой цены купли/продажи target_price
 
 
             print(f'\n')
             print(f'Выставление заявок:')
+
+            print(f'ВРЕМЕННАЯ ЗАГЛУШКА !!!')
+            # ВРЕМЕННАЯ ЗАГЛУШКА !!!
+            # Завершаем работу программы
+            running = False
+            # Вызываем сигнал для корректного завершения
+            signal.raise_signal(signal.SIGTERM)
+
 
             if saldo_sell >= saldo_buy: # Если прибыльная нога - SELL
                 print(f'\n')
@@ -601,7 +671,7 @@ if __name__ == '__main__':  # Точка входа при запуске это
                     # Новая лимитная заявка на продажу
                     # limit_price_sell = ask_sell - step_price  # Ставим лимитную цену на шаг ниже лучшей продажи
                     # limit_price_sell = ask_sell - step_price # Test
-                    limit_price_sell = bid_sell  # По рынку
+                    # limit_price_sell = bid_sell  # По рынку
                     print(f'Выставляем лимитную заявку по цене {limit_price_sell} - на шаг ниже лучшей продажи опциона: {dataname_sell}. Ждём sleep_time.')
                     # Вызов функции выставления заявки на продажу
                     order_id, status = get_order_sell(
@@ -620,7 +690,7 @@ if __name__ == '__main__':  # Точка входа при запуске это
                         print(f'size - {position['size']}')
                         print(f'price - {position['price']}')
                     else:
-                        print(f'Заявка на покупку не исполнена: order_id - {order_id}')
+                        print(f'Заявка на продажу не исполнена: order_id - {order_id}')
                         # Снятие заявки на продажу
                         get_cancel_order(account_id, order_id)
                         continue
@@ -644,7 +714,11 @@ if __name__ == '__main__':  # Точка входа при запуске это
                         print(f'size - {position['size']}')
                         print(f'price - {position['price']}')
 
-                        running = False
+                        Lot_count_step = Lot_count_step + 1
+                        print(f'Завершение цикла N {Lot_count_step}')
+                        if Lot_count_step == Lot_count:
+                            running = False
+                            print(f'Завершение работы котировщика!')
                     else:
                         print(f'Заявка на покупку не исполнена: order_id_buy - {order_id_buy}')
                         # Снятие заявки на покупку
