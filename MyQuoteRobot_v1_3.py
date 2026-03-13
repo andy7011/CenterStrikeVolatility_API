@@ -201,7 +201,7 @@ def get_option_data_for_calc_price(dataname):
     T_razn = (expiration_dt - datetime.today()).days
     T = float((T_razn + 1.151) / 365)
     opt_type = CALL if opions_data[dataname]['optionSide'] == 'Call' else PUT
-    print(f'S: {S}, K: {K}, T: {T}, opt_type: {opt_type}')
+    # print(f'S: {S}, K: {K}, T: {T}, opt_type: {opt_type}')
     return S, K, T, opt_type
 
 # Вычисление стоимости опциона по формуле Black-Scholes
@@ -470,7 +470,7 @@ if __name__ == '__main__':  # Точка входа при запуске это
             open_iv_buy = open_iv
             profit_iv_buy = open_iv - expected_profit
             print(f'Profit IV buy: {round(profit_iv_buy, 2)}')
-            theoretical_price_buy = opions_data[dataname]['theorPrice']
+            theoretical_price_buy_ = opions_data[dataname]['theorPrice']
             base_asset_ticker = opions_data[dataname]['base_asset_ticker']
             # Проверяем наличие котировок для базового актива
             if base_asset_ticker not in new_quotes:
@@ -494,9 +494,11 @@ if __name__ == '__main__':  # Точка входа при запуске это
             # print(f'Option type: {option_type}')
             decimals = opions_data[dataname_sell]['decimals']
             # Далее вычисляем profit_price_buy из profit_iv_buy по формуле Блэка-Шоулза
-            profit_price_buy = option_price(S, sigma, K, T, r, opt_type=option_type)
-            limit_price = int(round((profit_price_buy // step_price) * step_price, decimals))
-            profit_price_buy = int(round((profit_price_buy // step_price) * step_price, decimals))
+            profit_price_buy_ = option_price(S, sigma, K, T, r, opt_type=option_type)
+            limit_price = int(round((profit_price_buy_ // step_price) * step_price, decimals))
+            profit_price_buy = int(round((profit_price_buy_ // step_price) * step_price, decimals))
+            theoretical_price_buy = int(round((theoretical_price_buy_ // step_price) * step_price, decimals))
+            print(f'Theoretical_price_buy: {theoretical_price_buy}')
             print(f'Profit_price_buy: {profit_price_buy}')
             # Вычисляем стоп цену на покупку
             sima = stop_iv_buy / 100
@@ -565,7 +567,7 @@ if __name__ == '__main__':  # Точка входа при запуске это
             open_iv_sell = open_iv
             profit_iv_sell = open_iv + expected_profit
             print(f'Profit IV sell: {round(profit_iv_sell, 2)}')
-            theoretical_price_sell = opions_data[dataname]['theorPrice']
+            theoretical_price_sell_ = opions_data[dataname]['theorPrice']
             base_asset_ticker = opions_data[dataname]['base_asset_ticker']
             # Проверяем наличие котировок для базового актива
             if base_asset_ticker not in new_quotes:
@@ -593,6 +595,8 @@ if __name__ == '__main__':  # Точка входа при запуске это
             profit_price_sell = int(round(profit_price_sell, decimals))
             limit_price_sell = int(round((profit_price_sell // step_price) * step_price, decimals))
             profit_price_sell = int(round((profit_price_sell // step_price) * step_price, decimals))
+            theoretical_price_sell = int(round((theoretical_price_sell_ // step_price) * step_price, decimals))
+            print(f'Theoretical_price_sell {theoretical_price_sell}')
             print(f'Profit_price_sell {profit_price_sell}')
             # Вычисляем стоп цену на продажку
             sima = stop_iv_sell / 100
@@ -647,7 +651,7 @@ if __name__ == '__main__':  # Точка входа при запуске это
             target_price_buy_ = option_price(S, target_iv_buy / 100, K, T, r, opt_type=opt_type)
             target_price_buy = int(round((target_price_buy_ // step_price) * step_price, decimals))
             print(f'Целевая цена для мгновенной продажи: {target_price_sell}')
-            print(f'Целевая цена для мгновенной покупки: {target_price_buy}')
+            print(f'Целевая цена для котирования покупки: {target_price_buy}')
 
             # Расчёт целевой цены купли/продажи target_price
 
