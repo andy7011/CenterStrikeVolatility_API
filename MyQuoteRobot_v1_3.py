@@ -79,7 +79,6 @@ def _on_new_quotes(response):
         'bid': bid,
         'last_price': last_price
     }
-
     # print(f"Котировки для {description}: ask={ask}, bid={bid}, last_price={last_price}")
 
 def _on_order(order): logger.info(f'Заявка - {order}')
@@ -223,7 +222,6 @@ def option_price(S, sigma, K, T, r: float, opt_type):
         price = K * DF * n2 - S * n1
     return price
 
-
 # Сбор данных опциона CALL для расчета IV
 def option_data_for_IV_calculation_call(dataname, price_call):
     # S: последняя цена БА из обновляемого словаря new_quotes
@@ -241,7 +239,6 @@ def option_data_for_IV_calculation_call(dataname, price_call):
     T = float((T_razn + 1.151) / 365)
     C = price_call
     sigma = opions_data[dataname]['volatility'] / 100
-
     return S, K, T, C, sigma
 
 # Сбор данных опциона PUT для расчета IV
@@ -261,7 +258,6 @@ def option_data_for_IV_calculation_put(dataname, price_put):
     T = float((T_razn + 1.151) / 365)
     P = price_put
     sigma = opions_data[dataname]['volatility'] / 100
-
     return S, K, T, P, sigma
 
 # Расчет IV Метод Ньютона для опциона CALL
@@ -282,21 +278,15 @@ def newton_vol_call(S, K, T, C, r, sigma):
 
     while abs(xnew - xold) > tolerance and iteration < max_iterations:
         xold = xnew
-
         d1 = (np.log(S / K) + (r - 0.5 * xnew ** 2) * T) / (xnew * np.sqrt(T))
         d2 = d1 - xnew * np.sqrt(T)
-
         fx = S * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2) - C
         vega = S * np.sqrt(T) * np.exp(-0.5 * d1 ** 2) / np.sqrt(2 * np.pi)
-
         if abs(vega) < 1e-10:  # Избегаем деления на ноль
             break
-
         xnew = xnew - fx / vega
         iteration += 1
-
     return abs(xnew)
-
 
 # Расчет IV Метод Ньютона для опциона PUT
 def newton_vol_put(S, K, T, P, r, sigma):
@@ -313,24 +303,17 @@ def newton_vol_put(S, K, T, P, r, sigma):
     xnew = x0
     xold = x0 - 1
     iteration = 0
-
     while abs(xnew - xold) > tolerance and iteration < max_iterations:
         xold = xnew
-
         d1 = (np.log(S / K) + (r - 0.5 * xnew ** 2) * T) / (xnew * np.sqrt(T))
         d2 = d1 - xnew * np.sqrt(T)
-
         fx = K * np.exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1) - P
         vega = S * np.sqrt(T) * np.exp(-0.5 * d1 ** 2) / np.sqrt(2 * np.pi)
-
         if abs(vega) < 1e-10:  # Избегаем деления на ноль
             break
-
         xnew = xnew - fx / vega
         iteration += 1
-
     return abs(xnew)
-
 
 # Получение последней котировки по инструменту
 def get_last_quotes(symbol):
@@ -630,86 +613,64 @@ if __name__ == '__main__':  # Точка входа при запуске это
             limit_price_sell = profit_price_sell
 
             print(f'\n')
-            Real_profit_sell = round((ask_iv_sell - open_iv_sell) + (open_iv_buy - ask_iv_buy), 2)
-            print(f'Real profit sell: {Real_profit_sell}')
-            Real_profit_buy = round((open_iv_buy - bid_iv_buy) + (bid_iv_sell - open_iv_sell), 2)
-            print(f'Real profit buy: {Real_profit_buy}')
-
-            print(f'\n')
-            print(f'Расчёт целевой цены купли/продажи target_price (Вариант 1 "Котируем покупку")')
-            # Сначала котируем покупку опциона dataname_buy по цене target_price_buy,
-            # При свершении покупки сразу продаём опцион dataname_sell по цене target_price_sell
-            # Для случая, когда опцион на продажу dataname_sell (купленный ранее) имеет профит больше, чем опцион на покупку dataname_buy
-            target_iv_sell = bid_iv_sell # Целевая IV для мгновенной продажи
-            print(f'Целевая IV для мгновенной продажи: {round(target_iv_sell, 2)}')
-            target_price_sell = bid_sell # Целевая ЦЕНА для мгновенной продажи
-            print(f'Целевая ЦЕНА для мгновенной продажи: {round(target_price_sell, 2)}')
-            target_profit_sell = open_iv_sell - bid_iv_sell # Целевая прибыль для мгновенной продажи
-            print(f'Целевая прибыль для мгновенной продажи: {round(target_profit_sell, 2)}')
-            target_profit_buy = open_iv_buy - ask_iv_buy # Целевая прибыль для котирования покупки
-            print(f'Целевая прибыль для котирования покупки: {round(target_profit_buy, 2)}')
-            target_iv_buy = open_iv_buy + (expected_profit - target_profit_sell) # IV для котирования покупки
-            print(f'Целевая IV для котирования покупки: {round(target_iv_buy, 2)}')
-            S, K, T, opt_type = get_option_data_for_calc_price(dataname_buy) # Получаем данные опциона dataname_buy
-            target_price_buy_ = option_price(S, target_iv_buy / 100, K, T, r, opt_type=opt_type) # Целевая цена для котирования покупки
-            target_price_buy = int(round((target_price_buy_ // step_price) * step_price, decimals))
-            print(f'Целевая цена для котирования покупки {dataname_buy}: {target_price_buy}') # Сначала котируем покупку
-            print(f'Целевая цена для мгновенной продажи {dataname_sell}: {target_price_sell}') # Если покупка свершилась мгновенно продаем
-
-            print(f'\n')
-            print(f'Расчёт целевой цены продажи/купли target_price (Вариант 2 "Котируем продажу")')
-            # Сначала котируем продажу опциона dataname_sell по цене target_price_sell
-            # При свершении продажи сразу покупаем опцион dataname_buy по цене target_price_buy
-            # Для случая, когда опцион на покупку dataname_buy (т.е. проданый ранее) имеет профит больше, чем опцион на продажу dataname_sell (купленный ранее)
-            target_iv_buy = ask_iv_buy # Целевая IV для мгновенной покупки
-            print(f'Целевая IV для мгновенной покупки: {round(target_iv_buy, 2)}')
-            target_price_buy = ask_buy # Целевая цена для мгновенной покупки
-            print(f'Целевая ЦЕНА для мгновенной покупки: {round(target_price_buy, 2)}')
-            target_profit_sell = open_iv_buy - ask_iv_buy # Целевая прибыль для мгновенной покупки
-            print(f'Целевая прибыль для мгновенной покупки: {round(target_profit_sell, 2)}')
-            target_profit_buy = bid_iv_sell - open_iv_sell # Целевая прибыль для котирования продажи
-            print(f'Целевая прибыль для котирования продажи: {round(target_profit_buy, 2)}')
-            target_iv_sell = open_iv_sell + (expected_profit - target_profit_buy) # Целевая IV для котирования продажи
-            print(f'Целевая IV для котирования продажи: {round(target_iv_sell, 2)}')
-            S, K, T, opt_type = get_option_data_for_calc_price(dataname_sell)  # Получаем данные опциона dataname_sell
-            target_price_sell_ = option_price(S, target_iv_sell / 100, K, T, r, opt_type=opt_type)  # Целевая цена для котирования продажи
-            target_price_sell = int(round((target_price_sell_ // step_price) * step_price, decimals))
-            print(f'Целевая цена для котирования продажи {dataname_sell}: {target_price_sell}')
-            print(f'Целевая цена для мгновенной покупки {dataname_buy}: {target_price_buy}')
-
-            print(f'\n')
             theor_profit_buy = open_iv_buy - theor_iv_buy
             print(f'Теоретическая прибыль для {dataname_buy}: {round(theor_profit_buy, 2)}')
             theor_profit_sell = theor_iv_sell - open_iv_sell
             print(f'Теоретическая прибыль для {dataname_sell}: {round(theor_profit_sell, 2)}')
-            if theor_profit_sell > theor_profit_buy:
-                print(f'Вариант 1 "Котируем покупку"')
-            else:
-                print(f'Вариант 2 "Котируем продажу"')
-
 
             print(f'\n')
             print(f'Выставление заявок:')
 
-            print(f'ВРЕМЕННАЯ ЗАГЛУШКА !!!')
-            # ВРЕМЕННАЯ ЗАГЛУШКА !!!
-            # Завершаем работу программы
-            running = False
-            # Вызываем сигнал для корректного завершения
-            signal.raise_signal(signal.SIGTERM)
+            if theor_profit_sell > theor_profit_buy:
+                print(f'Вариант 1 "Котируем покупку"')
+                print(f'Расчёт целевой цены купли/продажи target_price (Вариант 1 "Котируем покупку")')
+                # Сначала котируем покупку опциона dataname_buy по цене target_price_buy,
+                # При свершении покупки сразу продаём опцион dataname_sell по цене target_price_sell
+                # Для случая, когда опцион на продажу dataname_sell (купленный ранее) имеет профит больше, чем опцион на покупку dataname_buy
+                target_iv_sell = bid_iv_sell  # Целевая IV для мгновенной продажи
+                print(f'1. Целевая IV для мгновенной продажи: {round(target_iv_sell, 2)}')
+                target_price_sell = bid_sell  # Целевая ЦЕНА для мгновенной продажи
+                print(f'2. Целевая ЦЕНА для мгновенной продажи: {round(target_price_sell, 2)}')
+                target_profit_sell = bid_iv_sell - open_iv_sell  # Целевая прибыль для мгновенной продажи
+                print(f'3. Целевая прибыль для мгновенной продажи: {round(target_profit_sell, 2)}')
+                target_profit_buy = expected_profit - target_profit_sell  # Целевая прибыль для котирования покупки
+                print(f'4. Целевая прибыль для котирования покупки: {round(target_profit_buy, 2)}')
+                target_iv_buy = open_iv_buy - target_profit_buy  # IV для котирования покупки
+                print(f'5. Целевая IV для котирования покупки: {round(target_iv_buy, 2)}')
+                S, K, T, opt_type = get_option_data_for_calc_price(dataname_buy)  # Получаем данные опциона dataname_buy
+                target_price_buy_ = option_price(S, target_iv_buy / 100, K, T, r, opt_type=opt_type)  # Целевая цена для котирования покупки
+                target_price_buy = int(round((target_price_buy_ // step_price) * step_price, decimals))
+                print(f'Целевая цена для котирования покупки {dataname_buy}: {target_price_buy}')  # Сначала котируем покупку
+                print(f'Целевая цена для мгновенной продажи {dataname_sell}: {target_price_sell}')  # Если покупка свершилась мгновенно продаем
 
+                # Логика выставления лимитной цены на покупку опциона dataname_buy
+                if bid_buy and target_price_buy <= bid_buy:
+                    limit_price_buy = target_price_buy
+                else:
+                    limit_price_buy = bid_buy + step_price
+                # Лимитная цена на мгновенную продажу опциона dataname_sell
+                limit_price_sell = target_price_sell
 
-            if saldo_sell >= saldo_buy: # Если прибыльная нога - SELL
-                print(f'\n')
-                print(f'Лучшая нога - на продажу! Real profit sell: {Real_profit_sell}')
-                if Real_profit_sell >= expected_profit:  # Если реальный профит больше или равен ожидаемому профиту
-                    print(f'Если реальный профит {Real_profit_sell} больше или равен ожидаемому профиту {expected_profit}')
-                    # Новая лимитная заявка на продажу
-                    # limit_price_sell = ask_sell - step_price  # Ставим лимитную цену на шаг ниже лучшей продажи
-                    # limit_price_sell = ask_sell - step_price # Test
-                    # limit_price_sell = bid_sell  # По рынку
-                    print(f'Выставляем лимитную заявку по цене {limit_price_sell} - на шаг ниже лучшей продажи опциона: {dataname_sell}. Ждём sleep_time.')
+                print(f'Выставляем лимитную заявку на покупку опциона {dataname_buy} по цене {limit_price_buy}')
+                # Вызов функции выставления заявки на покупку
+                order_id_buy, status_buy = get_order_buy(
+                    account_id=account_id,  # Укажите реальный номер счета
+                    symbol_buy=symbol_buy,  # Укажите реальный тикер
+                    quantity_buy=quantity_buy,  # Укажите количество
+                    limit_price_buy=limit_price_buy  # Укажите цену
+                )
+                print(f'Заявка на покупку выставлена: order_id_buy {order_id_buy}, status {status_buy}')
+                sleep(Timeout)
+                position = trade_dict.get(order_id_buy)
+                if position: # Если заявка на покупку исполнена
+                    print(f'timestamp - {position['timestamp']}')
+                    print(f'trade_id - {position['trade_id']}')
+                    print(f'side - {position['side']}')
+                    print(f'size - {position['size']}')
+                    print(f'price - {position['price']}')
+
                     # Вызов функции выставления заявки на продажу
+                    print(f'Выставляем лимитную заявку по цене {limit_price_sell}: {dataname_sell}. Ждём sleep_time.')
                     order_id, status = get_order_sell(
                         account_id=account_id,  # Укажите реальный номер счета
                         symbol_sell=symbol_sell,  # Укажите реальный тикер
@@ -719,19 +680,76 @@ if __name__ == '__main__':  # Точка входа при запуске это
                     print(f'Заявка на продажу выставлена: {order_id}, статус: {status} ')
                     sleep(Timeout)
                     position = trade_dict.get(order_id)
-                    if position:
+                    if position:  # Если сделка на продажу состоялась
                         print(f'timestamp - {position['timestamp']}')
                         print(f'trade_id - {position['trade_id']}')
                         print(f'side - {position['side']}')
                         print(f'size - {position['size']}')
                         print(f'price - {position['price']}')
+
+                        Lot_count_step = Lot_count_step + 1
+                        print(f'Завершение цикла N {Lot_count_step}')
+                        if Lot_count_step == Lot_count:
+                            running = False
+                            print(f'Завершение работы котировщика!')
                     else:
                         print(f'Заявка на продажу не исполнена: order_id - {order_id}')
-                        # Снятие заявки на продажу
-                        get_cancel_order(account_id, order_id)
-                        continue
+                        # # Снятие заявки на продажу
+                        # get_cancel_order(account_id, order_id)
+                        # continue
+                else:
+                    print(f'Заявка на покупку не исполнена: order_id - {order_id_buy}')
+                    # Снятие заявки на продажу
+                    get_cancel_order(account_id, order_id_buy)
+                    continue
 
-                    limit_price_buy = ask_buy  # Test
+            else:
+                print(f'Вариант 2 "Котируем продажу"')
+                print(f'Расчёт целевой цены продажи/купли target_price (Вариант 2 "Котируем продажу")')
+                # Сначала котируем продажу опциона dataname_sell по цене target_price_sell
+                # При свершении продажи сразу покупаем опцион dataname_buy по цене target_price_buy
+                # Для случая, когда опцион на покупку dataname_buy (т.е. проданый ранее) имеет профит больше, чем опцион на продажу dataname_sell (купленный ранее)
+                target_iv_buy = ask_iv_buy  # Целевая IV для мгновенной покупки
+                print(f'1. Целевая IV для мгновенной покупки: {round(target_iv_buy, 2)}')
+                target_price_buy = ask_buy  # Целевая цена для мгновенной покупки
+                print(f'2. Целевая ЦЕНА для мгновенной покупки: {round(target_price_buy, 2)}')
+                target_profit_sell = open_iv_buy - ask_iv_buy  # Целевая прибыль для мгновенной покупки
+                print(f'3. Целевая прибыль для мгновенной покупки: {round(target_profit_sell, 2)}')
+                target_profit_buy = bid_iv_sell - open_iv_sell  # Целевая прибыль для котирования продажи
+                print(f'4. Целевая прибыль для котирования продажи: {round(target_profit_buy, 2)}')
+                target_iv_sell = open_iv_sell + (expected_profit - target_profit_buy)  # Целевая IV для котирования продажи
+                print(f'5. Целевая IV для котирования продажи: {round(target_iv_sell, 2)}')
+                S, K, T, opt_type = get_option_data_for_calc_price(dataname_sell)  # Получаем данные опциона dataname_sell
+                target_price_sell_ = option_price(S, target_iv_sell / 100, K, T, r, opt_type=opt_type)  # Целевая цена для котирования продажи
+                target_price_sell = int(round((target_price_sell_ // step_price) * step_price, decimals))
+                print(f'Целевая цена для котирования продажи {dataname_sell}: {target_price_sell}')
+                print(f'Целевая цена для мгновенной покупки {dataname_buy}: {target_price_buy}')
+
+                # Логика выставления лимитной цены для котирования продажи опциона dataname_sell
+                if ask_sell and target_price_sell >= ask_sell:
+                    limit_price_sell = target_price_sell
+                else:
+                    limit_price_sell = ask_sell - step_price
+                # Лимитная цена на мгновенную покупку опциона dataname_buy
+                limit_price_buy = target_price_buy
+
+                print(f'Выставляем лимитную заявку на продажу по цене {limit_price_sell}: {dataname_sell}. Ждём sleep_time.')
+                # Вызов функции выставления заявки на продажу
+                order_id, status = get_order_sell(
+                    account_id=account_id,  # Укажите реальный номер счета
+                    symbol_sell=symbol_sell,  # Укажите реальный тикер
+                    quantity_sell=quantity_sell,  # Укажите количество
+                    limit_price_sell=limit_price_sell  # Укажите цену
+                )
+                print(f'Заявка на продажу выставлена: {order_id}, статус: {status} ')
+                sleep(Timeout)
+                position = trade_dict.get(order_id)
+                if position:  # Сделка на продажу состоялась
+                    print(f'timestamp - {position['timestamp']}')
+                    print(f'trade_id - {position['trade_id']}')
+                    print(f'side - {position['side']}')
+                    print(f'size - {position['size']}')
+                    print(f'price - {position['price']}')
                     print(f'Выставляем лимитную заявку на покупку опциона {dataname_buy} по цене {limit_price_buy}')
                     # Вызов функции выставления заявки на покупку
                     order_id_buy, status_buy = get_order_buy(
@@ -757,11 +775,14 @@ if __name__ == '__main__':  # Точка входа при запуске это
                             print(f'Завершение работы котировщика!')
                     else:
                         print(f'Заявка на покупку не исполнена: order_id_buy - {order_id_buy}')
-                        # Снятие заявки на покупку
-                        get_cancel_order(account_id, order_id_buy)
-                        continue
-
-
+                        # # Снятие заявки на покупку
+                        # get_cancel_order(account_id, order_id_buy)
+                        # continue
+                else:
+                    print(f'Заявка на продажу не исполнена: order_id - {order_id}')
+                    # Снятие заявки на продажу
+                    get_cancel_order(account_id, order_id)
+                    continue
         # pass
     except Exception as e:
         print(f'Ошибка в цикле: {e}')
@@ -792,3 +813,10 @@ if __name__ == '__main__':  # Точка входа при запуске это
     print(f'{datetime.now().strftime("%Y-%m-%d %H:%M:%S")} Выход')
     fp_provider.close_channel()  # Закрываем канал перед выходом
     ap_provider.close_web_socket()  # Перед выходом закрываем соединение с WebSocket
+
+    # print(f'ВРЕМЕННАЯ ЗАГЛУШКА !!!')
+    # # ВРЕМЕННАЯ ЗАГЛУШКА !!!
+    # # Завершаем работу программы
+    # running = False
+    # # Вызываем сигнал для корректного завершения
+    # signal.raise_signal(signal.SIGTERM)
