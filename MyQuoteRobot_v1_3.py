@@ -14,6 +14,7 @@ from scipy.stats import norm
 import signal
 import sys
 
+from AlorPy import AlorPy  # Работа с Alor OpenAPI V2
 from FinamPy import FinamPy
 from FinamPy.grpc.accounts.accounts_service_pb2 import GetAccountRequest, GetAccountResponse  # Счет
 from FinamPy.grpc.assets.assets_service_pb2 import GetAssetRequest, GetAssetResponse  # Информация по тикеру
@@ -23,7 +24,7 @@ from FinamPy.grpc.marketdata.marketdata_service_pb2 import QuoteRequest, QuoteRe
 from FinLabPy.Config import brokers, default_broker  # Все брокеры и брокер по умолчанию
 
 from QUIK_Stream_v1_7 import calculate_open_data_open_price_open_iv
-from AlorPy import AlorPy  # Работа с Alor OpenAPI V2
+
 from google.type.decimal_pb2 import Decimal
 
 # Глобальная переменная для управления циклом
@@ -31,6 +32,7 @@ running = True
 CALL = 'C'
 PUT = 'P'
 r = 0 # Безрисковая ставка
+# Список GUID для отписки
 guids = []
 
 # Обработчик сигнала
@@ -352,8 +354,6 @@ if __name__ == '__main__':  # Точка входа при запуске это
     ap_provider = AlorPy()  # Подключаемся ко всем торговым счетам
     # Подписываемся на события
     ap_provider.on_new_quotes.subscribe(_on_new_quotes)
-    # Список GUID для отписки
-
 
     # Исходные данные
     print(f'Исходные данные:')
@@ -479,6 +479,7 @@ if __name__ == '__main__':  # Точка входа при запуске это
                 continue
             S = float(new_quotes[base_asset_ticker]['last_price'])
             # print(f'S: {S}')
+            theor_iv_buy = opions_data[dataname]['volatility']
             # sigma = opions_data[dataname]['volatility'] / 100
             sigma = profit_iv_buy / 100
             # print(f'Sigma: {sigma}')
@@ -576,6 +577,7 @@ if __name__ == '__main__':  # Точка входа при запуске это
                 continue
             S = float(new_quotes[base_asset_ticker]['last_price'])
             # print(f'S: {S}')
+            theor_iv_sell = opions_data[dataname]['volatility']
             # sigma = opions_data[dataname]['volatility'] / 100 # Для проверки теорцены
             sigma = profit_iv_sell / 100
             # print(f'Sigma: {sigma}')
@@ -610,7 +612,7 @@ if __name__ == '__main__':  # Точка входа при запуске это
                 continue
             ask_sell = int(round(new_quotes[ticker]['ask'], decimals))
             bid_sell = int(round(new_quotes[ticker]['bid'], decimals))
-            print(f'Котироки ask_sell: {ask_sell} bid_sell: {bid_sell}')
+            print(f'Котировки ask_sell: {ask_sell} bid_sell: {bid_sell}')
             # Вычисляем волатильность ask_sell
             # print(f'{S}, {K}, {T}, {ask_sell}, {r}, {sigma} {option_type}')
             if option_type == 'C':
@@ -634,26 +636,56 @@ if __name__ == '__main__':  # Точка входа при запуске это
             print(f'Real profit buy: {Real_profit_buy}')
 
             print(f'\n')
-            # Расчёт целевой цены продажи/купли target_price (сначала продаем)
+            print(f'Расчёт целевой цены купли/продажи target_price (Вариант 1 "Котируем покупку")')
+            # Сначала котируем покупку опциона dataname_buy по цене target_price_buy,
+            # При свершении покупки сразу продаём опцион dataname_sell по цене target_price_sell
+            # Для случая, когда опцион на продажу dataname_sell (купленный ранее) имеет профит больше, чем опцион на покупку dataname_buy
             target_iv_sell = bid_iv_sell # Целевая IV для мгновенной продажи
             print(f'Целевая IV для мгновенной продажи: {round(target_iv_sell, 2)}')
-            target_price_sell = bid_sell # Целевая цена для мгновенной продажи
-            print(f'Целевая цена для мгновенной продажи: {round(target_price_sell, 2)}')
-            target_profit_sell = bid_iv_sell - open_iv_sell # Целевая прибыль для мгновенной продажи
+            target_price_sell = bid_sell # Целевая ЦЕНА для мгновенной продажи
+            print(f'Целевая ЦЕНА для мгновенной продажи: {round(target_price_sell, 2)}')
+            target_profit_sell = open_iv_sell - bid_iv_sell # Целевая прибыль для мгновенной продажи
             print(f'Целевая прибыль для мгновенной продажи: {round(target_profit_sell, 2)}')
-            target_profit_buy = open_iv_buy - ask_iv_buy # Целевая прибыль для мгновенной покупки
-            print(f'Целевая прибыль для мгновенной покупки: {round(target_profit_buy, 2)}')
-            target_profit_buy = open_iv_buy - ask_iv_buy # Целевая прибыль для мгновенной покупки
-            print(f'Целевая прибыль для мгновенной покупки: {round(target_profit_buy, 2)}')
-            target_iv_buy = open_iv_buy + (expected_profit - target_profit_sell)
-            print(f'Целевая IV для мгновенной покупки: {round(target_iv_buy, 2)}')
-            S, K, T, opt_type = get_option_data_for_calc_price(dataname_buy)
-            target_price_buy_ = option_price(S, target_iv_buy / 100, K, T, r, opt_type=opt_type)
+            target_profit_buy = open_iv_buy - ask_iv_buy # Целевая прибыль для котирования покупки
+            print(f'Целевая прибыль для котирования покупки: {round(target_profit_buy, 2)}')
+            target_iv_buy = open_iv_buy + (expected_profit - target_profit_sell) # IV для котирования покупки
+            print(f'Целевая IV для котирования покупки: {round(target_iv_buy, 2)}')
+            S, K, T, opt_type = get_option_data_for_calc_price(dataname_buy) # Получаем данные опциона dataname_buy
+            target_price_buy_ = option_price(S, target_iv_buy / 100, K, T, r, opt_type=opt_type) # Целевая цена для котирования покупки
             target_price_buy = int(round((target_price_buy_ // step_price) * step_price, decimals))
-            print(f'Целевая цена для мгновенной продажи: {target_price_sell}')
-            print(f'Целевая цена для котирования покупки: {target_price_buy}')
+            print(f'Целевая цена для котирования покупки {dataname_buy}: {target_price_buy}') # Сначала котируем покупку
+            print(f'Целевая цена для мгновенной продажи {dataname_sell}: {target_price_sell}') # Если покупка свершилась мгновенно продаем
 
-            # Расчёт целевой цены купли/продажи target_price
+            print(f'\n')
+            print(f'Расчёт целевой цены продажи/купли target_price (Вариант 2 "Котируем продажу")')
+            # Сначала котируем продажу опциона dataname_sell по цене target_price_sell
+            # При свершении продажи сразу покупаем опцион dataname_buy по цене target_price_buy
+            # Для случая, когда опцион на покупку dataname_buy (т.е. проданый ранее) имеет профит больше, чем опцион на продажу dataname_sell (купленный ранее)
+            target_iv_buy = ask_iv_buy # Целевая IV для мгновенной покупки
+            print(f'Целевая IV для мгновенной покупки: {round(target_iv_buy, 2)}')
+            target_price_buy = ask_buy # Целевая цена для мгновенной покупки
+            print(f'Целевая ЦЕНА для мгновенной покупки: {round(target_price_buy, 2)}')
+            target_profit_sell = open_iv_buy - ask_iv_buy # Целевая прибыль для мгновенной покупки
+            print(f'Целевая прибыль для мгновенной покупки: {round(target_profit_sell, 2)}')
+            target_profit_buy = bid_iv_sell - open_iv_sell # Целевая прибыль для котирования продажи
+            print(f'Целевая прибыль для котирования продажи: {round(target_profit_buy, 2)}')
+            target_iv_sell = open_iv_sell + (expected_profit - target_profit_buy) # Целевая IV для котирования продажи
+            print(f'Целевая IV для котирования продажи: {round(target_iv_sell, 2)}')
+            S, K, T, opt_type = get_option_data_for_calc_price(dataname_sell)  # Получаем данные опциона dataname_sell
+            target_price_sell_ = option_price(S, target_iv_sell / 100, K, T, r, opt_type=opt_type)  # Целевая цена для котирования продажи
+            target_price_sell = int(round((target_price_sell_ // step_price) * step_price, decimals))
+            print(f'Целевая цена для котирования продажи {dataname_sell}: {target_price_sell}')
+            print(f'Целевая цена для мгновенной покупки {dataname_buy}: {target_price_buy}')
+
+            print(f'\n')
+            theor_profit_buy = open_iv_buy - theor_iv_buy
+            print(f'Теоретическая прибыль для {dataname_buy}: {round(theor_profit_buy, 2)}')
+            theor_profit_sell = theor_iv_sell - open_iv_sell
+            print(f'Теоретическая прибыль для {dataname_sell}: {round(theor_profit_sell, 2)}')
+            if theor_profit_sell > theor_profit_buy:
+                print(f'Вариант 1 "Котируем покупку"')
+            else:
+                print(f'Вариант 2 "Котируем продажу"')
 
 
             print(f'\n')
