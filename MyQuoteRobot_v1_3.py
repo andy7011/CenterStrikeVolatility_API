@@ -108,46 +108,62 @@ def _on_trade(trade):
 # Выставление лимитной заявки на продажу инструмента symbol_sell в количестве quantity_sell
 # по цене limit_price_sell. Возвращаем номер заявки order_id
 def get_order_sell(account_id, symbol_sell, quantity_sell, limit_price_sell):
-    order_state = fp_provider.call_function(
-        fp_provider.orders_stub.PlaceOrder,
-        Order(
-            account_id=account_id,
-            symbol=symbol_sell,
-            quantity=Decimal(value=str(quantity_sell)),
-            side=side.SIDE_SELL,
-            type=OrderType.ORDER_TYPE_LIMIT,
-            limit_price=Decimal(value=str(limit_price_sell)),
-            client_order_id=str(int(datetime.now().timestamp()))
+    try:
+        order_state = fp_provider.call_function(
+            fp_provider.orders_stub.PlaceOrder,
+            Order(
+                account_id=account_id,
+                symbol=symbol_sell,
+                quantity=Decimal(value=str(quantity_sell)),
+                side=side.SIDE_SELL,
+                type=OrderType.ORDER_TYPE_LIMIT,
+                limit_price=Decimal(value=str(limit_price_sell)),
+                client_order_id=str(int(datetime.now().timestamp()))
+            )
         )
-    )
-    logger.debug(order_state)
-    order_id = order_state.order_id  # Номер заявки
-    logger.info(f'Номер заявки: {order_id}')
-    logger.info(f'Статус заявки: {order_state.status}')
-    status = order_state.status
-    return order_id, status
+        if order_state is None:
+            logger.error("Не удалось разместить ордер: order_state is None")
+            return None, "ERROR"
+        logger.debug(order_state)
+        order_id = order_state.order_id
+        logger.info(f'Номер заявки: {order_id}')
+        logger.info(f'Статус заявки: {order_state.status}')
+        status = order_state.status
+        return order_id, status
+    except Exception as e:
+        logger.error(f"Ошибка размещения ордера: {e}")
+        return None, "ERROR"
+
 
 # Выставление лимитной заявки на покупку инструмента symbol_buy в количестве quantity_buy
 # по цене limit_price_buy. Возвращаем номер заявки order_id
 def get_order_buy(account_id, symbol_buy, quantity_buy, limit_price_buy):
-    order_state = fp_provider.call_function(
-        fp_provider.orders_stub.PlaceOrder,
-        Order(
-            account_id=account_id,
-            symbol=symbol_buy,
-            quantity=Decimal(value=str(quantity_buy)),
-            side=side.SIDE_BUY,
-            type=OrderType.ORDER_TYPE_LIMIT,
-            limit_price=Decimal(value=str(limit_price_buy)),
-            client_order_id=str(int(datetime.now().timestamp()))
+    try:
+        order_state = fp_provider.call_function(
+            fp_provider.orders_stub.PlaceOrder,
+            Order(
+                account_id=account_id,
+                symbol=symbol_buy,
+                quantity=Decimal(value=str(quantity_buy)),
+                side=side.SIDE_BUY,
+                type=OrderType.ORDER_TYPE_LIMIT,
+                limit_price=Decimal(value=str(limit_price_buy)),
+                client_order_id=str(int(datetime.now().timestamp()))
+            )
         )
-    )
-    logger.debug(order_state)
-    order_id_buy = order_state.order_id  # Номер заявки
-    status_buy = order_state.status
-    logger.info(f'Номер заявки: {order_id_buy}')
-    logger.info(f'Статус заявки: {order_state.status}')
-    return order_id_buy, status_buy
+        if order_state is None:
+            logger.error("Не удалось разместить ордер: order_state is None")
+            return None, "ERROR"
+        logger.debug(order_state)
+        order_id_buy = order_state.order_id  # Номер заявки
+        status_buy = order_state.status
+        logger.info(f'Номер заявки: {order_id_buy}')
+        logger.info(f'Статус заявки: {order_state.status}')
+        return order_id_buy, status_buy
+    except Exception as e:
+        logger.error(f"Ошибка размещения ордера: {e}")
+        return None, "ERROR"
+
 
 # Удаление существующей лимитной заявки
 def get_cancel_order(account_id, order_id):
@@ -648,8 +664,13 @@ if __name__ == '__main__':  # Точка входа при запуске это
                     limit_price_buy = target_price_buy
                 else:
                     limit_price_buy = bid_buy + step_price
+                if target_price_buy == 0:
+                    limit_price_buy = step_price
                 # Лимитная цена на мгновенную продажу опциона dataname_sell
-                limit_price_sell = target_price_sell
+                if target_price_sell == 0:
+                    limit_price_sell = step_price
+                else:
+                    limit_price_sell = target_price_sell
 
                 print(f'Выставляем лимитную заявку на покупку опциона {dataname_buy} по цене {limit_price_buy}')
                 # Вызов функции выставления заявки на покупку
@@ -691,7 +712,7 @@ if __name__ == '__main__':  # Точка входа при запуске это
                         print(f'Завершение цикла N {Lot_count_step}')
                         if Lot_count_step == Lot_count:
                             running = False
-                            print(f'Завершение работы котировщика!')
+                            print(f'Заданное количество лотов {Lot_count} исполнено. Завершение работы котировщика!')
                     else:
                         print(f'Заявка на продажу не исполнена: order_id - {order_id}')
                         # # Снятие заявки на продажу
@@ -730,8 +751,13 @@ if __name__ == '__main__':  # Точка входа при запуске это
                     limit_price_sell = target_price_sell
                 else:
                     limit_price_sell = ask_sell - step_price
+                if target_price_sell == 0:
+                    limit_price_sell = step_price
                 # Лимитная цена на мгновенную покупку опциона dataname_buy
-                limit_price_buy = target_price_buy
+                if target_price_buy == 0:
+                    limit_price_buy = step_price
+                else:
+                    limit_price_buy = target_price_buy
 
                 print(f'Выставляем лимитную заявку на продажу по цене {limit_price_sell}: {dataname_sell}. Ждём sleep_time.')
                 # Вызов функции выставления заявки на продажу
@@ -772,7 +798,7 @@ if __name__ == '__main__':  # Точка входа при запуске это
                         print(f'Завершение цикла N {Lot_count_step}')
                         if Lot_count_step == Lot_count:
                             running = False
-                            print(f'Завершение работы котировщика!')
+                            print(f'Заданное количество лотов {Lot_count} исполнено. Завершение работы котировщика!')
                     else:
                         print(f'Заявка на покупку не исполнена: order_id_buy - {order_id_buy}')
                         # # Снятие заявки на покупку
