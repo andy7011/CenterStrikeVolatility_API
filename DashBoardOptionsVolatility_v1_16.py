@@ -434,7 +434,7 @@ tab5_content = [  # Таблица моих сделок
                 },
             ]
         ),
-        # style={'margin-left': '300px'}  # Сдвиг вправо
+        style={'margin-left': '300px'}  # Сдвиг вправо
     )
 ]
 
