@@ -1801,8 +1801,8 @@ def updateGauge(n, value):
 def updateMyQuoteRobot(n, value):
     # pass
     df_pos = pd.read_csv(temp_obj.substitute(name_file='QUIK_MyPos.csv'), sep=';')
-    # Фильтрация строк по базовому активу
-    df_pos = df_pos[df_pos['option_base'] == value]
+    # # Фильтрация строк по базовому активу
+    # df_pos = df_pos[df_pos['option_base'] == value]
 
     # Замена нулевых значений 'P/L last' на значения 'P/L theor'
     df_pos['P/L last'] = df_pos['P/L last'].mask(df_pos['P/L last'] == 0, df_pos['P/L theor'])
@@ -1853,12 +1853,15 @@ def updateMyQuoteRobot(n, value):
     total_vega = df_pos['Vega'].sum() if 'Vega' in df_pos.columns else 0
     total_true_vega = df_pos['TrueVega'].sum() if 'TrueVega' in df_pos.columns else 0
 
-    # Сортировать датафрейм df_pos по столбцу strike
+    # Переименовываем столбцы
+    df_pos = df_pos.rename(columns={'option_type': 'type', 'option_base': 'base'})
+
+    # Сортировка по strike
     df_pos = df_pos.sort_values(by='strike')
-    # Удаляем столбец option_base
-    df_pos = df_pos.drop(columns=['option_base'], errors='ignore')
+
     # Добавляем столбец с порядковым номером строки, начиная с 1
     df_pos['num'] = range(1, len(df_pos) + 1)
+
     # Переставляем столбец 'num' в начало
     cols = ['num'] + [col for col in df_pos.columns if col != 'num']
     df_pos = df_pos[cols]
