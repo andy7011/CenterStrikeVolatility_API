@@ -158,7 +158,7 @@ def get_order_buy(account_id, symbol_buy, quantity_buy, limit_price_buy):
         order_id_buy = order_state.order_id  # Номер заявки
         status_buy = order_state.status
         logger.info(f'Номер заявки: {order_id_buy}')
-        logger.info(f'Статус заявки: {order_state.status}')
+        logger.info(f'Статус заявки: {status_buy}')
         return order_id_buy, status_buy
     except Exception as e:
         logger.error(f"Ошибка размещения ордера: {e}")
