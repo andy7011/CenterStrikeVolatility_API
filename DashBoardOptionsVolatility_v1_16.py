@@ -154,6 +154,14 @@ with open(temp_obj.substitute(name_file='QUIK_MyPos.csv'), 'r') as file:
     df_table = pd.read_csv(file, sep=';')
     df_table_buy = df_table[(df_table.option_base == first_key) & (df_table.net_pos > 0) & (df_table.OpenIV > 0)]
     df_table_sell = df_table[(df_table.option_base == first_key) & (df_table.net_pos < 0) & (df_table.OpenIV > 0)]
+
+    # Данные для котировщика:
+    df_sell_options = df_table[(df_table.option_base == first_key) & (df_table.net_pos > 0)]
+    dropdown_sell_options = [{'label': ticker, 'value': ticker} for ticker in df_sell_options['ticker'].unique()]
+
+    df_buy_options = df_table[(df_table.option_base == first_key) & (df_table.net_pos < 0)]
+    dropdown_buy_options = [{'label': ticker, 'value': ticker} for ticker in df_buy_options['ticker'].unique()]
+
     MyPos_ticker_list = []
     for i in range(len(df_table)):
         MyPos_ticker_list.append(df_table['ticker'][i])
@@ -295,12 +303,12 @@ tab4_content = [ # MyPosTable
     html.Div([
         # Левая колонка
         html.Div([
-            html.Label("Закрыть позицию", style={'color': 'white', 'textAlign': 'center', 'display': 'block'}),
+            html.Label("Котировать закрытие позиций", style={'color': 'white', 'textAlign': 'center', 'display': 'block'}),
             html.Label("SELL", style={'color': 'white', 'textAlign': 'center', 'display': 'block'}) ,
             dcc.Dropdown(
                 id='dropdown_sell',
-                options=[{'label': 'Option sell', 'value': '1'}, {'label': 'Option 2', 'value': '2'}],
-                value='1',
+                options=dropdown_sell_options,
+                value=dropdown_sell_options[0]['value'] if dropdown_sell_options else None,
                 style={'backgroundColor': '#2d2d2d',
                     'color': 'white',
                     'border': '1px solid #444',
@@ -310,29 +318,41 @@ tab4_content = [ # MyPosTable
             html.Label("BUY", style={'color': 'white', 'textAlign': 'center', 'display': 'block'}),
             dcc.Dropdown(
                 id='dropdown_buy',
-                options=[{'label': 'Option buy', 'value': 'A'}, {'label': 'Option B', 'value': 'B'}],
-                value='A',
+                options=dropdown_buy_options,
+                value=dropdown_buy_options[0]['value'] if dropdown_sell_options else None,
                 style={'backgroundColor': '#2d2d2d',
                     'color': 'white',
                     'border': '1px solid #444',
                     'borderRadius': '4px', 'textAlign': 'center'},
                 className='dark-dropdown'
             ),
-            html.Label("Expected profit", style={'color': 'white', 'textAlign': 'center', 'display': 'block'}),
+            html.Label("Expected profit, %", style={'color': 'white', 'textAlign': 'center', 'display': 'block'}),
             dcc.Input(
                 id='input1',
                 type='number',
                 step=0.1,
-                value=0.0,
-                style={'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'textAlign': 'center'}
+                value=2.0,
+                style={
+                    'backgroundColor': 'rgb(30, 30, 30)',
+                    'color': 'white',
+                    'textAlign': 'center',
+                    'width': '55%',  # Добавляем ширину для лучшего центрирования
+                    'padding': '5px'  # Добавляем отступы для лучшего вида
+                }
             ),
             html.Label("Lot count", style={'color': 'white', 'textAlign': 'center', 'display': 'block'}),
             dcc.Input(
                 id='input2',
                 type='number',
                 step=1,
-                value=0,
-                style={'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'textAlign': 'center'}
+                value=1,
+                style={
+                    'backgroundColor': 'rgb(30, 30, 30)',
+                    'color': 'white',
+                    'textAlign': 'center',
+                    'width': '55%',  # Добавляем ширину для лучшего центрирования
+                    'padding': '5px'  # Добавляем отступы для лучшего вида
+                }
             ),
             html.Button("SAVE", id="button1", style={'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block', 'margin': '0 auto'}),
             html.Button("START", id="button2", style={'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block', 'margin': '0 auto'}),
@@ -490,16 +510,28 @@ tab8_content = [ # MyQuoteRobot котировщик
                 id='input3',
                 type='number',
                 step=0.1,
-                value=0.0,
-                style={'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'textAlign': 'center'}
+                value=2.0,
+                style={
+                    'backgroundColor': 'rgb(30, 30, 30)',
+                    'color': 'white',
+                    'textAlign': 'center',
+                    'width': '55%',  # Добавляем ширину для лучшего центрирования
+                    'padding': '5px'  # Добавляем отступы для лучшего вида
+                }
             ),
             html.Label("Lot count", style={'color': 'white', 'textAlign': 'center', 'display': 'block'}),
             dcc.Input(
                 id='input4',
                 type='number',
                 step=1,
-                value=0,
-                style={'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'textAlign': 'center'}
+                value=1,
+                style={
+                    'backgroundColor': 'rgb(30, 30, 30)',
+                    'color': 'white',
+                    'textAlign': 'center',
+                    'width': '55%',  # Добавляем ширину для лучшего центрирования
+                    'padding': '5px'  # Добавляем отступы для лучшего вида
+                }
             ),
             html.Button("SAVE", id="button4",
                         style={'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block',
@@ -1642,9 +1674,14 @@ def change_stop_color(n_clicks):
         return {'backgroundColor': '#8B0000', 'color': 'white', 'display': 'block', 'margin': '0 auto'}  # Темно-красный
     return {'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block', 'margin': '0 auto'}
 
+
 # Callback to update the table "MyPos Table"
 @app.callback(
-    Output('table', 'data', allow_duplicate=True),
+    [Output('table', 'data', allow_duplicate=True),
+     Output('dropdown_sell', 'options'),
+     Output('dropdown_sell', 'value'),
+     Output('dropdown_buy', 'options'),
+     Output('dropdown_buy', 'value')],
     [Input('interval-component', 'n_intervals'),
      Input('dropdown-selection', 'value')],
     prevent_initial_call=True)
@@ -1725,7 +1762,18 @@ def updateTable(n, value):
     # Добавление строки итогов к данным
     df_pos_with_total = pd.concat([df_pos, pd.DataFrame([total_row])], ignore_index=True)
 
-    return df_pos_with_total.to_dict('records')
+    # Обновление dropdown options и values
+    df_sell_options = df_pos[(df_pos.net_pos > 0)]
+    dropdown_sell_options = [{'label': ticker, 'value': ticker} for ticker in df_sell_options['ticker'].unique()]
+
+    df_buy_options = df_pos[(df_pos.net_pos < 0)]
+    dropdown_buy_options = [{'label': ticker, 'value': ticker} for ticker in df_buy_options['ticker'].unique()]
+
+    return (df_pos_with_total.to_dict('records'),
+            dropdown_sell_options,
+            dropdown_sell_options[0]['value'] if dropdown_sell_options else None,
+            dropdown_buy_options,
+            dropdown_buy_options[0]['value'] if dropdown_buy_options else None)
 
 
 # Callback to update the table "MyTrades Table"
