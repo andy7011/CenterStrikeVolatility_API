@@ -518,7 +518,7 @@ tab8_content = [ # MyQuoteRobot котировщик
             html.Div(id='intermediate-value3', style={'display': 'none'}),
             html.Div(
                 dash_table.DataTable(
-                    id='table1',
+                    id='my-quote-robot',
                     data=df_table.to_dict('records'),
                     page_size=20,
                     style_table={'max-width': '50px'},
@@ -1794,11 +1794,12 @@ def updateGauge(n, value):
 
 ## MyQuoteRobot ##
 @app.callback(
-    Output('MyQuoteRobot', 'data', allow_duplicate=True),
+    Output('my-quote-robot', 'data', allow_duplicate=True),
     [Input('interval-component', 'n_intervals'),
      Input('dropdown-selection', 'value')],
     prevent_initial_call=True)
 def updateMyQuoteRobot(n, value):
+    # pass
     df_pos = pd.read_csv(temp_obj.substitute(name_file='QUIK_MyPos.csv'), sep=';')
     # Фильтрация строк по базовому активу
     df_pos = df_pos[df_pos['option_base'] == value]
@@ -1873,9 +1874,9 @@ def updateMyQuoteRobot(n, value):
     total_row['TrueVega'] = round(total_true_vega, 2)
 
     # Добавление строки итогов к данным
-    df_pos_with_total_robo = pd.concat([df_pos, pd.DataFrame([total_row])], ignore_index=True)
+    df_pos_with_total = pd.concat([df_pos, pd.DataFrame([total_row])], ignore_index=True)
 
-    return df_pos_with_total_robo.to_dict('records')
+    return df_pos_with_total.to_dict('records')
 
 if __name__ == '__main__':
     app.run(debug=False)  # Run the Dash app
