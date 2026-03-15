@@ -289,6 +289,8 @@ tab3_content = [  # IV ATM history
                    style=dict(display='flex', justifyContent='right'),
                    id='my-radio-buttons-final'),
 ]
+
+# MyPosTable
 tab4_content = [ # MyPosTable
     html.Div([
         # Левая колонка
@@ -380,6 +382,7 @@ tab4_content = [ # MyPosTable
     ])
 ]
 
+# Таблица моих сделок
 tab5_content = [  # Таблица моих сделок
     html.Div(id='intermediate-value1', style={'display': 'none'}),
     html.Div(
@@ -415,6 +418,7 @@ tab5_content = [  # Таблица моих сделок
     )
 ]
 
+# Таблица моих ордеров
 tab6_content = [  # Таблица моих ордеров
     html.Div(id='intermediate-value2', style={'display': 'none'}),
     html.Div(
@@ -450,40 +454,105 @@ tab6_content = [  # Таблица моих ордеров
     )
 ]
 
+# MyEquityHistory график
 tab7_content = [dcc.Graph(id='MyEquityHistory', style={'margin-top': 10})]
 
+# MyQuoteRobot котировщик
 tab8_content = [ # MyQuoteRobot котировщик
-    dbc.Row([
-        dbc.Col([
+    html.Div([
+        # Левая колонка
+        html.Div([
+            html.Label("Котировать пару", style={'color': 'white', 'textAlign': 'center', 'display': 'block'}),
+            html.Label("SELL", style={'color': 'white', 'textAlign': 'center', 'display': 'block'}),
             dcc.Dropdown(
-                id='my-dropdown-1',
-                options=[
-                    {'label': 'Option 1', 'value': 'opt1'},
-                    {'label': 'Option 2', 'value': 'opt2'}
-                ],
-                value='opt1',
-                style={'margin-top': 10}
+                id='dropdown_sell_robot',
+                options=[{'label': 'Option sell', 'value': '1'}, {'label': 'Option 2', 'value': '2'}],
+                value='1',
+                style={'backgroundColor': '#2d2d2d',
+                       'color': 'white',
+                       'border': '1px solid #444',
+                       'borderRadius': '4px', 'textAlign': 'center'},
+                className='dark-dropdown'
             ),
+            html.Label("BUY", style={'color': 'white', 'textAlign': 'center', 'display': 'block'}),
             dcc.Dropdown(
-                id='my-dropdown-2',
-                options=[
-                    {'label': 'Option A', 'value': 'optA'},
-                    {'label': 'Option B', 'value': 'optB'}
-                ],
-                value='optA',
-                style={'margin-top': 10}
+                id='dropdown_buy_robot',
+                options=[{'label': 'Option buy', 'value': 'A'}, {'label': 'Option B', 'value': 'B'}],
+                value='A',
+                style={'backgroundColor': '#2d2d2d',
+                       'color': 'white',
+                       'border': '1px solid #444',
+                       'borderRadius': '4px', 'textAlign': 'center'},
+                className='dark-dropdown'
             ),
+            html.Label("Expected profit", style={'color': 'white', 'textAlign': 'center', 'display': 'block'}),
             dcc.Input(
-                id='my-input',
-                type='text',
-                placeholder='Enter text here...',
-                className='form-control'
+                id='input3',
+                type='number',
+                step=0.1,
+                value=0.0,
+                style={'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'textAlign': 'center'}
+            ),
+            html.Label("Lot count", style={'color': 'white', 'textAlign': 'center', 'display': 'block'}),
+            dcc.Input(
+                id='input4',
+                type='number',
+                step=1,
+                value=0,
+                style={'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'textAlign': 'center'}
+            ),
+            html.Button("SAVE", id="button4",
+                        style={'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block',
+                               'margin': '0 auto'}),
+            html.Button("START", id="button5",
+                        style={'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block',
+                               'margin': '0 auto'}),
+            html.Button("STOP", id="button6",
+                        style={'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block',
+                               'margin': '0 auto'})
+        ], style={'width': '12%', 'display': 'inline-block', 'verticalAlign': 'top', 'marginLeft': '1%',
+                  'backgroundColor': 'rgb(30, 30, 30)', 'textAlign': 'center'}),
+
+        # Правая колонка
+        html.Div([
+            html.Div(id='intermediate-value3', style={'display': 'none'}),
+            html.Div(
+                dash_table.DataTable(
+                    id='table1',
+                    data=df_table.to_dict('records'),
+                    page_size=20,
+                    style_table={'max-width': '50px'},
+                    style_header={
+                        'fontWeight': 'bold',
+                        'backgroundColor': 'rgb(50, 50, 50)',
+                        'color': 'white',
+                        'textAlign': 'center'
+                    },
+                    style_data={
+                        'backgroundColor': 'rgb(30, 30, 30)',
+                        'color': 'white'
+                    },
+                    style_data_conditional=[
+                        {
+                            'if': {'filter_query': '{ticker} = "Total"'},
+                            'fontWeight': 'bold',
+                            'backgroundColor': 'rgb(60, 60, 60)'
+                        },
+                        {'if': {'filter_query': '{P/L theor} > 1', 'column_id': 'P/L theor'},
+                         'backgroundColor': '#3D9970', 'color': 'white'},
+                        {'if': {'filter_query': '{P/L last} > 1', 'column_id': 'P/L last'},
+                         'backgroundColor': '#3D9970', 'color': 'white'},
+                        {'if': {'filter_query': '{P/L market} > 1', 'column_id': 'P/L market'},
+                         'backgroundColor': '#3D9970', 'color': 'white'},
+                        {'if': {'column_id': 'time_last'}, 'color': '#DAA520'},
+                        {'if': {'column_id': 'bid'}, 'color': '#3D9970'},
+                        {'if': {'column_id': 'last'}, 'color': '#DAA520'},
+                        {'if': {'column_id': 'ask'}, 'color': '#FF0000'},
+                    ]
+                ),
+                style={'margin': '20px'}
             )
-        ], width=6),
-    ]),
-    dcc.Tabs(id="tabs", value='tab-1', children=[
-        dcc.Tab(label='Tab 1', value='tab-1'),
-        dcc.Tab(label='Tab 2', value='tab-2'),
+        ], style={'width': '85%', 'display': 'inline-block', 'verticalAlign': 'top'})
     ])
 ]
 
@@ -495,16 +564,17 @@ app = dash.Dash(__name__, external_stylesheets=[dbc.themes.DARKLY])
 go.Figure(layout=go.Layout(template="plotly_dark"))
 
 app.layout = html.Div(children=[
-
+    # График улыбки волатильности
     html.Div(children=[# График улыбки волатильности
         html.Div(children=[
             # График улыбки волатильности
             dcc.Graph(id='plot_smile'),
         ], style={'width': '87%', 'display': 'inline-block'}),
-
+        # Текущее время обновления данных
         html.Div(children=[# Текущее время обновления данных
             # Текущее время обновления данных
             html.H6(id='last_update_time'),
+            # Селектор выбора базового актива
             dcc.Dropdown(# Селектор выбора базового актива
                 df._base_asset_ticker.unique(),
                 value=first_key,
@@ -518,6 +588,7 @@ app.layout = html.Div(children=[
                 className='dark-dropdown'
             )
             ,
+            # Спидометр TrueVega
             daq.Gauge( # Спидометр TrueVega # https://stackoverflow.com/questions/69275527/python-dash-gauge-how-can-i-use-strings-as-values-instead-of-numbers
                         id="graph-gauge",
                       units="TrueVega",
@@ -549,8 +620,8 @@ app.layout = html.Div(children=[
 
     ], style={'display': 'flex', 'flexDirection': 'row'}),
 
+    # Табы с данными
     html.Div(children=[
-
         dbc.Tabs([
             dbc.Tab(tab1_content, label='MyPos history'),
             dbc.Tab(tab2_content, label='Наклон улыбки'),
@@ -872,7 +943,7 @@ def update_output_smile(value, n):
         raise PreventUpdate
 
 
-# обновление данных графика истории волатильности на центральном страйке
+# обновление данных графика истории волатильности на центральном страйке IV ATM history
 @app.callback(Output('plot_history', 'figure', allow_duplicate=True),
               [Input('dropdown-selection', 'value'),
                Input('my_slider', 'value'),
@@ -1014,7 +1085,7 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
     return fig
 
 
-# Обновление данных графика истории моей позиции
+# Обновление данных графика истории моей позиции MyPos history
 @app.callback(Output('MyPosTiltHistory', 'figure', allow_duplicate=True),
               [Input('dropdown-selection', 'value'),
                Input('my_slider', 'value'),
@@ -1376,7 +1447,7 @@ def update_output_history_naklon(dropdown_value, slider_value, n):
     return fig
 
 
-## EQUITY HISTORY##
+## MyEquity EQUITY HISTORY##
 @app.callback(Output('MyEquityHistory', 'figure'),
               [Input('dropdown-selection', 'value'),
                Input('my_slider', 'value'),
@@ -1728,7 +1799,83 @@ def updateGauge(n, value):
      Input('dropdown-selection', 'value')],
     prevent_initial_call=True)
 def updateMyQuoteRobot(n, value):
-    pass
+    df_pos = pd.read_csv(temp_obj.substitute(name_file='QUIK_MyPos.csv'), sep=';')
+    # Фильтрация строк по базовому активу
+    df_pos = df_pos[df_pos['option_base'] == value]
+
+    # Замена нулевых значений 'P/L last' на значения 'P/L theor'
+    df_pos['P/L last'] = df_pos['P/L last'].mask(df_pos['P/L last'] == 0, df_pos['P/L theor'])
+
+    # Вычисление итогов по колонке net_pos
+    total_net_pos = df_pos['net_pos'].sum()
+    total_theor = df_pos['theor'].sum()
+    # total_theor = (df_pos['theor'] * df_pos['net_pos']).sum()
+    total_last = df_pos['last'].sum()
+
+    # Theor
+    weights_theor = df_pos['theor'] * abs(df_pos['net_pos'])
+    total_weight_theor = weights_theor.sum()
+
+    # Last
+    weights_last = df_pos['last'] * abs(df_pos['net_pos'])
+    total_weight_last = weights_last.sum()
+
+    # Market
+    # Раздельное вычисление total_weight_bid и total_weight_ask для weighted_pl_market
+    # Для положительных значений net_pos (длинные позиции)
+    mask_long = df_pos['net_pos'] > 0
+    weights_bid = df_pos.loc[mask_long, 'bid'] * df_pos.loc[mask_long, 'net_pos']
+    total_weight_bid = weights_bid.sum()
+
+    # Для отрицательных значений net_pos (короткие позиции)
+    mask_short = df_pos['net_pos'] < 0
+    weights_ask = df_pos.loc[mask_short, 'ask'] * abs(df_pos.loc[mask_short, 'net_pos'])
+    total_weight_ask = weights_ask.sum()
+
+    # Расчет weighted_pl_market с использованием тех же масок
+    weighted_pl_market_pos = (df_pos.loc[mask_long, 'P/L market'] * df_pos.loc[mask_long, 'bid'] * df_pos.loc[
+        mask_long, 'net_pos']).sum()
+    weighted_pl_market_neg = (df_pos.loc[mask_short, 'P/L market'] * df_pos.loc[mask_short, 'ask'] * abs(
+        df_pos.loc[mask_short, 'net_pos'])).sum()
+
+    # Общий взвешенный P/L market
+    total_weight = total_weight_bid + total_weight_ask
+    weighted_pl_market = (weighted_pl_market_pos + weighted_pl_market_neg) / total_weight if total_weight != 0 else 0
+
+    # Проверка на существование колонок перед вычислением
+    weighted_pl_theor = (df_pos[
+                             'P/L theor'] * weights_theor).sum() / total_weight_theor if 'P/L theor' in df_pos.columns and total_weight_theor != 0 else 0
+    weighted_pl_last = (df_pos[
+                            'P/L last'] * weights_last).sum() / total_weight_last if 'P/L last' in df_pos.columns and total_weight_last != 0 else 0
+
+    # Вычисление сумм по Vega и TrueVega
+    total_vega = df_pos['Vega'].sum() if 'Vega' in df_pos.columns else 0
+    total_true_vega = df_pos['TrueVega'].sum() if 'TrueVega' in df_pos.columns else 0
+
+    # Сортировать датафрейм df_pos по столбцу strike
+    df_pos = df_pos.sort_values(by='strike')
+    # Удаляем столбец option_base
+    df_pos = df_pos.drop(columns=['option_base'], errors='ignore')
+    # Добавляем столбец с порядковым номером строки, начиная с 1
+    df_pos['num'] = range(1, len(df_pos) + 1)
+    # Переставляем столбец 'num' в начало
+    cols = ['num'] + [col for col in df_pos.columns if col != 'num']
+    df_pos = df_pos[cols]
+
+    # Создание строки итогов
+    total_row = {col: '' for col in df_pos.columns}
+    total_row['ticker'] = 'Total'
+    total_row['net_pos'] = total_net_pos
+    total_row['P/L theor'] = round(weighted_pl_theor, 2)
+    total_row['P/L last'] = round(weighted_pl_last, 2)
+    total_row['P/L market'] = round(weighted_pl_market, 2)
+    total_row['Vega'] = round(total_vega, 2)
+    total_row['TrueVega'] = round(total_true_vega, 2)
+
+    # Добавление строки итогов к данным
+    df_pos_with_total_robo = pd.concat([df_pos, pd.DataFrame([total_row])], ignore_index=True)
+
+    return df_pos_with_total_robo.to_dict('records')
 
 if __name__ == '__main__':
     app.run(debug=False)  # Run the Dash app
