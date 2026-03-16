@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 from time import sleep  # Задержка в секундах перед выполнением операций
 from threading import Thread  # Запускаем поток подписки
 
+import time
 import math
 import numpy as np
 from scipy.stats import norm
@@ -86,7 +87,6 @@ def _on_new_quotes(response):
     # print(f"Котировки для {description}: ask={ask}, ask_vol={ask_vol}, bid={bid}, bid_vol={bid_vol}, last_price={last_price}")
 
 def _on_order(order): logger.info(f'Заявка - {order}')
-
 
 trade_dict = {}
 def _on_trade(trade):
@@ -426,12 +426,14 @@ if __name__ == '__main__':  # Точка входа при запуске это
            name='SubscriptionOrdersThread').start()  # Создаем и запускаем поток обработки своих заявок
     Thread(target=fp_provider.subscribe_trades_thread,
            name='SubscriptionTradesThread').start()  # Создаем и запускаем поток обработки своих сделок
-    sleep(1)  # Ждем 10 секунд
+    sleep(1)  # Ждем 1 секунд
 
     # -----------------------------------------------------------------------------------------
     # Начинаем бесконечный цикл с этого места
     try:
         while running:
+            print(f'\n')
+            print(f'Опцион на продажу SELL {dataname_sell}')
             print(f'Ожидаемый profit в % expected_profit: {expected_profit}')
             print(f'Количество лотов Lot_count: {Lot_count}')
             print(f'Срок действия ордера в секундах Timeout: {Timeout}')
@@ -587,7 +589,6 @@ if __name__ == '__main__':  # Точка входа при запуске это
             S = float(new_quotes[base_asset_ticker]['last_price'])
             # print(f'S: {S}')
             theor_iv_sell = opions_data[dataname]['volatility']
-            # sigma = opions_data[dataname]['volatility'] / 100 # Для проверки теорцены
             sigma = profit_iv_sell / 100
             # print(f'Sigma: {sigma}')
             K = float(opions_data[dataname]['strikePrice'])
@@ -674,16 +675,18 @@ if __name__ == '__main__':  # Точка входа при запуске это
                 # Логика выставления лимитной цены на покупку опциона dataname_buy
                 if bid_buy and target_price_buy <= bid_buy:
                     limit_price_buy = target_price_buy
+                    print(
+                        f'Цена на покупку опциона {dataname_buy} в стакане {bid_buy} выше целевой цены {target_price_buy}, заявка не выставляется!')
+                    sleep(Timeout)
+                    continue
                 else:
-                    limit_price_buy = bid_buy + step_price
-                if target_price_buy == 0:
-                    limit_price_buy = step_price
+                    # При нулевой расчетной цене ставим минимальный шаг цены step_price, иначе - target_price_buy
+                    limit_price_buy = bid_buy + step_price if target_price_buy != 0 else step_price
+
                 # Лимитная цена на мгновенную продажу опциона dataname_sell
-                if target_price_sell == 0:
-                    limit_price_sell = step_price
-                else:
-                    limit_price_sell = target_price_sell
-                # Подбираем количество в зависимости от количества в противоположной котировке
+                limit_price_sell = step_price if target_price_sell == 0 else target_price_sell # При нулевой расчетной цене ставим мин шаг цены
+
+                # Подбираем количество в зависимости от имеющегося количества в противоположной котировке (есть риск частичного исполнения заявки)
                 if bid_sell_vol >= Lot_count - Lot_count_step:
                     quantity_buy = Lot_count - Lot_count_step
                 else:
@@ -699,10 +702,6 @@ if __name__ == '__main__':  # Точка входа при запуске это
                 print(f'Заявка на покупку выставлена: order_id_buy {order_id_buy}, status {status_buy}')
                 sleep(Timeout)
                 position = trade_dict.get(order_id_buy)
-                # if status_buy == 1 or status_buy != 3 and running == False: # Если заяка не исполнилась или программа завершается - заявку снимаем
-                #     # Снятие заявки на продажу
-                #     print(f'Программа завершается - снимаем выставленную заявку на покупку {order_id_buy}')
-                #     get_cancel_order(account_id, order_id_buy)
                 if position: # Если заявка на покупку исполнена
                     print(f'timestamp - {position['timestamp']}')
                     print(f'trade_id - {position['trade_id']}')
@@ -797,10 +796,6 @@ if __name__ == '__main__':  # Точка входа при запуске это
                 print(f'Заявка на продажу выставлена: {order_id}, статус: {status} ')
                 sleep(Timeout)
                 position = trade_dict.get(order_id)
-                # if status == 1 or status != 3 and running == False: # Если заявка не исполнилась или программа завершается - заявку снимаем
-                #     # Снятие заявки на продажу
-                #     print(f'Программа завершается - снимаем выставленную заявку на продажу {order_id}')
-                #     get_cancel_order(account_id, order_id)
                 if position:  # Сделка на продажу состоялась
                     print(f'timestamp - {position['timestamp']}')
                     print(f'trade_id - {position['trade_id']}')
