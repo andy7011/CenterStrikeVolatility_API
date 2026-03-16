@@ -730,7 +730,7 @@ if __name__ == '__main__':  # Точка входа при запуске это
                         print(f'size - {position['size']}')
                         print(f'price - {position['price']}')
 
-                        Lot_count_step = Lot_count_step + int(position['size'])
+                        Lot_count_step = Lot_count_step + int(float(position['size']))
                         print(f'Завершение цикла N {Lot_count_step}')
                         if Lot_count_step == Lot_count:
                             running = False
@@ -827,7 +827,7 @@ if __name__ == '__main__':  # Точка входа при запуске это
                         print(f'size - {position['size']}')
                         print(f'price - {position['price']}')
 
-                        Lot_count_step = Lot_count_step + int(position['size'])
+                        Lot_count_step = Lot_count_step + int(float(position['size']))
                         print(f'Завершение цикла N {Lot_count_step}')
                         if Lot_count_step == Lot_count:
                             running = False
