@@ -2,7 +2,7 @@
 from MyQuoteRobot_Config import dataname_buy, dataname_sell, stop_iv_sell, stop_iv_buy, expected_profit, Lot_count, Timeout
 
 import logging # Выводим лог на консоль и в файл
-logging.basicConfig(level=logging.WARNING) # уровень логгирования
+# logging.basicConfig(level=logging.WARNING) # уровень логгирования
 from datetime import datetime, timezone  # Дата и время
 from zoneinfo import ZoneInfo
 from time import sleep  # Задержка в секундах перед выполнением операций
@@ -699,10 +699,10 @@ if __name__ == '__main__':  # Точка входа при запуске это
                 print(f'Заявка на покупку выставлена: order_id_buy {order_id_buy}, status {status_buy}')
                 sleep(Timeout)
                 position = trade_dict.get(order_id_buy)
-                if status_buy == 1 and running == False: # Если программа завершается - заявку снимаем
-                    # Снятие заявки на продажу
-                    print(f'Программа завершается - снимаем выставленную заявку на покупку {order_id_buy}')
-                    get_cancel_order(account_id, order_id_buy)
+                # if status_buy == 1 or status_buy != 3 and running == False: # Если заяка не исполнилась или программа завершается - заявку снимаем
+                #     # Снятие заявки на продажу
+                #     print(f'Программа завершается - снимаем выставленную заявку на покупку {order_id_buy}')
+                #     get_cancel_order(account_id, order_id_buy)
                 if position: # Если заявка на покупку исполнена
                     print(f'timestamp - {position['timestamp']}')
                     print(f'trade_id - {position['trade_id']}')
@@ -797,10 +797,10 @@ if __name__ == '__main__':  # Точка входа при запуске это
                 print(f'Заявка на продажу выставлена: {order_id}, статус: {status} ')
                 sleep(Timeout)
                 position = trade_dict.get(order_id)
-                if status == 1 and running == False: # Если программа завершается - заявку снимаем
-                    # Снятие заявки на продажу
-                    print(f'Программа завершается - снимаем выставленную заявку на продажу {order_id}')
-                    get_cancel_order(account_id, order_id)
+                # if status == 1 or status != 3 and running == False: # Если заявка не исполнилась или программа завершается - заявку снимаем
+                #     # Снятие заявки на продажу
+                #     print(f'Программа завершается - снимаем выставленную заявку на продажу {order_id}')
+                #     get_cancel_order(account_id, order_id)
                 if position:  # Сделка на продажу состоялась
                     print(f'timestamp - {position['timestamp']}')
                     print(f'trade_id - {position['trade_id']}')
