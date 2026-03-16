@@ -2,7 +2,7 @@
 from MyQuoteRobot_Config import dataname_buy, dataname_sell, stop_iv_sell, stop_iv_buy, expected_profit, Lot_count, Timeout
 
 import logging # Выводим лог на консоль и в файл
-# logging.basicConfig(level=logging.WARNING) # уровень логгирования
+logging.basicConfig(level=logging.WARNING) # уровень логгирования
 from datetime import datetime, timezone  # Дата и время
 from zoneinfo import ZoneInfo
 from time import sleep  # Задержка в секундах перед выполнением операций
