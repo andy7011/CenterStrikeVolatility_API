@@ -1,5 +1,5 @@
 # Импортируем конфиг
-from MyQuoteRobot_Config import dataname_buy, dataname_sell, stop_iv_sell, stop_iv_buy, expected_profit, Lot_count, Timeout
+from MyQuoteRobot_Config import dataname_buy, dataname_sell, stop_iv_sell, stop_iv_buy, expected_profit, Lot_count, Basket_size, Timeout
 
 import logging # Выводим лог на консоль и в файл
 logging.basicConfig(level=logging.WARNING) # уровень логгирования
@@ -624,7 +624,7 @@ if __name__ == '__main__':  # Точка входа при запуске это
             ask_sell_vol = int(round(new_quotes[ticker]['ask_vol'], decimals))
             bid_sell = int(round(new_quotes[ticker]['bid'], decimals))
             bid_sell_vol = int(round(new_quotes[ticker]['bid_vol'], decimals))
-            print(f'Котировки: {ask_sell} ask_sell_vol: {ask_sell_vol} bid_sell: {bid_sell} bid_sell_vol: {bid_sell_vol}')
+            print(f'Котировки: ask_sell: {ask_sell} ask_sell_vol: {ask_sell_vol} bid_sell: {bid_sell} bid_sell_vol: {bid_sell_vol}')
             # Вычисляем волатильность ask_sell
             # print(f'{S}, {K}, {T}, {ask_sell}, {r}, {sigma} {option_type}')
             if option_type == 'C':
@@ -686,11 +686,9 @@ if __name__ == '__main__':  # Точка входа при запуске это
                 # Лимитная цена на мгновенную продажу опциона dataname_sell
                 limit_price_sell = step_price if target_price_sell == 0 else target_price_sell # При нулевой расчетной цене ставим мин шаг цены
 
-                # Подбираем количество в зависимости от имеющегося количества в противоположной котировке (есть риск частичного исполнения заявки)
-                if bid_sell_vol >= Lot_count - Lot_count_step:
-                    quantity_buy = Lot_count - Lot_count_step
-                else:
-                    quantity_buy = bid_sell_vol
+                # Подбираем количество в зависимости от имеющегося количества в противоположной котировке (есть риск частичного исполнения заявки) и Basket_size
+                quantity_buy = min(bid_sell_vol, Lot_count - Lot_count_step, Basket_size)
+
                 print(f'Выставляем лимитную заявку на покупку опциона {dataname_buy} по цене {limit_price_buy} и количеством {quantity_buy}')
                 # Вызов функции выставления заявки на покупку
                 order_id_buy, status_buy = get_order_buy(
@@ -781,10 +779,8 @@ if __name__ == '__main__':  # Точка входа при запуске это
                     limit_price_buy = target_price_buy
 
                 # Подбираем количество в зависимости от количества в противоположной котировке
-                if ask_buy_vol >= Lot_count - Lot_count_step:
-                    quantity_sell = Lot_count - Lot_count_step
-                else:
-                    quantity_sell = ask_buy_vol
+                quantity_sell = min(ask_buy_vol, Lot_count - Lot_count_step, Basket_size)
+
                 print(f'Выставляем лимитную заявку на продажу по цене {limit_price_sell}: {dataname_sell} количество {quantity_sell}. Ждём sleep_time.')
                 # Вызов функции выставления заявки на продажу
                 order_id, status = get_order_sell(
