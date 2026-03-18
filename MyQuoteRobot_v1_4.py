@@ -1,12 +1,10 @@
-# Импортируем конфиг
-from DashBoardOptionsVolatility_v1_16 import dataname_buy, dataname_sell, stop_iv_sell, stop_iv_buy, expected_profit, Lot_count, Basket_size, Timeout, running
-
 import logging # Выводим лог на консоль и в файл
 logging.basicConfig(level=logging.WARNING) # уровень логгирования
 from datetime import datetime, timezone  # Дата и время
 from zoneinfo import ZoneInfo
 from time import sleep  # Задержка в секундах перед выполнением операций
 from threading import Thread  # Запускаем поток подписки
+
 
 import time
 import math
@@ -362,7 +360,7 @@ if __name__ == '__main__':  # Точка входа при запуске это
 
     # # Исходные данные
     # print(f'Исходные данные:')
-    # print(f'Опцион на покупку dataname_buy: {dataname_buy}')
+    print(f'Опцион на покупку dataname_buy: {dataname_buy}')
     # print(f'Стоп iv покупки (если 0, то стопом будет теоретическая цена QUIK) stop_iv_buy: {stop_iv_buy}')
     # print(f'Опцион на продажу dataname_sell: {dataname_sell}')
     # print(f'Стоп iv продажи (если 0, то стопом будет теоретическая цена QUIK) stop_iv_sell: {stop_iv_sell}')
@@ -436,8 +434,10 @@ if __name__ == '__main__':  # Точка входа при запуске это
         while running:
             print(f'\n')
             print(f'Опцион на продажу SELL {dataname_sell}')
+            print(f'Опцион на покупку BUY {dataname_buy}')
             print(f'Ожидаемый profit в % expected_profit: {expected_profit}')
             print(f'Количество лотов Lot_count: {Lot_count}')
+            print(f'Размер лота Basket_size: {Basket_size}')
             print(f'Срок действия ордера в секундах Timeout: {Timeout}')
             # Обновление позиций/тикеров портфеля
             positions = get_portfolio_positions()
