@@ -1,6 +1,5 @@
 from tkinter import *
 from tkinter import ttk
-from config import dataname_sell, dataname_buy, expected_profit, Lot_count, Basket_size, Timeout, running  # Импортируем конфиг
 
 root = Tk()
 root.title("MyQuoteRobot_v1_5.py")
