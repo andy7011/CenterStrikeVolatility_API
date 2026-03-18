@@ -1,5 +1,3 @@
-# import logging
-# logging.basicConfig(level=logging.DEBUG)
 import os.path
 from math import isnan
 import dash
@@ -25,18 +23,6 @@ import inspect
 from FinLabPy.Config import brokers, default_broker  # Все брокеры и брокер по умолчанию
 from FinLabPy.Core import bars_to_df  # Перевод бар в pandas DataFrame
 
-
-global dataname_buy, dataname_sell, expected_profit, Lot_count, Basket_size, Timeout, running
-
-# Инициализация значений по умолчанию
-dataname_buy = 'SPBOPT.Si80000BC6'
-dataname_sell = 'SPBOPT.Si84000BO6'
-expected_profit = 2
-Lot_count = 1
-Basket_size = 1
-Timeout = 5
-running = False
-
 temp_str = 'C:\\Users\\шадрин\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
@@ -46,23 +32,9 @@ base_asset_list = None
 option_list = None
 central_strike = None
 global df_candles
-# Глобальная переменная для отслеживания времени
-last_update_time = time.time()
 
 # Первый фьючерс в списке MAP
 first_key = next(iter(MAP))
-
-# Функция для обновления значений из интерфейса
-def update_config_values(new_dataname_buy, new_dataname_sell, new_expected_profit,
-                         new_lot_count, new_basket_size, new_timeout, new_running):
-    global dataname_buy, dataname_sell, expected_profit, Lot_count, Basket_size, Timeout, running
-    dataname_buy = new_dataname_buy
-    dataname_sell = new_dataname_sell
-    expected_profit = new_expected_profit
-    Lot_count = new_lot_count
-    Basket_size = new_basket_size
-    Timeout = new_timeout
-    running = new_running
 
 def utc_to_msk_datetime(dt, tzinfo=False):
     """Перевод времени из UTC в московское
@@ -239,7 +211,6 @@ dataname = f'SPBFUT.{first_key}'
 time_frame = 'M15'
 
 # Получаем историю баров для указанного инструмента и временного интервала
-# Получаем историю баров для указанного инструмента и временного интервала
 def get_candles_request(dataname, time_frame, dt_from):
     """
     Функция получения датафрейма свечей от брокера Алор.
@@ -256,7 +227,6 @@ def get_candles_request(dataname, time_frame, dt_from):
     # print(f"Первый бар: {bars[0]}")  # Первый бар
     # print(f"Последний бар: {bars[-1]}")  # Последний бар
     df_candles = bars_to_df(bars)  # Все бары в pandas DataFrame pd_bars
-    df_candles = df_candles.reset_index().rename(columns={'index': 'datetime'})
     # print(df_candles)  # Все бары в pandas DataFrame pd_bars
     return df_candles
 
@@ -384,22 +354,7 @@ tab4_content = [ # MyPosTable
                     'padding': '5px'  # Добавляем отступы для лучшего вида
                 }
             ),
-            html.Label("Basket size", style={'color': 'white', 'textAlign': 'center', 'display': 'block'}),
-                        dcc.Input(
-                            id='input3',
-                            type='number',
-                            step=1,
-                            value=1,
-                            style={
-                                'backgroundColor': 'rgb(30, 30, 30)',
-                                'color': 'white',
-                                'textAlign': 'center',
-                                'width': '55%',  # Добавляем ширину для лучшего центрирования
-                                'padding': '5px'  # Добавляем отступы для лучшего вида
-                            }
-                        ),
             html.Button("SAVE", id="button1", style={'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block', 'margin': '0 auto'}),
-            html.Div(id='save-status', style={'color': 'green', 'margin': '10px 0'}),
             html.Button("START", id="button2", style={'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block', 'margin': '0 auto'}),
             html.Button("STOP", id="button3", style={'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block', 'margin': '0 auto'})
         ], style={'width': '12%', 'display': 'inline-block', 'verticalAlign': 'top', 'marginLeft': '1%', 'backgroundColor': 'rgb(30, 30, 30)', 'textAlign': 'center'}),
@@ -552,7 +507,7 @@ tab8_content = [ # MyQuoteRobot котировщик
             ),
             html.Label("Expected profit", style={'color': 'white', 'textAlign': 'center', 'display': 'block'}),
             dcc.Input(
-                id='input4',
+                id='input3',
                 type='number',
                 step=0.1,
                 value=2.0,
@@ -566,7 +521,7 @@ tab8_content = [ # MyQuoteRobot котировщик
             ),
             html.Label("Lot count", style={'color': 'white', 'textAlign': 'center', 'display': 'block'}),
             dcc.Input(
-                id='input5',
+                id='input4',
                 type='number',
                 step=1,
                 value=1,
@@ -578,20 +533,6 @@ tab8_content = [ # MyQuoteRobot котировщик
                     'padding': '5px'  # Добавляем отступы для лучшего вида
                 }
             ),
-            html.Label("Basket size", style={'color': 'white', 'textAlign': 'center', 'display': 'block'}),
-                        dcc.Input(
-                            id='input6',
-                            type='number',
-                            step=1,
-                            value=1,
-                            style={
-                                'backgroundColor': 'rgb(30, 30, 30)',
-                                'color': 'white',
-                                'textAlign': 'center',
-                                'width': '55%',  # Добавляем ширину для лучшего центрирования
-                                'padding': '5px'  # Добавляем отступы для лучшего вида
-                            }
-                        ),
             html.Button("SAVE", id="button4",
                         style={'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block',
                                'margin': '0 auto'}),
@@ -908,7 +849,6 @@ def update_output_smile(value, n):
         # dff_MyPosOrders = dff_MyPosOrders.apply(lambda x: round(x, 2))
         # Применяем округление только к числовым столбцам
         numeric_columns = dff_MyPosOrders.select_dtypes(include=['number']).columns
-        dff_MyPosOrders = dff_MyPosOrders.copy()
         dff_MyPosOrders[numeric_columns] = dff_MyPosOrders[numeric_columns].round(2)
         dff_MyPosOrders.loc[dff_MyPosOrders['_type'] == 'C', '_type'] = 'Call'
         dff_MyPosOrders.loc[dff_MyPosOrders['_type'] == 'P', '_type'] = 'Put'
@@ -1046,9 +986,9 @@ def update_output_smile(value, n):
 def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
     global df_candles  # Добавляем объявление глобальной переменной
     limit_time = datetime.now() - timedelta(hours=12 * slider_value)
-    # # Сброс индекса с сохранением datetime как столбца
-    # df_candles = df_candles.reset_index(drop=True)
-    df_candles = df_candles[(df_candles['datetime'] > limit_time)]
+    # Сброс индекса с сохранением datetime как столбца
+    df_candles = df_candles.reset_index()
+    df_candles = df_candles[(df_candles.datetime > limit_time)]
 
     # ДАННЫЕ ИЗ DAMP/csv
     # OptionsVolaHistoryDamp.csv history data options volatility
@@ -1198,8 +1138,8 @@ def update_output_MyPosHistory(dropdown_value, slider_value, n):
     df_candles = get_candles_request(dataname, time_frame, dt_from)
 
     # Сброс индекса с сохранением datetime как столбца
-    # df_candles = df_candles.reset_index(drop=True)
-    df_candles = df_candles[(df_candles['datetime'] > limit_time)]
+    df_candles = df_candles.reset_index()
+    df_candles = df_candles[(df_candles.datetime > limit_time)]
 
     # ДАННЫЕ ИЗ csv
     # MyPosHistory.csv history data options volatility
@@ -1407,9 +1347,9 @@ def update_output_MyPosHistory(dropdown_value, slider_value, n):
 def update_output_history_naklon(dropdown_value, slider_value, n):
     global df_candles  # Добавляем объявление глобальной переменной
     limit_time = datetime.now() - timedelta(hours=12 * slider_value)
-    # # Сброс индекса с сохранением datetime как столбца
-    # df_candles = df_candles.reset_index(drop=True)
-    df_candles = df_candles[(df_candles['datetime'] > limit_time)]
+    # Сброс индекса с сохранением datetime как столбца
+    df_candles = df_candles.reset_index()
+    df_candles = df_candles[(df_candles.datetime > limit_time)]
 
     # ДАННЫЕ ИЗ DAMP/csv
     # OptionsSmileNaklonHistory.csv history data options volatility
@@ -1543,7 +1483,7 @@ def update_output_history_naklon(dropdown_value, slider_value, n):
 @app.callback(Output('MyEquityHistory', 'figure'),
               [Input('dropdown-selection', 'value'),
                Input('my_slider', 'value'),
-               Input('interval-component', 'n_intervals')],
+               Input('interval-component', 'interval-60min')],
               prevent_initial_call=True)
 def update_equity_history(dropdown_value, slider_value, n):
     global df_combined
@@ -1568,10 +1508,9 @@ def update_equity_history(dropdown_value, slider_value, n):
     # print(f"Последний бар: {bars[-1]}")  # Последний бар
     df_candles = bars_to_df(bars)  # Все бары в pandas DataFrame pd_bars
     # print(df_candles)  # Все бары в pandas DataFrame pd_bars
-    df_candles = df_candles[df_candles.index > limit_time]
     df_candles.reset_index(inplace=True)
     df_candles['datetime'] = pd.to_datetime(df_candles['datetime'], format='%d.%m.%Y %H:%M')
-    # df_candles = df_candles[(df_candles.datetime > limit_time)]
+    df_candles = df_candles[(df_candles.datetime > limit_time)]
     # print(f"Данные свечей df_candles: {df_candles}")  # Все бары в pandas DataFrame pd_bars
 
     # Вычисление доходности
@@ -1699,79 +1638,41 @@ def update_equity_history(dropdown_value, slider_value, n):
 
     return fig
 
-
-# Объединенный коллбэк для всех операций с кнопками и статусом
+# Callback для изменения цвета кнопки SAVE
 @app.callback(
-    [
-        Output("button1", "style"),
-        Output("button2", "style"),
-        Output("button3", "style"),
-        Output("save-status", "children"),
-        Output("input1", "value"),
-        Output("input2", "value"),
-        Output("input3", "value"),
-        Output("input4", "value"),
-        Output("input5", "value"),
-        Output("input6", "value")
-    ],
-    [
-        Input("button1", "n_clicks"),
-        Input("button2", "n_clicks"),
-        Input("button3", "n_clicks"),
-        Input("input1", "value"),
-        Input("input2", "value"),
-        Input("input3", "value"),
-        Input("input4", "value"),
-        Input("input5", "value"),
-        Input("input6", "value")
-    ]
+    Output("button1", "style"),
+    [Input("button1", "n_clicks"), Input("button3", "n_clicks")]
 )
-def handle_all_buttons(n_clicks_save, n_clicks_start, n_clicks_stop, input1_value, input2_value, input3_value,
-                       input4_value, input5_value, input6_value):
-    # Инициализация значений по умолчанию
-    button1_style = {'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block', 'margin': '0 auto'}
-    button2_style = {'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block', 'margin': '0 auto'}
-    button3_style = {'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block', 'margin': '0 auto'}
-    save_status = ""
+def change_save_color(n_clicks, stop_clicks):
+    if n_clicks:
+        return {'backgroundColor': '#006400', 'color': 'white', 'display': 'block', 'margin': '0 auto'}  # Темно-зеленый
+    elif stop_clicks:
+        return {'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block', 'margin': '0 auto'}  # Исходный цвет
+    return {'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block', 'margin': '0 auto'}
 
-    # Обработка нажатий кнопок
-    if n_clicks_save is not None and n_clicks_save > 0:
-        # Сохранение значений
-        update_config_values(input1_value, input2_value, input3_value, input4_value, input5_value, input6_value, False)
-        save_status = "Настройки сохранены"
-        # Обновление стилей кнопок
-        button1_style = {'backgroundColor': 'green', 'color': 'white', 'display': 'block', 'margin': '0 auto'}
-        button2_style = {'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block', 'margin': '0 auto'}
-        button3_style = {'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block', 'margin': '0 auto'}
-    elif n_clicks_start is not None and n_clicks_start > 0:
-        # Запуск процесса
-        update_config_values(input1_value, input2_value, input3_value, input4_value, input5_value, input6_value, True)
-        save_status = "Процесс запущен"
-        button1_style = {'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block', 'margin': '0 auto'}
-        button2_style = {'backgroundColor': 'green', 'color': 'white', 'display': 'block', 'margin': '0 auto'}
-        button3_style = {'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block', 'margin': '0 auto'}
-    elif n_clicks_stop is not None and n_clicks_stop > 0:
-        # Остановка процесса
-        update_config_values(input1_value, input2_value, input3_value, input4_value, input5_value, input6_value, False)
-        save_status = "Процесс остановлен"
-        button1_style = {'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block', 'margin': '0 auto'}
-        button2_style = {'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block', 'margin': '0 auto'}
-        button3_style = {'backgroundColor': 'red', 'color': 'white', 'display': 'block', 'margin': '0 auto'}
 
-    # Возвращаем все 10 значений в правильном порядке
-    return [
-        button1_style,
-        button2_style,
-        button3_style,
-        save_status,
-        input1_value,
-        input2_value,
-        input3_value,
-        input4_value,
-        input5_value,
-        input6_value
-    ]
+# Callback для изменения цвета кнопки START
+@app.callback(
+    Output("button2", "style"),
+    [Input("button2", "n_clicks"), Input("button3", "n_clicks")]
+)
+def change_start_color(n_clicks, stop_clicks):
+    if n_clicks:
+        return {'backgroundColor': '#8B0000', 'color': 'white', 'display': 'block', 'margin': '0 auto'}  # Темно-красный
+    elif stop_clicks:
+        return {'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block', 'margin': '0 auto'}  # Исходный цвет
+    return {'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block', 'margin': '0 auto'}
 
+
+# Callback для изменения цвета кнопки STOP
+@app.callback(
+    Output("button3", "style"),
+    Input("button3", "n_clicks")
+)
+def change_stop_color(n_clicks):
+    if n_clicks:
+        return {'backgroundColor': '#8B0000', 'color': 'white', 'display': 'block', 'margin': '0 auto'}  # Темно-красный
+    return {'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block', 'margin': '0 auto'}
 
 
 # Callback to update the table "MyPos Table"
@@ -1948,8 +1849,8 @@ def updateGauge(n, value):
 def updateMyQuoteRobot(n, value):
     # pass
     df_pos = pd.read_csv(temp_obj.substitute(name_file='QUIK_MyPos.csv'), sep=';')
-    # Фильтрация строк по базовому активу
-    df_pos = df_pos[df_pos['option_base'] == value]
+    # # Фильтрация строк по базовому активу
+    # df_pos = df_pos[df_pos['option_base'] == value]
 
     # Замена нулевых значений 'P/L last' на значения 'P/L theor'
     df_pos['P/L last'] = df_pos['P/L last'].mask(df_pos['P/L last'] == 0, df_pos['P/L theor'])
@@ -2029,6 +1930,4 @@ def updateMyQuoteRobot(n, value):
     return df_pos_with_total.to_dict('records')
 
 if __name__ == '__main__':
-    # чтобы можно было импортировать переменные из этого файла
-    __all__ = ['dataname_buy', 'dataname_sell', 'expected_profit', 'Lot_count', 'Basket_size', 'Timeout', 'running']
     app.run(debug=False)  # Run the Dash app
