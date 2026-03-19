@@ -1,6 +1,3 @@
-# Импортируем общее состояние
-from shared_state import running, dataname_sell, dataname_buy, expected_profit, Lot_count, Basket_size, Timeout
-
 from tkinter import *
 from tkinter import ttk
 from FinLabPy.Config import brokers, default_broker  # Все брокеры и брокер по умолчанию
@@ -16,7 +13,7 @@ running = False
 
 # print(dataname_sell, dataname_buy, expected_profit, Lot_count, Basket_size, Timeout, running)
 
-# Получение позиций по инструментам
+# Получение позиций по инструментам портфеля проданным и купленным
 def get_position_finam():
     SELL = []
     BUY = []
@@ -169,5 +166,4 @@ btn_start.pack(pady=2)
 btn_stop = ttk.Button(button_frame, text="STOP", command=stop_program)
 btn_stop.pack(pady=2)
 
-def main():
-    root.mainloop()
+root.mainloop()

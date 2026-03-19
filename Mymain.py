@@ -1,26 +1,18 @@
-# main.py
+# Mymain.py
 import threading
-import signal
 import MyControlPanel
 import MyQuoteRobot_v1_6
 
-def signal_handler(sig, frame):
-    print('Программа завершается...')
-    # Здесь можно добавить дополнительную логику завершения
-    exit(0)
+if __name__ == "__main__":
+    # Запуск GUI в основном потоке
+    gui_thread = threading.Thread(target=MyQuoteRobot_v1_6.run_gui)
+    gui_thread.daemon = True
+    gui_thread.start()
 
-# Регистрируем обработчик сигнала в основном потоке
-signal.signal(signal.SIGINT, signal_handler)
-signal.signal(signal.SIGTERM, signal_handler)
+    # Запуск основного цикла в отдельном потоке
+    main_thread = threading.Thread(target=MyQuoteRobot_v1_6.main_loop)
+    main_thread.daemon = True
+    main_thread.start()
 
-# Запуск интерфейса в основном потоке
-def run_gui():
-    MyControlPanel.root.mainloop()
-
-# Запуск робота в отдельном потоке
-robot_thread = threading.Thread(target=MyQuoteRobot_v1_6.main)
-robot_thread.daemon = True
-robot_thread.start()
-
-# Запуск GUI в основном потоке
-run_gui()
+    # Ожидание завершения
+    gui_thread.join()

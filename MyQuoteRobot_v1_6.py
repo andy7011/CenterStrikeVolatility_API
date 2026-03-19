@@ -1,6 +1,4 @@
-# from MyQuoteRobot_Config import dataname_sell, dataname_buy, expected_profit, Lot_count, Basket_size, Timeout, running
-# Импортируем общее состояние
-from shared_state import running, dataname_sell, dataname_buy, expected_profit, Lot_count, Basket_size, Timeout
+from shared_state import running
 import logging # Выводим лог на консоль и в файл
 # logging.basicConfig(level=logging.WARNING) # уровень логгирования
 from datetime import datetime, timezone  # Дата и время
@@ -8,7 +6,6 @@ from zoneinfo import ZoneInfo
 from time import sleep  # Задержка в секундах перед выполнением операций
 from threading import Thread  # Запускаем поток подписки
 
-import time
 import math
 import numpy as np
 from scipy.stats import norm
@@ -29,7 +26,6 @@ from QUIK_Stream_v1_7 import calculate_open_data_open_price_open_iv
 from google.type.decimal_pb2 import Decimal
 
 import time
-import threading
 
 # Глобальные переменные
 CALL = 'C'
@@ -47,6 +43,17 @@ running = False  # Добавляем глобальную переменную
 # Basket_size = 1
 # Timeout = 8 # Срок действия ордера в секундах
 # running = False  # Сброс флага перед запуском
+
+def main_loop():
+    while True:
+        if running:
+            print("Выполняется основной цикл...")
+        time.sleep(1)
+
+def run_gui():
+    from MyControlPanel import ControlPanel
+    app = ControlPanel()
+    app.root.mainloop()
 
 # Функция для ожидания запуска
 def wait_for_start():
@@ -85,8 +92,6 @@ def wait_for_start():
 #         ap_provider.close_web_socket()  # Перед выходом закрываем соединение с WebSocket
 #     sys.exit(0)
 
-# fp_provider = None
-# ap_provider = None
 # # Регистрируем обработчик сигнала для корректного завершения
 # signal.signal(signal.SIGINT, signal_handler)
 # signal.signal(signal.SIGTERM, signal_handler)
@@ -240,14 +245,14 @@ def get_portfolio_positions():
 
 # Сбор данных по опциону и БА для расчета цены опциона
 def get_option_data_for_calc_price(dataname):
-    base_asset_ticker = opions_data[dataname]['base_asset_ticker']
+    base_asset_ticker = options_data[dataname]['base_asset_ticker']
     S = float(new_quotes[base_asset_ticker]['last_price'])
-    K = float(opions_data[dataname]['strikePrice'])
-    expiration_datetime = opions_data[dataname]['endExpiration']
+    K = float(options_data[dataname]['strikePrice'])
+    expiration_datetime = options_data[dataname]['endExpiration']
     expiration_dt = datetime.fromisoformat(expiration_datetime.replace('Z', '+00:00'))
     T_razn = (expiration_dt - datetime.today()).days
     T = float((T_razn + 1.151) / 365)
-    opt_type = CALL if opions_data[dataname]['optionSide'] == 'Call' else PUT
+    opt_type = CALL if options_data[dataname]['optionSide'] == 'Call' else PUT
     # print(f'S: {S}, K: {K}, T: {T}, opt_type: {opt_type}')
     return S, K, T, opt_type
 
@@ -276,15 +281,15 @@ def option_data_for_IV_calculation_call(dataname, price_call):
     # C: Call value
     # r: interest rate
     # sigma: volatility of underlying asset
-    base_asset_ticker = opions_data[dataname]['base_asset_ticker']
+    base_asset_ticker = options_data[dataname]['base_asset_ticker']
     S = float(new_quotes[base_asset_ticker]['last_price'])
-    K = float(opions_data[dataname]['strikePrice'])
-    expiration_datetime = opions_data[dataname]['endExpiration']
+    K = float(options_data[dataname]['strikePrice'])
+    expiration_datetime = options_data[dataname]['endExpiration']
     expiration_dt = datetime.fromisoformat(expiration_datetime.replace('Z', '+00:00'))
     T_razn = (expiration_dt - datetime.today()).days
     T = float((T_razn + 1.151) / 365)
     C = price_call
-    sigma = opions_data[dataname]['volatility'] / 100
+    sigma = options_data[dataname]['volatility'] / 100
     return S, K, T, C, sigma
 
 # Сбор данных опциона PUT для расчета IV
@@ -295,15 +300,15 @@ def option_data_for_IV_calculation_put(dataname, price_put):
     # P: Put value
     # r: interest rate
     # sigma: volatility of underlying asset
-    base_asset_ticker = opions_data[dataname]['base_asset_ticker']
+    base_asset_ticker = options_data[dataname]['base_asset_ticker']
     S = float(new_quotes[base_asset_ticker]['last_price'])
-    K = float(opions_data[dataname]['strikePrice'])
-    expiration_datetime = opions_data[dataname]['endExpiration']
+    K = float(options_data[dataname]['strikePrice'])
+    expiration_datetime = options_data[dataname]['endExpiration']
     expiration_dt = datetime.fromisoformat(expiration_datetime.replace('Z', '+00:00'))
     T_razn = (expiration_dt - datetime.today()).days
     T = float((T_razn + 1.151) / 365)
     P = price_put
-    sigma = opions_data[dataname]['volatility'] / 100
+    sigma = options_data[dataname]['volatility'] / 100
     return S, K, T, P, sigma
 
 # Расчет IV Метод Ньютона для опциона CALL
@@ -361,19 +366,6 @@ def newton_vol_put(S, K, T, P, r, sigma):
         iteration += 1
     return abs(xnew)
 
-# Получение последней котировки по инструменту
-def get_last_quotes(symbol):
-    quote_response: QuoteResponse = fp_provider.call_function(fp_provider.marketdata_stub.LastQuote,
-                                                              QuoteRequest(symbol=symbol))
-    # print(f'quote_response {quote_response}')
-    ask = float(quote_response.quote.ask.value)  # Последняя цена продажи
-    bid = float(quote_response.quote.bid.value)  # Последняя цена покупки
-    last_price = float(quote_response.quote.last.value)  # Последняя цена сделки
-    theoretical_price = float(quote_response.quote.option.theoretical_price.value)  # Теоретическая цена
-    implied_volatility = float(quote_response.quote.option.implied_volatility.value)  # Волатильность
-    # print(f'Последние котировки по инструменту {symbol}: ask:{ask} bid:{bid} last_price:{last_price} theoretical_price:{theoretical_price} volatility:{implied_volatility}')
-    return ask, bid, last_price, theoretical_price, implied_volatility
-
 
 # Получение позиций по инструментам
 def get_position_finam():
@@ -391,13 +383,9 @@ def get_position_finam():
     # print(f'BUY: {BUY}')
     return SELL, BUY
 
-# Инициализация глобальных переменных
-fp_provider = None
-ap_provider = None
-
-def main():
-
-    # global running, fp_provider, ap_provider
+# Основной цикл
+if __name__ == "__main__":
+    print("Выполняется основной цикл...")
 
     # # Регистрируем обработчик сигнала для корректного завершения
     # signal.signal(signal.SIGINT, signal_handler)
@@ -438,8 +426,8 @@ def main():
         logging.Formatter.converter = lambda *args: datetime.now(
             tz=fp_provider.tz_msk).timetuple()  # В логе время указываем по МСК
 
-        # Получаем данные по опционам, подписываемся на котировки для каждого тикера
-        opions_data = {}
+        # Получаем данные по опционам, сохраняем в словарь, подписываемся на котировки для каждого тикера
+        options_data = {}
         for dataname in [dataname_buy, dataname_sell]:
             try:
                 alor_board, symbol = ap_provider.dataname_to_alor_board_symbol(dataname)  # Код режима торгов Алора и код и тикер
@@ -447,7 +435,7 @@ def main():
                 si = ap_provider.get_symbol_info(exchange, symbol)  # Получаем информацию о тикере
                 # print(si)
                 # Создаем словарь для опционов
-                opions_data[dataname] = {
+                options_data[dataname] = {
                     'ticker': si['shortname'],
                     'theorPrice': si['theorPrice'],
                     'volatility': float(si['volatility']),
@@ -465,10 +453,10 @@ def main():
             except Exception as e:
                 print(f"Ошибка получения данных по тикеру {dataname}: {e}")
                 continue
-        # print(f'opions_data {opions_data}')
+        # print(f'options_data {options_data}')
 
-        # Из словаря opions_data получить все значения 'base_asset_ticker' занести в список base_asset_tickers, удалить дубликаты
-        base_asset_tickers = list(set(option_data['base_asset_ticker'] for option_data in opions_data.values()))
+        # Из словаря options_data получить все значения 'base_asset_ticker' занести в список base_asset_tickers, удалить дубликаты
+        base_asset_tickers = list(set(option_data['base_asset_ticker'] for option_data in options_data.values()))
         # Получаем данные по базовому активу, подписываемся на котировки для каждого тикера
         for ba_tiker in base_asset_tickers:
             alor_board, symbol = ap_provider.dataname_to_alor_board_symbol(ba_tiker)  # Код режима торгов Алора и код и тикер
@@ -477,7 +465,7 @@ def main():
             guids.append(guid)
             logger.info(f'Подписка на котировки {guid} тикера {ba_tiker} создана')
 
-        # Свои заявки и сделки
+        # Подписываемся на свои заявки и сделки
         fp_provider.on_order.subscribe(_on_order)  # Подписываемся на заявки
         fp_provider.on_trade.subscribe(_on_trade)  # Подписываемся на сделки
         Thread(target=fp_provider.subscribe_orders_thread,
@@ -504,7 +492,7 @@ def main():
             positions = get_portfolio_positions()
             # print(positions)
 
-            print(f'\n Параметры опциона BUY {dataname_buy}. Откупаем проданный опцион.')
+            print(f'\n Параметры опциона BUY {dataname_buy}. Будем откупать проданный опцион.')
             # Параметры опциона на покупку BUY (откупаем проданный опцион)
             dataname = dataname_buy
             finam_board, ticker = fp_provider.dataname_to_finam_board_ticker(dataname)  # Код режима торгов Финама и тикер
@@ -533,17 +521,17 @@ def main():
                 open_price = 0.0
                 open_iv = 0.0
             account_id = fp_provider.account_ids[0]  # Торговый счет, где будут выставляться заявки
-            quantity_buy = opions_data[dataname]['lot_size']  # Количество в шт
+            quantity_buy = options_data[dataname]['lot_size']  # Количество в шт
             # print(f'Количество в шт quantity: {quantity}')
-            step_price = int(float(opions_data[dataname]['minstep']))  # Минимальный шаг цены
+            step_price = int(float(options_data[dataname]['minstep']))  # Минимальный шаг цены
             # print(f'Минимальный шаг цены step_price: {step_price}')
             print(f'Количество проданных {ticker} в шт: {net_pos}')
             print(f'Open IV: {round(open_iv, 2)}')
             open_iv_buy = open_iv
             profit_iv_buy = open_iv - expected_profit
             print(f'Profit IV buy: {round(profit_iv_buy, 2)}')
-            theoretical_price_buy_ = opions_data[dataname]['theorPrice']
-            base_asset_ticker = opions_data[dataname]['base_asset_ticker']
+            theoretical_price_buy_ = options_data[dataname]['theorPrice']
+            base_asset_ticker = options_data[dataname]['base_asset_ticker']
             # Проверяем наличие котировок для базового актива
             if base_asset_ticker not in new_quotes:
                 print(f'Нет котировок для базового актива {base_asset_ticker}')
@@ -551,21 +539,21 @@ def main():
                 continue
             S = float(new_quotes[base_asset_ticker]['last_price'])
             # print(f'S: {S}')
-            theor_iv_buy = opions_data[dataname]['volatility']
-            # sigma = opions_data[dataname]['volatility'] / 100
+            theor_iv_buy = options_data[dataname]['volatility']
+            # sigma = options_data[dataname]['volatility'] / 100
             sigma = profit_iv_buy / 100
             # print(f'Sigma: {sigma}')
-            K = float(opions_data[dataname]['strikePrice'])
+            K = float(options_data[dataname]['strikePrice'])
             # print(f'K: {K}')
-            expiration_datetime = opions_data[dataname]['endExpiration']
+            expiration_datetime = options_data[dataname]['endExpiration']
             # print(f'Expiration datetime: {expiration_datetime}')
             expiration_dt = datetime.fromisoformat(expiration_datetime.replace('Z', '+00:00'))
             T_razn = (expiration_dt - datetime.today()).days
             T = float((T_razn + 1.151) / 365)
             # print(f'T: {T}')
-            option_type = CALL if opions_data[dataname]['optionSide'] == 'Call' else PUT
+            option_type = CALL if options_data[dataname]['optionSide'] == 'Call' else PUT
             # print(f'Option type: {option_type}')
-            decimals = opions_data[dataname_sell]['decimals']
+            decimals = options_data[dataname_sell]['decimals']
             # Далее вычисляем profit_price_buy из profit_iv_buy по формуле Блэка-Шоулза
             profit_price_buy_ = option_price(S, sigma, K, T, r, opt_type=option_type)
             limit_price = int(round((profit_price_buy_ // step_price) * step_price, decimals))
@@ -591,15 +579,15 @@ def main():
             # Вычисляем волатильность ask_buy
             # print(f'{S}, {K}, {T}, {ask_buy}, {r}, {sigma} {option_type}')
             if option_type == 'C':
-                sigma = opions_data[dataname]['volatility'] / 100
+                sigma = options_data[dataname]['volatility'] / 100
                 ask_iv_buy = newton_vol_call(S, K, T, ask_buy, r, sigma) * 100
                 bid_iv_buy = newton_vol_call(S, K, T, bid_buy, r, sigma) * 100
             else:
-                sigma = opions_data[dataname]['volatility'] / 100
+                sigma = options_data[dataname]['volatility'] / 100
                 ask_iv_buy = newton_vol_put(S, K, T, ask_buy, r, sigma) * 100
                 bid_iv_buy = newton_vol_put(S, K, T, bid_buy, r, sigma) * 100
             print(f'Волатильность ask_iv_buy: {round(ask_iv_buy, 2)} bid_iv_buy: {round(bid_iv_buy, 2)}')
-            # saldo_buy = open_iv_buy - opions_data[dataname]['volatility'] # open_iv - IV-theor
+            # saldo_buy = open_iv_buy - options_data[dataname]['volatility'] # open_iv - IV-theor
             saldo_buy = open_iv_buy - bid_iv_buy  # open_iv - IV-bid
             print(f'Saldo buy: {round(saldo_buy, 2)}')
 
@@ -633,17 +621,17 @@ def main():
                 open_price = 0.0
                 open_iv = 0.0
             account_id = fp_provider.account_ids[0]  # Торговый счет, где будут выставляться заявки
-            quantity_sell = opions_data[dataname]['lot_size']  # Количество в шт
+            quantity_sell = options_data[dataname]['lot_size']  # Количество в шт
             # print(f'Количество в шт quantity: {quantity_sell}')
-            step_price = int(float(opions_data[dataname]['minstep']))  # Минимальный шаг цены
+            step_price = int(float(options_data[dataname]['minstep']))  # Минимальный шаг цены
             # print(f'Минимальный шаг цены step_price: {step_price}')
             print(f'Количество купленных {ticker} в шт: {net_pos}')
             print(f'Open IV: {round(open_iv, 2)}')
             open_iv_sell = open_iv
             profit_iv_sell = open_iv + expected_profit
             print(f'Profit IV sell: {round(profit_iv_sell, 2)}')
-            theoretical_price_sell_ = opions_data[dataname]['theorPrice']
-            base_asset_ticker = opions_data[dataname]['base_asset_ticker']
+            theoretical_price_sell_ = options_data[dataname]['theorPrice']
+            base_asset_ticker = options_data[dataname]['base_asset_ticker']
             # Проверяем наличие котировок для базового актива
             if base_asset_ticker not in new_quotes:
                 print(f'Нет котировок для базового актива {base_asset_ticker}')
@@ -651,20 +639,20 @@ def main():
                 continue
             S = float(new_quotes[base_asset_ticker]['last_price'])
             # print(f'S: {S}')
-            theor_iv_sell = opions_data[dataname]['volatility']
+            theor_iv_sell = options_data[dataname]['volatility']
             sigma = profit_iv_sell / 100
             # print(f'Sigma: {sigma}')
-            K = float(opions_data[dataname]['strikePrice'])
+            K = float(options_data[dataname]['strikePrice'])
             # print(f'K: {K}')
-            expiration_datetime = opions_data[dataname]['endExpiration']
+            expiration_datetime = options_data[dataname]['endExpiration']
             # print(f'Expiration datetime: {expiration_datetime}')
             expiration_dt = datetime.fromisoformat(expiration_datetime.replace('Z', '+00:00'))
             T_razn = (expiration_dt - datetime.today()).days
             T = float((T_razn + 1.151) / 365)
             # print(f'T: {T}')
-            option_type = CALL if opions_data[dataname]['optionSide'] == 'Call' else PUT
+            option_type = CALL if options_data[dataname]['optionSide'] == 'Call' else PUT
             # print(f'Option type: {option_type}')
-            decimals = opions_data[dataname_sell]['decimals']
+            decimals = options_data[dataname_sell]['decimals']
             # Далее вычисляем profit_price_sell из profit_iv_sell по формуле Блэка-Шоулза
             profit_price_sell = option_price(S, sigma, K, T, r, opt_type=option_type)
             profit_price_sell = int(round(profit_price_sell, decimals))
@@ -691,15 +679,15 @@ def main():
             # Вычисляем волатильность ask_sell
             # print(f'{S}, {K}, {T}, {ask_sell}, {r}, {sigma} {option_type}')
             if option_type == 'C':
-                sigma = opions_data[dataname]['volatility'] / 100
+                sigma = options_data[dataname]['volatility'] / 100
                 ask_iv_sell = newton_vol_call(S, K, T, ask_sell, r, sigma) * 100
                 bid_iv_sell = newton_vol_call(S, K, T, bid_sell, r, sigma) * 100
             else:
-                sigma = opions_data[dataname]['volatility'] / 100
+                sigma = options_data[dataname]['volatility'] / 100
                 ask_iv_sell = newton_vol_put(S, K, T, ask_sell, r, sigma) * 100
                 bid_iv_sell = newton_vol_put(S, K, T, bid_sell, r, sigma) * 100
             print(f'Волатильность ask_sell: {round(ask_iv_sell, 2)} bid_iv_sell: {round(bid_iv_sell, 2)}')
-            # saldo_sell = opions_data[dataname]['volatility'] - open_iv # IV-theor - open_iv
+            # saldo_sell = options_data[dataname]['volatility'] - open_iv # IV-theor - open_iv
             saldo_sell = ask_iv_sell - open_iv  # IV-ask - open_iv
             print(f'Saldo sell: {round(saldo_sell, 2)}')
             limit_price_sell = profit_price_sell
@@ -932,4 +920,6 @@ def main():
     # running = False
     # # Вызываем сигнал для корректного завершения
     # signal.raise_signal(signal.SIGTERM)
-    pass
+
+    # Запуск GUI
+    run_gui()
