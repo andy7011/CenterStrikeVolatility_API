@@ -1,6 +1,6 @@
 import logging # Выводим лог на консоль и в файл
 # logging.basicConfig(level=logging.WARNING) # уровень логгирования
-from tkinter import *
+from theor_profit_buy import *
 from tkinter import ttk
 from FinLabPy.Config import brokers, default_broker  # Все брокеры и брокер по умолчанию
 from threading import Thread  # Запускаем поток подписки
@@ -23,19 +23,25 @@ from google.type.decimal_pb2 import Decimal
 import time
 
 # Глобальные переменные
+global theor_profit_buy, theor_profit_sell
+theor_profit_buy = 0.0
+theor_profit_sell = 0.0
 CALL = 'C'
 PUT = 'P'
 r = 0 # Безрисковая ставка
 # Список GUID для отписки
 guids = []
-global dataname_sell, dataname_buy, expected_profit, Lot_count, Basket_size, Timeout
+global dataname_sell, dataname_buy, expected_profit, Lot_count, Basket_size, Timeout, running
 dataname_sell = ''
 dataname_buy = ''
-expected_profit = 2.0
+expected_profit = 5.0
 Lot_count = 1
 Basket_size = 1
 Timeout = 8
 running = False
+
+
+
 
 Lot_count_step = 0
 sleep_time = 5  # Время ожидания в секундах
@@ -283,6 +289,7 @@ root.title("MyQuoteRobot_v1_5.py")
 root.geometry("200x450")
 
 def selected_sell(event):
+    global theor_profit_buy, theor_profit_sell
     # получаем выделенный элемент
     dataname_sell = combobox_sell.get()
     print(f'\n Определяем параметры опциона {dataname_sell}. Будем продавать купленный опцион.')
@@ -355,6 +362,7 @@ def selected_sell(event):
 
 
 def selected_buy(event):
+    global theor_profit_buy, theor_profit_sell
     # получаем выделенный элемент
     dataname_buy = combobox_buy.get()
     print(f'\n Определяем параметры опциона BUY {dataname_buy}. Будем откупать проданный опцион.')
@@ -421,8 +429,6 @@ def selected_buy(event):
     print(f'Теоретическая прибыль для {dataname_buy}: {round(theor_profit_buy, 2)}')
 
     return theor_profit_buy
-
-
 
 
 
@@ -534,6 +540,7 @@ def save_config():
     print(f'Срок действия ордера в секундах Timeout: {Timeout}')
 
     print(f'\n')
+    # if selected_sell(theor_profit_sell) > selected_buy(theor_profit_buy):
     if theor_profit_sell > theor_profit_buy:
         print(f'Вариант 1 "Котируем покупку"')
     else:
