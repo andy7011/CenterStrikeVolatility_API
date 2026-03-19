@@ -1,14 +1,15 @@
 import logging # Выводим лог на консоль и в файл
 # logging.basicConfig(level=logging.WARNING) # уровень логгирования
-from theor_profit_buy import *
+
 from tkinter import ttk
+from tkinter import *
 from FinLabPy.Config import brokers, default_broker  # Все брокеры и брокер по умолчанию
 from threading import Thread  # Запускаем поток подписки
 from AlorPy import AlorPy  # Работа с Alor OpenAPI V2
 from FinamPy import FinamPy
-from FinamPy.grpc.orders.orders_service_pb2 import Order, OrderState, OrderType, CancelOrderRequest, StopCondition  # Заявки
+from FinamPy.grpc.orders_service_pb2 import Order, OrderState, OrderType, CancelOrderRequest, StopCondition  # Заявки
 import FinamPy.grpc.side_pb2 as side  # Направление заявки
-from FinamPy.grpc.marketdata.marketdata_service_pb2 import QuoteRequest, QuoteResponse  # Последняя цена сделки
+from FinamPy.grpc.marketdata_service_pb2 import QuoteRequest, QuoteResponse  # Последняя цена сделки
 from FinLabPy.Config import brokers, default_broker  # Все брокеры и брокер по умолчанию
 from QUIK_Stream_v1_7 import calculate_open_data_open_price_open_iv
 
@@ -23,9 +24,10 @@ from google.type.decimal_pb2 import Decimal
 import time
 
 # Глобальные переменные
-global theor_profit_buy, theor_profit_sell
+global theor_profit_buy, theor_profit_sell, base_asset_ticker
 theor_profit_buy = 0.0
 theor_profit_sell = 0.0
+base_asset_ticker = 0.0
 CALL = 'C'
 PUT = 'P'
 r = 0 # Безрисковая ставка
@@ -289,7 +291,7 @@ root.title("MyQuoteRobot_v1_5.py")
 root.geometry("200x450")
 
 def selected_sell(event):
-    global theor_profit_buy, theor_profit_sell
+    global theor_profit_buy, theor_profit_sell, base_asset_ticker
     # получаем выделенный элемент
     dataname_sell = combobox_sell.get()
     print(f'\n Определяем параметры опциона {dataname_sell}. Будем продавать купленный опцион.')
@@ -354,7 +356,9 @@ def selected_sell(event):
 
     print(f'\n')
     theor_profit_sell = theor_iv_sell - open_iv_sell
-    print(f'Теоретическая прибыль для {dataname_sell}: {round(theor_profit_sell, 2)}')
+    market_profit_sell = bid_iv_sell - open_iv_sell
+    print(f'Theor profit {dataname_sell}: {round(theor_profit_sell, 2)}')
+    print(f'Market profit {dataname_sell}: {round(market_profit_sell, 2)}')
 
     return theor_profit_sell
 
@@ -362,7 +366,7 @@ def selected_sell(event):
 
 
 def selected_buy(event):
-    global theor_profit_buy, theor_profit_sell
+    global theor_profit_buy, theor_profit_sell, base_asset_ticker
     # получаем выделенный элемент
     dataname_buy = combobox_buy.get()
     print(f'\n Определяем параметры опциона BUY {dataname_buy}. Будем откупать проданный опцион.')
@@ -371,15 +375,6 @@ def selected_buy(event):
     open_data_result = calculate_open_data_open_price_open_iv(ticker, net_pos)  # Вычисление OpenDateTime, OpenPrice, OpenIV
     open_iv = open_data_result[2] if open_data_result[2] is not None else 0.0
     option_data_buy = get_opion_data_alor(dataname_buy)
-    print('Получаем данные по базовому активу, подписываемся на котировки')
-    base_asset_ticker = option_data_buy[dataname_buy]['base_asset_ticker']
-    alor_board, symbol = ap_provider.dataname_to_alor_board_symbol(base_asset_ticker)  # Код режима торгов Алора и код и тикер
-    exchange = ap_provider.get_exchange(alor_board, symbol)  # Код биржи
-    guid = ap_provider.quotes_subscribe(exchange, symbol)  # Получаем код подписки
-    guids.append(guid)
-    logger.info(f'Подписка на котировки {guid} тикера {base_asset_ticker} создана')
-    sleep(1)
-    base_asset_ticker = option_data_buy[dataname_buy]['base_asset_ticker']
     account_id = fp_provider.account_ids[0]  # Торговый счет, где будут выставляться заявки
     quantity_buy = net_pos  # Количество в шт
     step_price = int(float(option_data_buy[dataname_buy]['minstep']))  # Минимальный шаг цены
@@ -426,10 +421,11 @@ def selected_buy(event):
 
     print(f'\n')
     theor_profit_buy = open_iv_buy - theor_iv_buy
-    print(f'Теоретическая прибыль для {dataname_buy}: {round(theor_profit_buy, 2)}')
+    market_profit_buy = open_iv_buy - ask_iv_buy
+    print(f'Theor profit {dataname_buy}: {round(theor_profit_buy, 2)}')
+    print(f'Market profit {dataname_buy}: {round(market_profit_buy, 2)}')
 
     return theor_profit_buy
-
 
 
 def selected_profit():
