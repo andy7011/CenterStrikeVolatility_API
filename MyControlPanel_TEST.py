@@ -498,7 +498,7 @@ spinbox_lot.pack(pady=5)
 label = ttk.Label(main_frame, text="Basket size:")
 label.pack(anchor=CENTER)
 
-# Переменная Basket_size
+# Spinbox Переменная Basket_size
 spinbox_basket = ttk.Spinbox(main_frame, from_=1, to=100, increment=1, width=8, justify=CENTER, command=selected_basket)
 spinbox_basket.set(1)
 spinbox_basket.pack(pady=5)
@@ -506,7 +506,7 @@ spinbox_basket.pack(pady=5)
 label = ttk.Label(main_frame, text="Timeout:")
 label.pack(anchor=CENTER)
 
-# Переменная Timeout
+# Spinbox Переменная Timeout
 spinbox_timeout = ttk.Spinbox(main_frame, from_=1, to=30, increment=1, width=8, justify=CENTER, command=selected_timeout)
 spinbox_timeout.set(8)
 spinbox_timeout.pack(pady=5)

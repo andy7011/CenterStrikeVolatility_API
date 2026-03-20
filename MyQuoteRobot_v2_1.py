@@ -404,10 +404,11 @@ def loop_function():
 def update_instruments():
     # Получаем список инструментов из брокера
     try:
+        sell_tickers = list(SELL.keys())
         instruments = []
-        for position in default_broker.get_positions():
+        for position in default_broker.get_position_finam():
             if position.dataname.startswith('SPBOPT.'):
-                instruments.append(position.dataname)
+                instruments.append(position.dataname_sell)
 
         # Обновляем список в combobox
         combobox_sell['values'] = instruments
@@ -425,69 +426,92 @@ root = tk.Tk()
 root.title("Панель управления роботом")
 root.geometry("800x700")
 
-# Создаем элементы интерфейса
-frame = ttk.Frame(root, padding="10")
-frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+# Настройка колонок
+root.columnconfigure(0, weight=0, minsize=100)  # Метки
+root.columnconfigure(1, weight=0, minsize=6)   # Комбобоксы и поля ввода - фиксированная ширина
+root.columnconfigure(2, weight=0, minsize=80)    # Кнопки
+root.columnconfigure(3, weight=0, minsize=80)   # Кнопки
+
+# Настройка строк
+root.rowconfigure(0, weight=1)     # Для строки 0 (фрейм)
+
+# Создаем основной фрейм
+main_frame = ttk.Frame(root, padding="10")
+main_frame.grid(row=0, column=0, columnspan=4, sticky=(tk.W, tk.E, tk.N, tk.S))
 
 # Статус
-status_label = ttk.Label(frame, text="Статус: Готов", foreground="green")
+status_label = ttk.Label(main_frame, text="Статус: Готов", foreground="green")
 status_label.grid(row=0, column=0, columnspan=4, sticky=tk.W)
 
+# Выбор базового актива
+ttk.Label(main_frame, text="Базовый актив:").grid(row=1, column=0, sticky=tk.W, pady=5)
+combobox_base = ttk.Combobox(main_frame, width=15)
+combobox_base.grid(row=1, column=1, sticky=tk.W, pady=5)
+combobox_base.bind("<<ComboboxSelected>>", selected_base)
+
+# Выбор опционной серии
+ttk.Label(main_frame, text="Дата экспирации серии:").grid(row=2, column=0, sticky=tk.W, pady=5)
+combobox_expire = ttk.Combobox(main_frame, width=15)
+combobox_expire.grid(row=2, column=1, sticky=tk.W, pady=5)
+combobox_expire.bind("<<ComboboxSelected>>", selected_expire)
+
 # Выбор инструмента для продажи
-ttk.Label(frame, text="Инструмент для продажи:").grid(row=1, column=0, sticky=tk.W, pady=5)
-combobox_sell = ttk.Combobox(frame, width=30)
-combobox_sell.grid(row=1, column=1, sticky=tk.W, pady=5)
+ttk.Label(main_frame, text="Инструмент для продажи:").grid(row=3, column=0, sticky=tk.W, pady=5)
+combobox_sell = ttk.Combobox(main_frame, width=15)
+combobox_sell.grid(row=3, column=1, sticky=tk.W, pady=5)
 
 # Выбор инструмента для покупки
-ttk.Label(frame, text="Инструмент для покупки:").grid(row=2, column=0, sticky=tk.W, pady=5)
-combobox_buy = ttk.Combobox(frame, width=30)
-combobox_buy.grid(row=2, column=1, sticky=tk.W, pady=5)
+ttk.Label(main_frame, text="Инструмент для покупки:").grid(row=4, column=0, sticky=tk.W, pady=5)
+combobox_buy = ttk.Combobox(main_frame, width=15)
+combobox_buy.grid(row=4, column=1, sticky=tk.W, pady=5)
 
 # Поля ввода параметров
 # Ожидаемая прибыль (%)
-ttk.Label(frame, text="Ожидаемая прибыль (%):").grid(row=3, column=0, sticky=tk.W, pady=5)
-expected_profit_spinbox = ttk.Spinbox(frame, from_=-10, to=10, width=30, increment=0.1, format="%.1f")
+ttk.Label(main_frame, text="Ожидаемая прибыль (%):").grid(row=5, column=0, sticky=tk.W, pady=5)
+expected_profit_spinbox = ttk.Spinbox(main_frame, from_=-10, to=10, width=5, increment=0.1, format="%.1f")
 expected_profit_spinbox.set(str(expected_profit))
-expected_profit_spinbox.grid(row=3, column=1, sticky=tk.W, pady=5)
+expected_profit_spinbox.grid(row=5, column=1, sticky=tk.W, pady=5)
 
 # Количество лотов
-ttk.Label(frame, text="Количество лотов:").grid(row=4, column=0, sticky=tk.W, pady=5)
-lot_count_spinbox = ttk.Spinbox(frame, from_=1, to=1000, width=30)
+ttk.Label(main_frame, text="Количество лотов:").grid(row=6, column=0, sticky=tk.W, pady=5)
+lot_count_spinbox = ttk.Spinbox(main_frame, from_=1, to=1000, width=5)
 lot_count_spinbox.set(str(Lot_count))
-lot_count_spinbox.grid(row=4, column=1, sticky=tk.W, pady=5)
+lot_count_spinbox.grid(row=6, column=1, sticky=tk.W, pady=5)
 
 # Размер корзины
-ttk.Label(frame, text="Лот -n/+n:").grid(row=5, column=0, sticky=tk.W, pady=5)
-basket_size_spinbox = ttk.Spinbox(frame, from_=1, to=100, width=30)
+ttk.Label(main_frame, text="Лот -n/+n:").grid(row=7, column=0, sticky=tk.W, pady=5)
+basket_size_spinbox = ttk.Spinbox(main_frame, from_=1, to=100, width=5)
 basket_size_spinbox.set(str(Basket_size))
-basket_size_spinbox.grid(row=5, column=1, sticky=tk.W, pady=5)
+basket_size_spinbox.grid(row=7, column=1, sticky=tk.W, pady=5)
 
 # Таймаут (сек)
-ttk.Label(frame, text="Таймаут (сек):").grid(row=6, column=0, sticky=tk.W, pady=5)
-timeout_spinbox = ttk.Spinbox(frame, from_=1, to=300, width=30)
+ttk.Label(main_frame, text="Таймаут (сек):").grid(row=8, column=0, sticky=tk.W, pady=5)
+timeout_spinbox = ttk.Spinbox(main_frame, from_=1, to=300, width=5)
 timeout_spinbox.set(str(Timeout))
-timeout_spinbox.grid(row=6, column=1, sticky=tk.W, pady=5)
+timeout_spinbox.grid(row=8, column=1, sticky=tk.W, pady=5)
 
 # Текстовый вывод
-output_text = tk.Text(frame, height=15, width=80)
-output_text.grid(row=7, column=0, columnspan=4, pady=10)
+output_text = tk.Text(main_frame, height=15, width=80)
+output_text.grid(row=9, column=0, columnspan=4, pady=10)
 
 # Кнопки управления
-start_button = ttk.Button(frame, text="START", command=start_operation)
-start_button.grid(row=8, column=0, pady=10, padx=5)
+start_button = ttk.Button(main_frame, text="START", command=start_operation)
+start_button.grid(row=10, column=0, pady=10, padx=5)
 
-stop_button = ttk.Button(frame, text="STOP", command=stop_operation)
-stop_button.grid(row=8, column=1, pady=10, padx=5)
+stop_button = ttk.Button(main_frame, text="STOP", command=stop_operation)
+stop_button.grid(row=10, column=1, pady=10, padx=5)
 
-exit_button = ttk.Button(frame, text="EXIT", command=exit_program)
-exit_button.grid(row=8, column=2, pady=10, padx=5)
+exit_button = ttk.Button(main_frame, text="EXIT", command=exit_program)
+exit_button.grid(row=10, column=2, pady=10, padx=5)
 
 # Кнопка обновления инструментов
-refresh_button = ttk.Button(frame, text="Обновить инструменты", command=update_instruments)
-refresh_button.grid(row=8, column=3, pady=10, padx=5)
+refresh_button = ttk.Button(main_frame, text="Обновить инструменты", command=update_instruments)
+refresh_button.grid(row=10, column=3, pady=10, padx=5)
 
 # Заполняем список инструментов при запуске
 root.after(100, update_instruments)
 
 # Запускаем основной цикл
 root.mainloop()
+
+
