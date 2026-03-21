@@ -15,11 +15,11 @@ import sys
 
 from AlorPy import AlorPy  # Работа с Alor OpenAPI V2
 from FinamPy import FinamPy
-from FinamPy.grpc.accounts.accounts_service_pb2 import GetAccountRequest, GetAccountResponse  # Счет
-from FinamPy.grpc.assets.assets_service_pb2 import GetAssetRequest, GetAssetResponse  # Информация по тикеру
-from FinamPy.grpc.orders.orders_service_pb2 import Order, OrderState, OrderType, CancelOrderRequest, StopCondition  # Заявки
+from FinamPy.grpc.accounts_service_pb2 import GetAccountRequest, GetAccountResponse  # Счет
+from FinamPy.grpc.assets_service_pb2 import GetAssetRequest, GetAssetResponse  # Информация по тикеру
+from FinamPy.grpc.orders_service_pb2 import Order, OrderState, OrderType, CancelOrderRequest, StopCondition  # Заявки
 import FinamPy.grpc.side_pb2 as side  # Направление заявки
-from FinamPy.grpc.marketdata.marketdata_service_pb2 import QuoteRequest, QuoteResponse  # Последняя цена сделки
+from FinamPy.grpc.marketdata_service_pb2 import QuoteRequest, QuoteResponse  # Последняя цена сделки
 from FinLabPy.Config import brokers, default_broker  # Все брокеры и брокер по умолчанию
 
 from QUIK_Stream_v1_7 import calculate_open_data_open_price_open_iv

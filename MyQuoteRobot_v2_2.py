@@ -1,3 +1,5 @@
+import logging # Выводим лог на консоль и в файл
+# logging.basicConfig(level=logging.WARNING) # уровень логгирования
 import os.path
 import tkinter as tk
 from tkinter import ttk
@@ -10,6 +12,25 @@ from datetime import timedelta
 import pandas as pd
 import random
 from pytz import utc
+
+from FinLabPy.Config import brokers, default_broker  # Все брокеры и брокер по умолчанию
+from threading import Thread  # Запускаем поток подписки
+from AlorPy import AlorPy  # Работа с Alor OpenAPI V2
+from FinamPy import FinamPy
+from FinamPy.grpc.orders_service_pb2 import Order, OrderState, OrderType, CancelOrderRequest, StopCondition  # Заявки
+import FinamPy.grpc.side_pb2 as side  # Направление заявки
+from FinamPy.grpc.marketdata_service_pb2 import QuoteRequest, QuoteResponse  # Последняя цена сделки
+from FinLabPy.Config import brokers, default_broker  # Все брокеры и брокер по умолчанию
+from QUIK_Stream_v1_7 import calculate_open_data_open_price_open_iv
+
+import sys
+import math
+import numpy as np
+from datetime import datetime, timezone  # Дата и время
+from time import sleep  # Задержка в секундах перед выполнением операций
+from scipy.stats import norm
+from google.type.decimal_pb2 import Decimal
+import time
 
 # Глобальные переменные для хранения данных
 global model_from_api, base_asset_list, option_list, base_ticker, expiration_dates, selected_expiration_date, dff
@@ -111,6 +132,52 @@ def fetch_api_data():
 
 # Выполняем запрос при запуске
 fetch_api_data()
+
+# Словарь новых котировок
+new_quotes = {}
+def _on_new_quotes(response):
+    # logger.info(f'Котировка - {response["data"]}')
+    # Извлекаем данные
+    description = response["data"]['description']
+    ask = float(response["data"]['ask']) if response["data"]['ask'] else 0.0
+    ask_vol = float(response["data"]['ask_vol']) if response["data"]['ask_vol'] else 0.0
+    bid = float(response["data"]['bid']) if response["data"]['bid'] else 0.0
+    bid_vol = float(response["data"]['bid_vol']) if response["data"]['bid_vol'] else 0.0
+    last_price = float(response["data"]['last_price']) if response["data"]['last_price'] else 0.0
+
+    # Сохраняем в словарь по описанию тикера
+    new_quotes[description] = {
+        'ask': ask,
+        'ask_vol': ask_vol,
+        'bid': bid,
+        'bid_vol': bid_vol,
+        'last_price': last_price
+    }
+    # print(f"Котировки для {description}: ask={ask}, ask_vol={ask_vol}, bid={bid}, bid_vol={bid_vol}, last_price={last_price}")
+
+def _on_order(order): logger.info(f'Заявка - {order}')
+
+# Словарь сделок
+trade_dict = {}
+def _on_trade(trade):
+    logger.info(f'Сделка - {trade}')
+    # Извлекаем данные из объекта trade
+    trade_id = trade.trade_id
+    order_id = trade.order_id
+    timestamp = trade.timestamp
+    side = trade.side
+    size = trade.size.value
+    price = trade.price.value
+
+    # Сохраняем данные в словарь по ключу order_id
+    trade_dict[order_id] = {
+        'timestamp': timestamp,
+        'trade_id': trade_id,
+        'order_id': order_id,
+        'side': side,
+        'size': size,
+        'price': price
+    }
 
 def on_base_asset_change(event, app_instance):
     global base_ticker, dff
@@ -332,8 +399,47 @@ class App:
 
     def exit(self):
         """Выход из приложения"""
+        # Отписываемся от всех котировок
+        for guid in guids:
+            try:
+                logger.info(f'Подписка на котировки {ap_provider.unsubscribe(guid)} отменена')
+            except Exception as e:
+                logger.error(f'Ошибка отписки: {e}')
+        # Отмена подписок
+        print(f'\n')
+        print('Отмена подписок')
+        fp_provider.on_order.unsubscribe(_on_order)  # Сбрасываем обработчик заявок
+        fp_provider.on_trade.unsubscribe(_on_trade)  # Сбрасываем обработчик сделок
+        ap_provider.on_new_quotes.unsubscribe(_on_new_quotes)  # Отменяем подписку на события
+        print('Закрываем канал перед выходом')
+        fp_provider.close_channel()  # Закрываем канал перед выходом
+        ap_provider.close_web_socket()  # Перед выходом закрываем соединение с WebSocket
+        print("Выход из программы")
         self.root.destroy()
 
+Lot_count_step = 0
+sleep_time = 5  # Время ожидания в секундах
+
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',  # Формат сообщения
+                            datefmt='%d.%m.%Y %H:%M:%S',  # Формат даты
+                            level=logging.INFO,  # Уровень логируемых событий NOTSET/DEBUG/INFO/WARNING/ERROR/CRITICAL
+                            handlers=[logging.FileHandler('MyControlPanel.log', encoding='utf-8'),
+                                      logging.StreamHandler()])  # Лог записываем в файл и выводим на консоль
+# logging.Formatter.converter = lambda *args: datetime.now(tz=fp_provider.tz_msk).timetuple()  # В логе время указываем по МСК
+
+logger = logging.getLogger('MyControlPanel')  # Будем вести лог
+fp_provider = FinamPy()  # Подключаемся ко всем торговым счетам
+ap_provider = AlorPy()  # Подключаемся ко всем торговым счетам
+# Подписываемся на события
+ap_provider.on_new_quotes.subscribe(_on_new_quotes)
+# Подписываемся на свои заявки и сделки
+fp_provider.on_order.subscribe(_on_order)  # Подписываемся на заявки
+fp_provider.on_trade.subscribe(_on_trade)  # Подписываемся на сделки
+Thread(target=fp_provider.subscribe_orders_thread,
+       name='SubscriptionOrdersThread').start()  # Создаем и запускаем поток обработки своих заявок
+Thread(target=fp_provider.subscribe_trades_thread,
+       name='SubscriptionTradesThread').start()  # Создаем и запускаем поток обработки своих сделок
+sleep(1)  # Ждем 1 секунду
 
 # Запуск приложения
 if __name__ == "__main__":

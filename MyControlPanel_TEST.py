@@ -20,7 +20,6 @@ from datetime import datetime, timezone  # Дата и время
 from time import sleep  # Задержка в секундах перед выполнением операций
 from scipy.stats import norm
 from google.type.decimal_pb2 import Decimal
-
 import time
 
 # Глобальные переменные
@@ -41,8 +40,6 @@ Lot_count = 1
 Basket_size = 1
 Timeout = 8
 running = False
-
-
 
 
 Lot_count_step = 0
