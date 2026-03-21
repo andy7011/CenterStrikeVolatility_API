@@ -12,10 +12,24 @@ import random
 from pytz import utc
 
 # Глобальные переменные для хранения данных
-global model_from_api, base_asset_list, option_list, base_ticker, expiration_dates, selected_expiration_date
+global model_from_api, base_asset_list, option_list, base_ticker, expiration_dates, selected_expiration_date, dff
 base_ticker = None
 expiration_dates = []
 sell_tickers = []
+dff = None  # Добавляем глобальную переменную для хранения отфильтрованных данных
+dff_filtered = None  # Добавляем глобальную переменную для хранения отфильтрованных данных
+dff_filtered_type = None
+
+# Глобальные переменные
+global theor_profit_buy, theor_profit_sell, base_asset_ticker
+theor_profit_buy = 0.0
+theor_profit_sell = 0.0
+base_asset_ticker = 0.0
+CALL = 'C'
+PUT = 'P'
+r = 0 # Безрисковая ставка
+# Список GUID для отписки
+guids = []
 
 def utc_to_msk_datetime(dt, tzinfo=False):
     """Перевод времени из UTC в московское
@@ -95,128 +109,151 @@ def fetch_api_data():
     # print(option_list)
     return model_from_api, option_list
 
-def on_base_asset_change(event, app_instance):
-    global base_ticker, expiration_dates
-    # base_ticker = self.combobox_base_asset.get()
-    # expiration()  # Обновляем список дат истечения
-    base_ticker = app_instance.combobox_base_asset.get()
-    expiration(app_instance)  # Обновляем список дат истечения
-
 # Выполняем запрос при запуске
 fetch_api_data()
 
-# expiration_dates = []
-def expiration(app_instance):
-    global expiration_dates, selected_expiration_date
-    # print(base_ticker)
-    # Список опционов
+def on_base_asset_change(event, app_instance):
+    global base_ticker, dff
+    base_ticker = app_instance.combobox_base_asset.get()
     df = pd.DataFrame.from_dict(option_list, orient='columns')
     df = df.loc[df['_volatility'] > 0]
-    # base_ticker = self.combobox_base_asset.get()
-    dff = df[(df._base_asset_ticker == base_ticker)]  # оставим только опционы базового актива
-    dff['_expiration_datetime'] = pd.to_datetime(df['_expiration_datetime'], format='%a, %d %b %Y %H:%M:%S GMT')
-    dff['_expiration_datetime'].dt.date
+    dff = df[(df._base_asset_ticker == base_ticker)]
+    dff['_expiration_datetime'] = pd.to_datetime(dff['_expiration_datetime'], format='%a, %d %b %Y %H:%M:%S GMT')
     dff['expiration_date'] = dff['_expiration_datetime'].dt.strftime('%d.%m.%Y')
-    print(dff)
-    # Получаем уникальные даты истечения для выбранного базового актива
-    expiration_dates = dff[dff._base_asset_ticker == base_ticker]['expiration_date'].unique()
+    expiration_dates = dff['expiration_date'].unique()
 
-    print(expiration_dates)
     # Обновляем значения в combobox_expire
-    # self.combobox_expire['values'] = list(expiration_dates)
-    # self.combobox_expire.set(expiration_dates[0])
     app_instance.combobox_expire['values'] = list(expiration_dates)
+    if expiration_dates.size > 0:
+        app_instance.combobox_expire.set(expiration_dates[0])
+
+    return expiration_dates
+
+def on_expiration_date_change(event, app_instance):
+    global dff, dff_filtered, dff_filtered_type, sell_tickers
+
     selected_expiration_date = app_instance.combobox_expire.get()
-    return list(expiration_dates)
+    # print(f"Selected expiration date: {selected_expiration_date}")
+    # print(f"dff is None: {dff is None}")
 
-def get_option_type_sell(app_instance):
-    global selected_expiration_date, option_type_sell, dff
-    print(option_type_sell)
+    if selected_expiration_date and dff is not None:
+        # print(f"Filtering dff by date: {selected_expiration_date}")
+        dff_filtered = dff[(dff.expiration_date == selected_expiration_date)]
 
-    dff = dff[(dff.expiration_date == selected_expiration_date)]  # оставим только опционы выбранной даты экспирации
-    option_type_sell = app_instance.call_radio_sell.get()
+def get_call_option_type_sell(app_instance):
+    global dff_filtered, dff_filtered_type, sell_tickers
+    call_option_type_sell = app_instance.option_type_sell.get()  # Получаем текущее значение переменной
+    # Проверяем, что dff_filtered не None
+    if dff_filtered is None:
+        print("dff_filtered is None")
+        return
+    # Фильтруем по типу опциона (C для Call)
+    if call_option_type_sell == "C":
+        dff_filtered_type = dff_filtered[(dff_filtered._type == 'C')]
+    else:
+        dff_filtered_type = dff_filtered[(dff_filtered._type == 'P')]
+    # Обновляем sell_tickers
+    sell_tickers_type = dff_filtered_type['_ticker'].unique()
+    app_instance.combobox_sell['values'] = list(sell_tickers_type)
+    app_instance.combobox_sell.set(sell_tickers_type[0])
 
-    dff = dff[(dff._type == option_type_sell)]  # оставим только опционы выбранного типа
-    # Список sell_tickers
-    sell_tickers = dff['_ticker'].unique()
-    print(sell_tickers)
+def selected_sell(app_instance):
+    selected_sell_ticker = app_instance.combobox_sell.get()
+    print(selected_sell_ticker)
 
+def get_put_option_type_buy(app_instance):
+    global dff_filtered, dff_filtered_type, sell_tickers
+    put_option_type_buy = app_instance.option_type_buy.get()  # Получаем текущее значение переменной
+    # Проверяем, что dff_filtered не None
+    if dff_filtered is None:
+        print("dff_filtered is None")
+        return
+    # Фильтруем по типу опциона (P для Put)
+    if put_option_type_buy == "P":
+        dff_filtered_type = dff_filtered[(dff_filtered._type == 'P')]
+    else:
+        dff_filtered_type = dff_filtered[(dff_filtered._type == 'C')]
+    # Обновляем buy_tickers
+    buy_tickers_type = dff_filtered_type['_ticker'].unique()
+    app_instance.combobox_buy['values'] = list(buy_tickers_type)
+    app_instance.combobox_buy.set(buy_tickers_type[0])
 
-
-
-
+def selected_buy(app_instance):
+    selected_buy_ticker = app_instance.combobox_buy.get()
+    print(selected_buy_ticker)
 
 class App:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("My Quote Robot")
-        self.root.geometry("200x900")
+        self.root.geometry("200x700")
 
         self.running = False
         self.counter = 0
 
         # Label My Quote Robot
         self.label = tk.Label(self.root, text="My Quote Robot v2.2")
-        self.label.pack(pady=5)
+        self.label.pack(pady=2)
 
         # Label base_tickers_list
         self.expected_profit_label = tk.Label(self.root, text="Выбранный базовый актив: ")
-        self.expected_profit_label.pack(pady=10)
+        self.expected_profit_label.pack(pady=2)
 
         # Выбор базового актива
         self.combobox_base_asset = ttk.Combobox(self.root, values=list(MAP.keys()))
         self.combobox_base_asset.set(list(MAP.keys())[0])  # Установить первый элемент по умолчанию
-        self.combobox_base_asset.pack(pady=5)
+        self.combobox_base_asset.pack(pady=2)
         # Передаем self в обработчик
         self.combobox_base_asset.bind("<<ComboboxSelected>>", lambda event: on_base_asset_change(event, self))
 
         # Label Выбор опционной серии
         self.exp_date_label = tk.Label(self.root, text="Дата экспирации: ")
-        self.exp_date_label.pack(pady=5)
+        self.exp_date_label.pack(pady=2)
 
         # Combobox Выбор опционной серии
         self.combobox_expire = ttk.Combobox(self.root, values=expiration_dates)
-        # self.combobox_expire.set(expiration_dates[0]) # Установить первый
-        # self.combobox_expire.set('')  # Установить первый
-        self.combobox_expire.pack(pady=5)
-        # self.combobox_expire.bind("<<ComboboxSelected>>", expiration)
+        self.combobox_expire.pack(pady=2)
+        self.combobox_expire.bind("<<ComboboxSelected>>", lambda event: on_expiration_date_change(event, self))
+
+        # Инициализация с первым значением
+        on_base_asset_change(None, self)
 
         # Label Выбор опциона на продажу)
         self.sell_option_label = tk.Label(self.root, text="Выбор опциона на продажу")
-        self.sell_option_label.pack(pady=5)
+        self.sell_option_label.pack(pady=2)
 
-        # Radiobutton Выбор тип опциона на продажу (Call/Put)
+        # Radiobutton Выбор тип опциона "на продажу" (Call/Put)
         radio_frame = tk.Frame(self.root)
-        radio_frame.pack(pady=5)
-        self.option_type_sell = tk.StringVar(value="Call")
-        self.call_radio_sell = tk.Radiobutton(radio_frame, text="Call", variable=self.option_type_sell, value="Call")
-        self.put_radio_sell = tk.Radiobutton(radio_frame, text="Put", variable=self.option_type_sell, value="Put")
+        radio_frame.pack(pady=2)
+        self.option_type_sell = tk.StringVar(value="C")
+        self.call_radio_sell = tk.Radiobutton(radio_frame, text="Call", variable=self.option_type_sell, value="C",
+                                              command=lambda: get_call_option_type_sell(self))
+        self.put_radio_sell = tk.Radiobutton(radio_frame, text="Put", variable=self.option_type_sell, value="P",
+                                             command=lambda: get_call_option_type_sell(self))
         self.call_radio_sell.pack(side=tk.LEFT, padx=10)
         self.put_radio_sell.pack(side=tk.LEFT, padx=10)
-        self.call_radio_sell.bind("<<RadiobuttonSelected>>", get_option_type_sell)
 
         # Combobox Выбор опциона на продажу
-        # sell_tickers = ["AAPL", "GOOG", "MSFT"]
-        self.combobox_sell = ttk.Combobox(self.root, values=sell_tickers)
-        # self.combobox_sell.set('')  # Установить первый
-        self.combobox_sell.pack(pady=5)
-        # self.combobox_sell.bind("<<ComboboxSelected>>", selected_sell)
+        self.combobox_sell = ttk.Combobox(self.root, values=[])
+        self.combobox_sell.pack(pady=2)
+        self.combobox_sell.bind("<<ComboboxSelected>>", lambda event: selected_sell(self))
 
         # Выбор тип опциона на покупку(Call/Put)
         radio_frame = tk.Frame(self.root)
-        radio_frame.pack(pady=5)
-        self.option_type_buy = tk.StringVar(value="Put")  # Установить Put по умолчанию
-        self.call_radio_buy = tk.Radiobutton(radio_frame, text="Call", variable=self.option_type_buy, value="Call")
-        self.put_radio_buy = tk.Radiobutton(radio_frame, text="Put", variable=self.option_type_buy, value="Put")
+        radio_frame.pack(pady=2)
+        self.option_type_buy = tk.StringVar(value="P")  # Установить Put по умолчанию
+        self.call_radio_buy = tk.Radiobutton(radio_frame, text="Call", variable=self.option_type_buy, value="C",
+                                              command=lambda: get_put_option_type_buy(self))
+        self.put_radio_buy = tk.Radiobutton(radio_frame, text="Put", variable=self.option_type_buy, value="P",
+                                             command=lambda: get_put_option_type_buy(self))
         self.call_radio_buy.pack(side=tk.LEFT, padx=10)
         self.put_radio_buy.pack(side=tk.LEFT, padx=10)
 
         # Выбор опциона на покупку
-        buy_tickers = ["AAPL", "GOOG", "MSFT"]
-        self.combobox_buy = ttk.Combobox(self.root, values=buy_tickers)
-        self.combobox_buy.set('')  # Установить первый
-        self.combobox_buy.pack(pady=5)
-        # self.combobox_sell.bind("<<ComboboxSelected>>", selected_buy)
+        self.combobox_buy = ttk.Combobox(self.root, values=[])
+        # self.combobox_buy.set('')  # Установить первый
+        self.combobox_buy.pack(pady=2)
+        self.combobox_sell.bind("<<ComboboxSelected>>", selected_buy)
 
         # Метка Expected profit, %:
         self.expected_profit_label = tk.Label(self.root, text="Expected profit, % : ")
@@ -226,51 +263,51 @@ class App:
         # self.spinbox_profit = tk.Spinbox(self.root, from_=-10, to=10, increment=0.1, format="%.1f", width=8, textvariable=2.0, command=selected_profit)
         self.spinbox_profit_var = tk.DoubleVar(value=5.0)
         self.spinbox_profit = tk.Spinbox(self.root, from_=-10, to=10, increment=0.1, format="%.1f", width=8, textvariable=self.spinbox_profit_var)
-        self.spinbox_profit.pack(pady=5)
+        self.spinbox_profit.pack(pady=2)
 
         # Label Lot count
         self.lot_count_label = tk.Label(self.root, text="Lot count: ")
-        self.lot_count_label.pack(pady=5)
+        self.lot_count_label.pack(pady=2)
 
         # # Spinbox Переменная Lot_count
         self.lot_count_var = tk.IntVar(value=1)
         self.lot_count = tk.Spinbox(self.root, from_=1, to=100, increment=1, width=8, textvariable=self.lot_count_var)
-        self.lot_count.pack(pady=5)
+        self.lot_count.pack(pady=2)
 
         # Label Basket size
         self.basket_size_label = tk.Label(self.root, text="Basket size: ")
-        self.basket_size_label.pack(pady=5)
+        self.basket_size_label.pack(pady=2)
 
         # Spinbox Переменная Basket_size
         self.basket_size_var = tk.IntVar(value=1)
         self.basket_size = tk.Spinbox(self.root, from_=1, to=100, increment=1, width=8, textvariable=self.basket_size_var)
-        self.basket_size.pack(pady=5)
+        self.basket_size.pack(pady=2)
 
         # Label Timeout
         self.timeout_label = tk.Label(self.root, text="Timeout: ")
-        self.timeout_label.pack(pady=5)
+        self.timeout_label.pack(pady=2)
 
         # Spinbox Переменная Timeout
-        self.timeout_var = tk.IntVar(value=1)
+        self.timeout_var = tk.IntVar(value=5)
         self.timeout = tk.Spinbox(self.root, from_=1, to=30, increment=1, width=8, textvariable=self.timeout_var)
-        self.timeout.pack(pady=5)
+        self.timeout.pack(pady=2)
 
         # Создаем кнопки
         self.start_button = tk.Button(self.root, text="Start", command=self.start_loop)
-        self.start_button.pack(pady=10)
+        self.start_button.pack(pady=2)
 
         self.stop_button = tk.Button(self.root, text="Stop", command=self.stop_loop)
-        self.stop_button.pack(pady=10)
+        self.stop_button.pack(pady=2)
 
         # Button Exit
         self.exit_button = tk.Button(self.root, text="Exit", command=self.exit)
-        self.exit_button.pack(pady=10)
+        self.exit_button.pack(pady=2)
 
         self.status_label = tk.Label(self.root, text="Status: Stopped")
-        self.status_label.pack(pady=10)
+        self.status_label.pack(pady=2)
 
         self.counter_label = tk.Label(self.root, text="Счётчик циклов: 0")
-        self.counter_label.pack(pady=10)
+        self.counter_label.pack(pady=2)
 
     def loop_function(self):
         """Функция, которая будет выполняться в цикле"""
