@@ -724,7 +724,7 @@ class App:
             self.status_label.config(text="Status: Running")
 
             lot_count_step = 0
-
+            print(f'lot_count: {lot_count} basket_size: {basket_size} timeout: {timeout} lot_count_step: {lot_count_step}')
             # print(f'dataname_sell: {dataname_sell}')
             finam_board, ticker = fp_provider.dataname_to_finam_board_ticker(dataname_sell)  # Код режима торгов Финама и тикер
             mic = fp_provider.get_mic(finam_board, ticker)  # Биржа тикера
@@ -842,7 +842,7 @@ class App:
                 limit_price_sell = step_price if target_price_sell == 0 else target_price_sell  # При нулевой расчетной цене ставим мин шаг цены
 
                 # Подбираем количество в зависимости от имеющегося количества в противоположной котировке (есть риск частичного исполнения заявки) и Basket_size
-                quantity_buy = min(bid_sell_vol, lot_count - lot_count_step, basket_size)
+                quantity_buy = max(1, min(bid_sell_vol, lot_count - lot_count_step, basket_size))
 
                 print(
                     f'Выставляем лимитную заявку на покупку опциона {dataname_buy} по цене {limit_price_buy} и количеством {quantity_buy}')
@@ -935,7 +935,7 @@ class App:
                 limit_price_buy = step_price if target_price_buy == 0 else target_price_buy
 
                 # Подбираем количество в зависимости от количества в противоположной котировке
-                quantity_sell = min(ask_buy_vol, lot_count - lot_count_step, basket_size)
+                quantity_sell = max(1, min(ask_buy_vol, lot_count - lot_count_step, basket_size))
 
                 print(f'Выставляем лимитную заявку на продажу по цене {limit_price_sell}: {dataname_sell} количество {quantity_sell}. Ждём sleep_time.')
                 # Вызов функции выставления заявки на продажу
