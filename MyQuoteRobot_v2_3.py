@@ -735,28 +735,23 @@ class App:
                 print(f'1. Целевая IV для мгновенной продажи: {round(target_iv_sell, 2)}')
                 target_price_sell = bid_sell  # Целевая ЦЕНА для мгновенной продажи
                 print(f'2. Целевая ЦЕНА для мгновенной продажи: {round(target_price_sell, 2)}')
-                target_profit_sell = bid_iv_sell - open_iv_sell  # Целевая прибыль для мгновенной продажи
-                print(f'3. Целевая прибыль для мгновенной продажи: {round(target_profit_sell, 2)}')
-                target_profit_buy = expected_profit - target_profit_sell  # Целевая прибыль для котирования покупки
+                # target_profit_sell = bid_iv_sell - open_iv_sell  # Целевая прибыль для мгновенной продажи
+                # print(f'3. Целевая прибыль для мгновенной продажи: {round(target_profit_sell, 2)}')
+                target_profit_buy = bid_iv_sell - expected_profit # Целевая прибыль для котирования покупки
                 print(f'4. Целевая прибыль для котирования покупки: {round(target_profit_buy, 2)}')
-                target_iv_buy = open_iv_buy - target_profit_buy  # IV для котирования покупки
+                target_iv_buy = target_profit_buy  # IV для котирования покупки
                 print(f'5. Целевая IV для котирования покупки: {round(target_iv_buy, 2)}')
                 S, K, T, opt_type = get_option_data_for_calc_price(dataname_buy)  # Получаем данные опциона dataname_buy
-                target_price_buy_ = option_price(S, target_iv_buy / 100, K, T, r,
-                                                 opt_type=opt_type)  # Целевая цена для котирования покупки
+                target_price_buy_ = option_price(S, target_iv_buy / 100, K, T, r, opt_type=opt_type)  # Целевая цена для котирования покупки
                 target_price_buy = int(round((target_price_buy_ // step_price) * step_price, decimals))
-                print(
-                    f'Целевая цена для котирования покупки {dataname_buy}: {target_price_buy}')  # Сначала котируем покупку
-                print(
-                    f'Целевая цена для мгновенной продажи {dataname_sell}: {target_price_sell}')  # Если покупка свершилась мгновенно продаем
+                print(f'Целевая цена для котирования покупки {dataname_buy}: {target_price_buy}')  # Сначала котируем покупку
+                print(f'Целевая цена для мгновенной продажи {dataname_sell}: {target_price_sell}')  # Если покупка свершилась мгновенно продаем
 
                 # Логика выставления лимитной цены на покупку опциона dataname_buy
                 if target_price_buy <= bid_buy:
                     limit_price_buy = target_price_buy
-                    print(
-                        f'Цена на покупку опциона {dataname_buy} в стакане {bid_buy} выше целевой цены {target_price_buy}, заявка не выставляется!')
-                    sleep(Timeout)
-                    continue
+                    print(f'Цена на покупку опциона {dataname_buy} в стакане {bid_buy} выше целевой цены {target_price_buy}, заявка не выставляется!')
+                    sleep(timeout)
                 else:
                     # При нулевой расчетной цене ставим минимальный шаг цены step_price, иначе - target_price_buy
                     limit_price_buy = bid_buy + step_price if target_price_buy != 0 else step_price
@@ -765,7 +760,7 @@ class App:
                 limit_price_sell = step_price if target_price_sell == 0 else target_price_sell  # При нулевой расчетной цене ставим мин шаг цены
 
                 # Подбираем количество в зависимости от имеющегося количества в противоположной котировке (есть риск частичного исполнения заявки) и Basket_size
-                quantity_buy = min(bid_sell_vol, Lot_count - Lot_count_step, Basket_size)
+                quantity_buy = min(bid_sell_vol, lot_count - lot_count_step, basket_size)
 
                 print(
                     f'Выставляем лимитную заявку на покупку опциона {dataname_buy} по цене {limit_price_buy} и количеством {quantity_buy}')
@@ -875,7 +870,7 @@ class App:
                     limit_price_sell=limit_price_sell  # Укажите цену
                 )
                 print(f'Заявка на продажу выставлена: {order_id}, статус: {status} ')
-                sleep(Timeout)
+                sleep(timeout)
                 position = trade_dict.get(order_id)
                 if position:  # Сделка на продажу состоялась
                     print(f'timestamp - {position['timestamp']}')
