@@ -576,7 +576,7 @@ if __name__ == "__main__":
             bid_buy = int(round(new_quotes[ticker]['bid'], decimals))
             bid_buy_vol = int(round(new_quotes[ticker]['bid_vol'], decimals))
             print(f'Котировки ask_buy: {ask_buy} ask_buy_vol: {ask_buy_vol} bid_buy: {bid_buy} bid_buy_vol: {bid_buy_vol}')
-            # Вычисляем волатильность ask_buy
+            # Вычисляем волатильность ask_iv_buy bid_iv_buy
             # print(f'{S}, {K}, {T}, {ask_buy}, {r}, {sigma} {option_type}')
             if option_type == 'C':
                 sigma = options_data[dataname]['volatility'] / 100
