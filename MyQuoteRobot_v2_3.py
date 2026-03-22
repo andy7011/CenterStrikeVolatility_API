@@ -726,6 +726,10 @@ class App:
             lot_count_step = 0
 
             # print(f'dataname_sell: {dataname_sell}')
+            finam_board, ticker = fp_provider.dataname_to_finam_board_ticker(dataname_sell)  # Код режима торгов Финама и тикер
+            mic = fp_provider.get_mic(finam_board, ticker)  # Биржа тикера
+            symbol = f'{ticker}@{mic}'  # Тикер Финама
+            symbol_sell = symbol
             account_id = fp_provider.account_ids[0]  # Торговый счет, где будут выставляться заявки
             quantity_sell = options_data[dataname_sell]['lot_size']  # Количество в шт
             step_price = int(float(options_data[dataname_sell]['minstep']))  # Минимальный шаг цены
@@ -741,7 +745,6 @@ class App:
             theoretical_price_sell = int(round((theoretical_price_sell_ // step_price) * step_price, decimals))
             # Получаем ask, bid из потока котировок по подписке из обновляемого словаря new_quotes
             ticker = options_data[dataname_sell]['ticker']
-            symbol = ticker
             ask_sell = int(round(new_quotes[ticker]['ask'], decimals))
             ask_sell_vol = int(round(new_quotes[ticker]['ask_vol'], decimals))
             bid_sell = int(round(new_quotes[ticker]['bid'], decimals))
@@ -762,6 +765,10 @@ class App:
 
 
             # print(f'dataname_buy: {dataname_buy}')
+            finam_board, ticker = fp_provider.dataname_to_finam_board_ticker(dataname_buy)  # Код режима торгов Финама и тикер
+            mic = fp_provider.get_mic(finam_board, ticker)  # Биржа тикера
+            symbol = f'{ticker}@{mic}'  # Тикер Финама
+            symbol_buy = symbol
             account_id = fp_provider.account_ids[0]  # Торговый счет, где будут выставляться заявки
             quantity_buy = options_data[dataname_buy]['lot_size']  # Количество в шт
             theoretical_price_buy_ = options_data[dataname_buy]['theorPrice']
@@ -775,7 +782,6 @@ class App:
             theoretical_price_buy = int(round((theoretical_price_buy_ // step_price) * step_price, decimals))
             # Получаем ask, bid из потока котировок по подписке из обновляемого словаря new_quotes
             ticker = options_data[dataname_buy]['ticker']
-            symbol_buy = ticker
             ask_buy = int(round(new_quotes[ticker]['ask'], decimals))
             ask_buy_vol = int(round(new_quotes[ticker]['ask_vol'], decimals))
             bid_buy = int(round(new_quotes[ticker]['bid'], decimals))
@@ -881,13 +887,12 @@ class App:
                         lot_count_step = lot_count_step + int(float(position['size']))
                         print(f'Завершение цикла N {lot_count_step}')
                         if lot_count_step == lot_count:
-                            running = False
+                            self.running = False
                             print(f'Заданное количество лотов {lot_count} исполнено. Завершение работы котировщика!')
                     else:
                         print(f'Заявка на продажу не исполнена: order_id - {order_id}')
                         # # Снятие заявки на продажу
                         # get_cancel_order(account_id, order_id)
-                        # continue
                 else:
                     print(f'Заявка на покупку не исполнена: order_id - {order_id_buy}')
                     # Снятие заявки на продажу
@@ -951,8 +956,7 @@ class App:
                     print(f'price - {position['price']}')
                     # Подбираем количество в зависимости от количества исполненной заявки на покупку
                     quantity_buy = quantity_sell
-                    print(
-                        f'Выставляем лимитную заявку на покупку опциона {dataname_buy} по цене {limit_price_buy} в количестве {quantity_buy}')
+                    print(f'Выставляем лимитную заявку на покупку опциона {dataname_buy} по цене {limit_price_buy} в количестве {quantity_buy}')
                     # Вызов функции выставления заявки на покупку
                     order_id_buy, status_buy = get_order_buy(
                         account_id=account_id,  # Укажите реальный номер счета
@@ -973,7 +977,7 @@ class App:
                         lot_count_step = lot_count_step + int(float(position['size']))
                         print(f'Завершение цикла N {lot_count_step}')
                         if lot_count_step == lot_count:
-                            running = False
+                            self.running = False
                             print(f'Заданное количество лотов {lot_count} исполнено. Завершение работы котировщика!')
                     else:
                         print(f'Заявка на покупку не исполнена: order_id_buy - {order_id_buy}')
