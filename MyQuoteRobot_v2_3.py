@@ -46,7 +46,7 @@ dataname_sell = ''
 dataname_buy = ''
 base_asset_ticker = ''
 quoter_side = ''
-expected_profit = 5.0  # Значение по умолчанию
+expected_profit = 2.0  # Значение по умолчанию
 lot_count = 1
 basket_size = 1
 timeout = 5
@@ -204,7 +204,7 @@ def on_base_asset_change(event, app_instance):
 
     df = pd.DataFrame.from_dict(option_list, orient='columns')
     df = df.loc[df['_volatility'] > 0]
-    dff = df[(df._base_asset_ticker == base_asset_ticker)]
+    dff = df[(df._base_asset_ticker == base_asset_ticker)].copy()  # Добавляем .copy()
     dff['_expiration_datetime'] = pd.to_datetime(dff['_expiration_datetime'], format='%a, %d %b %Y %H:%M:%S GMT')
     dff['expiration_date'] = dff['_expiration_datetime'].dt.strftime('%d.%m.%Y')
     expiration_dates = dff['expiration_date'].unique()
@@ -248,8 +248,9 @@ def selected_sell(app_instance):
     global dataname_sell
     selected_sell_ticker = app_instance.combobox_sell.get()
     dataname_sell = "SPBOPT." + selected_sell_ticker
-    # print(selected_sell_ticker, dataname_sell)
     option_data_sell = get_opion_data_alor(dataname_sell)
+
+
 
 def get_put_option_type_buy(app_instance):
     global dff_filtered, dff_filtered_type, sell_tickers
@@ -272,7 +273,6 @@ def selected_buy(app_instance):
     global dataname_buy
     selected_buy_ticker = app_instance.combobox_buy.get()
     dataname_buy = "SPBOPT." + selected_buy_ticker
-    # print(selected_buy_ticker, dataname_buy)
     option_data_buy = get_opion_data_alor(dataname_buy)
 
 def get_quoter_side(app_instance):
@@ -283,7 +283,86 @@ def get_quoter_side(app_instance):
 def selected_profit(app_instance):
     global expected_profit
     expected_profit = float(app_instance.spinbox_profit.get())
-    print(f"Выбранная прибыль: {expected_profit}")
+    decimals = options_data[dataname_sell]['decimals']
+    step_price = int(float(options_data[dataname_sell]['minstep']))  # Минимальный шаг цены
+    print(f"Expected profit: {expected_profit}")
+    # Получаем ask, bid из потока котировок по подписке из обновляемого словаря new_quotes
+    sell_ticker = dataname_sell.split('.')[-1]
+    ask_sell = new_quotes[sell_ticker]['ask']
+    bid_sell = new_quotes[sell_ticker]['bid']
+    last_sell = new_quotes[sell_ticker]['last_price']
+    # print(f'ask_sell: {ask_sell}, bid_sell: {bid_sell}, last_sell: {last_sell}')
+    S, K, T, opt_type_sell = get_option_data_for_calc_price(dataname_sell)  # Получаем данные опциона dataname_sell
+    if opt_type_sell == 'C':
+        sigma = options_data[dataname_sell]['volatility'] / 100
+        ask_iv_sell = newton_vol_call(S, K, T, ask_sell, r, sigma) * 100
+        bid_iv_sell = newton_vol_call(S, K, T, bid_sell, r, sigma) * 100
+        last_iv_sell = newton_vol_call(S, K, T, last_sell, r, sigma) * 100
+    else:
+        sigma = options_data[dataname_sell]['volatility'] / 100
+        ask_iv_sell = newton_vol_put(S, K, T, ask_sell, r, sigma) * 100
+        bid_iv_sell = newton_vol_put(S, K, T, bid_sell, r, sigma) * 100
+        last_iv_sell = newton_vol_put(S, K, T, last_sell, r, sigma) * 100
+    theor_iv_sell = options_data[dataname_sell]['volatility']
+    # print(f'ask_iv_sell: {round(ask_iv_sell, 2)}, bid_iv_sell: {round(bid_iv_sell, 2)}, last_iv_sell: {round(last_iv_sell, 2)}')
+
+    # Получаем ask, bid из потока котировок по подписке из обновляемого словаря new_quotes
+    buy_ticker = dataname_buy.split('.')[-1]
+    ask_buy = new_quotes[buy_ticker]['ask']
+    bid_buy = new_quotes[buy_ticker]['bid']
+    last_buy = new_quotes[buy_ticker]['last_price']
+    # print(f'ask_buy: {ask_buy}, bid_buy: {bid_buy}, last_buy: {last_buy}')
+    S, K, T, opt_type_buy = get_option_data_for_calc_price(dataname_buy)  # Получаем данные опциона dataname_sell
+    if opt_type_buy == 'C':
+        sigma = options_data[dataname_buy]['volatility'] / 100
+        ask_iv_buy = newton_vol_call(S, K, T, ask_buy, r, sigma) * 100
+        bid_iv_buy = newton_vol_call(S, K, T, bid_buy, r, sigma) * 100
+        last_iv_buy = newton_vol_call(S, K, T, last_buy, r, sigma) * 100
+    else:
+        sigma = options_data[dataname_buy]['volatility'] / 100
+        ask_iv_buy = newton_vol_call(S, K, T, ask_buy, r, sigma) * 100
+        bid_iv_buy = newton_vol_call(S, K, T, bid_buy, r, sigma) * 100
+        last_iv_buy = newton_vol_call(S, K, T, last_buy, r, sigma) * 100
+    theor_iv_buy = options_data[dataname_buy]['volatility']
+    # print(f'ask_iv_buy: {round(ask_iv_buy, 2)}, bid_iv_buy: {round(bid_iv_buy, 2)}, last_iv_buy: {round(last_iv_buy, 2)}')
+
+    if quoter_side == 'SELL':
+        if ask_iv_buy != 0 and ask_iv_sell != 0:
+            difference_market = ask_iv_buy - ask_iv_sell
+        target_iv_sell = ask_iv_buy + expected_profit  # Целевая прибыль для котирования продажи
+        S, K, T, opt_type = get_option_data_for_calc_price(dataname_sell)  # Получаем данные опциона dataname_sell
+        limit_price_sell_ = option_price(S, target_iv_sell / 100, K, T, r, opt_type=opt_type)  # Целевая цена для котирования продажи
+        limit_price_sell = int(round((limit_price_sell_ // step_price) * step_price, decimals))
+        print(f'\n')
+        print(f'{"SELL:":<30} {"BUY:":<30}')
+        print(f'{dataname_sell:<30} {dataname_buy:<30}')
+        print(f'{"ask:":<15} {ask_sell:<15} {"ask:":<15} {ask_buy:<15}')
+        print(f'{"bid:":<15} {bid_sell:<15} {"bid:":<15} {bid_buy:<15}')
+        print(f'{"Целевая IV:":<15} {round(target_iv_sell, 2):<15} {"Лимитная IV:":<15} {round(ask_iv_buy, 2):<15}')
+        print(f'{"Целевая цена:":<15} {limit_price_sell:<15} {"Лимитная цена:":<15} {ask_buy:<15}')
+    else:
+        if bid_iv_buy != 0 and bid_iv_sell != 0:
+            difference_market = bid_iv_buy - bid_iv_sell
+        target_iv_buy = bid_iv_sell - expected_profit  # Целевая прибыль для котирования покупки
+        S, K, T, opt_type = get_option_data_for_calc_price(dataname_buy)  # Получаем данные опциона dataname_sell
+        limit_price_buy_ = option_price(S, target_iv_buy / 100, K, T, r, opt_type=opt_type)  # Целевая цена для котирования покупки
+        limit_price_buy = int(round((limit_price_buy_ // step_price) * step_price, decimals))
+        print(f'\n')
+        print(f'{"SELL:":<30} {"BUY:":<30}')
+        print(f'{dataname_sell:<30} {dataname_buy:<30}')
+        print(f'{"ask:":<15} {ask_sell:<15} {"ask:":<15} {ask_buy:<15}')
+        print(f'{"bid:":<15} {bid_sell:<15} {"bid:":<15} {bid_buy:<15}')
+        print(f'{"Целевая IV:":<15} {bid_iv_sell:<15} {"Лимитная IV:":<15} {round(target_iv_buy, 2):<15}')
+        print(f'{"Целевая цена:":<15} {bid_sell:<15} {"Лимитная цена:":<15} {limit_price_buy:<15}')
+
+    # print(f'\n')
+    # print(f'Разбежка/наклон   last: {round(difference_last, 2)}')
+    # print(f'Разбежка/наклон  theor: {round(difference_theor, 2)}')
+    # print(f'Разбежка/наклон market: {round(difference_market, 2)}')
+    # print(f'Разбежка/наклон target: {round(expected_profit, 2)}')
+
+
+
 
 def selected_lot_count(app_instance):
     global lot_count
@@ -666,7 +745,7 @@ class App:
         self.expected_profit_label.pack(pady=1)
 
         # Спинбокс spinbox_profit Expected profit
-        self.spinbox_profit_var = tk.DoubleVar(value=5.0)
+        self.spinbox_profit_var = tk.DoubleVar(value=2.0)
         self.spinbox_profit = tk.Spinbox(self.root, from_=-10, to=10, increment=0.1, format="%.1f", width=8, textvariable=self.spinbox_profit_var, command=lambda: selected_profit(self))
         self.spinbox_profit.pack(pady=1)
 
@@ -749,18 +828,18 @@ class App:
             ask_sell_vol = int(round(new_quotes[ticker]['ask_vol'], decimals))
             bid_sell = int(round(new_quotes[ticker]['bid'], decimals))
             bid_sell_vol = int(round(new_quotes[ticker]['bid_vol'], decimals))
-            last_iv_sell = int(round(new_quotes[ticker]['last_price'], decimals))
+            last_sell = int(round(new_quotes[ticker]['last_price'], decimals))
             # print(f'ask_sell: {ask_sell}, bid_sell: {bid_sell} ask_sell_vol: {ask_sell_vol}, bid_sell_vol: {bid_sell_vol}')
             if opt_type == 'C':
                 sigma = options_data[dataname_sell]['volatility'] / 100
                 ask_iv_sell = newton_vol_call(S, K, T, ask_sell, r, sigma) * 100
                 bid_iv_sell = newton_vol_call(S, K, T, bid_sell, r, sigma) * 100
-                last_iv_sell = newton_vol_call(S, K, T, last_iv_sell, r, sigma) * 100
+                last_iv_sell = newton_vol_call(S, K, T, last_sell, r, sigma) * 100
             else:
                 sigma = options_data[dataname_sell]['volatility'] / 100
                 ask_iv_sell = newton_vol_put(S, K, T, ask_sell, r, sigma) * 100
                 bid_iv_sell = newton_vol_put(S, K, T, bid_sell, r, sigma) * 100
-                last_iv_sell = newton_vol_put(S, K, T, last_iv_sell, r, sigma) * 100
+                last_iv_sell = newton_vol_put(S, K, T, last_sell, r, sigma) * 100
 
 
 
