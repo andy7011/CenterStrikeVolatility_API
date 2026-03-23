@@ -6,6 +6,7 @@
       <module fileurl="file://$PROJECT_DIR$/.idea/CenterStrikeVolatility.iml" filepath="$PROJECT_DIR$/.idea/CenterStrikeVolatility.iml" />
       <module fileurl="file://$PROJECT_DIR$/FinLabPy/.idea/FinLabPy.iml" filepath="$PROJECT_DIR$/FinLabPy/.idea/FinLabPy.iml" />
       <module fileurl="file://$PROJECT_DIR$/FinamPy/.idea/FinamPy_OLD.iml" filepath="$PROJECT_DIR$/FinamPy/.idea/FinamPy_OLD.iml" />
+      <module fileurl="file://$PROJECT_DIR$/MOEXPy/.idea/MOEXPy.iml" filepath="$PROJECT_DIR$/MOEXPy/.idea/MOEXPy.iml" />
       <module fileurl="file://$PROJECT_DIR$/QuikPy/.idea/QuikPy.iml" filepath="$PROJECT_DIR$/QuikPy/.idea/QuikPy.iml" />
     </modules>
   </component>

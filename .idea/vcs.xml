@@ -6,6 +6,7 @@
     <mapping directory="$PROJECT_DIR$/AlorPy" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/FinLabPy" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/FinamPy" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/MOEXPy" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/QuikPy" vcs="Git" />
   </component>
 </project>

@@ -250,8 +250,6 @@ def selected_sell(app_instance):
     dataname_sell = "SPBOPT." + selected_sell_ticker
     option_data_sell = get_opion_data_alor(dataname_sell)
 
-
-
 def get_put_option_type_buy(app_instance):
     global dff_filtered, dff_filtered_type, sell_tickers
     put_option_type_buy = app_instance.option_type_buy.get()  # Получаем текущее значение переменной
@@ -361,9 +359,6 @@ def selected_profit(app_instance):
     # print(f'Разбежка/наклон  theor: {round(difference_theor, 2)}')
     # print(f'Разбежка/наклон market: {round(difference_market, 2)}')
     # print(f'Разбежка/наклон target: {round(expected_profit, 2)}')
-
-
-
 
 def selected_lot_count(app_instance):
     global lot_count

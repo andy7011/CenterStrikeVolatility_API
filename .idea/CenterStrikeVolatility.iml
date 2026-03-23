@@ -16,5 +16,6 @@
     <orderEntry type="module" module-name="FinLabPy" />
     <orderEntry type="module" module-name="AlorPy" />
     <orderEntry type="module" module-name="QuikPy" />
+    <orderEntry type="module" module-name="MOEXPy" />
   </component>
 </module>
