@@ -355,6 +355,7 @@ def selected_profit(app_instance):
         print(f'{"Целевая IV:":<15} {bid_iv_sell:<15} {"Лимитная IV:":<15} {round(target_iv_buy, 2):<15}')
         print(f'{"Целевая цена:":<15} {bid_sell:<15} {"Лимитная цена:":<15} {limit_price_buy:<15}')
 
+
     # print(f'\n')
     # print(f'Разбежка/наклон   last: {round(difference_last, 2)}')
     # print(f'Разбежка/наклон  theor: {round(difference_theor, 2)}')
