@@ -783,16 +783,16 @@ class App:
         self.exit_button.pack(pady=2)
 
         self.status_label = tk.Label(self.root, text="Status: Stopped")
-        self.status_label.pack(pady=2)
+        self.status_label.pack(pady=1)
 
         self.counter_label = tk.Label(self.root, text="Счётчик циклов: 0")
-        self.counter_label.pack(pady=2)
+        self.counter_label.pack(pady=1)
 
     def loop_function(self):
         global options_data
         """Функция, которая будет выполняться в цикле"""
         if self.running:
-            self.counter += 1
+
             self.counter_label.config(text=f"Счётчик циклов: {self.counter}")
             self.status_label.config(text="Status: Running")
 
@@ -954,10 +954,10 @@ class App:
                         print(f'side - {position['side']}')
                         print(f'size - {position['size']}')
                         print(f'price - {position['price']}')
-
-                        lot_count_step = lot_count_step + int(float(position['size']))
+                        self.counter += 1
+                        # lot_count_step = lot_count_step + int(float(position['size']))
                         print(f'Завершение цикла N {lot_count_step}')
-                        if lot_count_step == lot_count:
+                        if self.counter  >= lot_count:
                             self.running = False
                             print(f'Заданное количество лотов {lot_count} исполнено. Завершение работы котировщика!')
                     else:
@@ -1045,9 +1045,10 @@ class App:
                         print(f'side - {position['side']}')
                         print(f'size - {position['size']}')
                         print(f'price - {position['price']}')
-                        lot_count_step = lot_count_step + int(float(position['size']))
+                        self.counter += 1
+                        # lot_count_step = lot_count_step + int(float(position['size']))
                         print(f'Завершение цикла N {lot_count_step}')
-                        if lot_count_step == lot_count:
+                        if self.counter >= lot_count:
                             print(f'Заданное количество лотов {lot_count} исполнено. Завершение работы котировщика!')
                             self.running = False
                     else:
