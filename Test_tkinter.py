@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk
 import time
+from time import sleep  # Задержка в секундах перед выполнением операций
 
 
 class App:
@@ -33,7 +34,7 @@ class App:
             self.status_label.config(text="Status: Running")
 
             # Планируем следующий вызов через 100 мс
-            self.root.after(1000, self.loop_function)
+            self.root.after(100, self.loop_function)
 
     def start_loop(self):
         """Запуск цикла"""

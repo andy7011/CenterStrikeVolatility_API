@@ -376,18 +376,10 @@ def selected_profit(app_instance):
         print(f'{"Целевая IV:":<15} {bid_iv_sell:<15} {"Лимитная IV:":<15} {round(target_iv_buy, 2):<15}')
         print(f'{"Целевая цена:":<15} {bid_sell:<15} {"Лимитная цена:":<15} {limit_price_buy:<15}')
 
-    # print(f'\n')
-    # print(f'Разбежка/наклон   last: {round(difference_last, 2)}')
-    # print(f'Разбежка/наклон  theor: {round(difference_theor, 2)}')
-    # print(f'Разбежка/наклон market: {round(difference_market, 2)}')
-    # print(f'Разбежка/наклон target: {round(expected_profit, 2)}')
-
-
 def selected_lot_count(app_instance):
     global lot_count
     lot_count = int(app_instance.spinbox_lot_count_var.get())
     print(f"Выбранное количество лотов: {lot_count}")
-
 
 def selected_basket_size(app_instance):
     global basket_size
@@ -924,11 +916,6 @@ class App:
                 last_iv_buy = newton_vol_put(S, K, T, last_price_buy, r, sigma) * 100
             # print(f'Волатильность ask_iv_buy: {round(ask_iv_buy, 2)} bid_iv_buy: {round(bid_iv_buy, 2)}')
 
-            # print('\n')
-            # print(f'Разбежка/наклон: Theor: {round(theor_iv_sell - theor_iv_buy, 2)} '
-            # f'  Last: {round(last_iv_sell - last_iv_buy, 2)} '
-            # f'  Market: {round(bid_iv_sell - ask_iv_buy, 2)}')
-
             if quoter_side == 'BUY':
                 # print(f'{quoter_side} Котируем покупку, продажа - по рынку!')
                 print(f'Вариант 1 "Котируем покупку"')
@@ -1057,8 +1044,8 @@ class App:
                         f'Цена на продажу опциона {dataname_sell} в стакане {ask_sell} ниже целевой цены {target_price_sell}, заявка не выставляется!')
                     sleep(timeout)
                     self.root.after(100, self.loop_function)
-                    return
-                    limit_price_sell = target_price_sell
+                    # break  # выход из цикла
+                    # limit_price_sell = target_price_sell
                 elif target_price_sell == 0:
                     limit_price_sell = step_price
                 else:
@@ -1070,8 +1057,7 @@ class App:
                 # Подбираем количество в зависимости от количества в противоположной котировке
                 quantity_sell = max(1, min(ask_buy_vol, lot_count - lot_count_step, basket_size))
 
-                print(
-                    f'Выставляем лимитную заявку на продажу по цене {limit_price_sell}: {dataname_sell} количество {quantity_sell}. Ждём sleep_time.')
+                print(f'Выставляем лимитную заявку на продажу по цене {limit_price_sell}: {dataname_sell} количество {quantity_sell}. Ждём sleep_time.')
                 # Вызов функции выставления заявки на продажу
                 order_id, status = get_order_sell(
                     account_id=account_id,  # Укажите реальный номер счета
@@ -1080,49 +1066,65 @@ class App:
                     limit_price_sell=limit_price_sell  # Укажите цену
                 )
                 print(f'Заявка на продажу выставлена: {order_id}, статус: {status} ')
-                sleep(timeout)
-                position = trade_dict.get(order_id)
-                if position:  # Сделка на продажу состоялась
-                    print(f'timestamp - {position['timestamp']}')
-                    print(f'trade_id - {position['trade_id']}')
-                    print(f'side - {position['side']}')
-                    print(f'size - {position['size']}')
-                    print(f'price - {position['price']}')
-                    # Подбираем количество в зависимости от количества исполненной заявки на покупку
-                    quantity_buy = quantity_sell
-                    print(
-                        f'Выставляем лимитную заявку на покупку опциона {dataname_buy} по цене {limit_price_buy} в количестве {quantity_buy}')
-                    # Вызов функции выставления заявки на покупку
-                    order_id_buy, status_buy = get_order_buy(
-                        account_id=account_id,  # Укажите реальный номер счета
-                        symbol_buy=symbol_buy,  # Укажите реальный тикер
-                        quantity_buy=quantity_buy,  # Укажите количество
-                        limit_price_buy=limit_price_buy  # Укажите цену
-                    )
-                    print(f'Заявка на покупку выставлена: order_id_buy {order_id_buy}, status {status_buy}')
-                    sleep(timeout)
-                    position = trade_dict.get(order_id_buy)
-                    if position:
-                        print(f'timestamp - {position['timestamp']}')
-                        print(f'trade_id - {position['trade_id']}')
-                        print(f'side - {position['side']}')
-                        print(f'size - {position['size']}')
-                        print(f'price - {position['price']}')
-                        self.counter += 1
-                        # lot_count_step = lot_count_step + int(float(position['size']))
-                        print(f'Завершение цикла N {lot_count_step}')
-                        if self.counter >= lot_count:
-                            print(f'Заданное количество лотов {lot_count} исполнено. Завершение работы котировщика!')
-                            self.running = False
+                sleep(1)
 
+                old_ask_buy = ask_buy
+                # Запоминаем время старта
+                start_time = time.time()  # Исправлено: было time.Time()
+                # Если не изменились цены в стаканах и не исполнилась заявка на продажу, то ждем
+                while old_ask_buy == int(
+                        round(new_quotes[dataname_buy.split('.')[-1]]['ask'], decimals)) and limit_price_sell == int(
+                        round(new_quotes[dataname_sell.split('.')[-1]]['ask'], decimals)):
+                    position = trade_dict.get(order_id)
+                    if position:  # Сделка на продажу состоялась
+                        print(f'timestamp - {position["timestamp"]}')
+                        print(f'trade_id - {position["trade_id"]}')
+                        print(f'side - {position["side"]}')
+                        print(f'size - {position["size"]}')
+                        print(f'price - {position["price"]}')
+                        # Подбираем количество в зависимости от количества исполненной заявки на покупку
+                        quantity_buy = quantity_sell
+                        print(
+                            f'Выставляем лимитную заявку на покупку опциона {dataname_buy} по цене {limit_price_buy} в количестве {quantity_buy}')
+                        # Вызов функции выставления заявки на покупку
+                        order_id_buy, status_buy = get_order_buy(
+                            account_id=account_id,  # Укажите реальный номер счета
+                            symbol_buy=symbol_buy,  # Укажите реальный тикер
+                            quantity_buy=quantity_buy,  # Укажите количество
+                            limit_price_buy=limit_price_buy  # Укажите цену
+                        )
+                        print(f'Заявка на покупку выставлена: order_id_buy {order_id_buy}, status {status_buy}')
+                        sleep(1)
+                        position = trade_dict.get(order_id_buy)
+                        if position:
+                            print(f'timestamp - {position["timestamp"]}')
+                            print(f'trade_id - {position["trade_id"]}')
+                            print(f'side - {position["side"]}')
+                            print(f'size - {position["size"]}')
+                            print(f'price - {position["price"]}')
+                            self.counter += 1
+                            # lot_count_step = lot_count_step + int(float(position['size']))
+                            print(f'Завершение цикла N {lot_count_step}')
+                            if self.counter >= lot_count:
+                                print(
+                                    f'Заданное количество лотов {lot_count} исполнено. Завершение работы котировщика!')
+                                self.running = False
+                            break  # выход из цикла
+                        else:
+                            print(f'Заявка на покупку не исполнена: order_id_buy - {order_id_buy}')
+                            # # Снятие заявки на покупку
+                            # get_cancel_order(account_id, order_id_buy)
                     else:
-                        print(f'Заявка на покупку не исполнена: order_id_buy - {order_id_buy}')
-                        # # Снятие заявки на покупку
-                        # get_cancel_order(account_id, order_id_buy)
-                else:
-                    # Снятие заявки на продажу
-                    get_cancel_order(account_id, order_id)
-                    print(f'Заявка на продажу снята: order_id - {order_id}')
+                        # Снятие заявки на продажу
+                        get_cancel_order(account_id, order_id)
+                        print(f'Заявка на продажу снята: order_id - {order_id}')
+                        self.root.after(100, self.loop_function)
+                        # break  # выход из цикла
+                    # Проверяем, прошло ли 30 секунд
+                    if time.time() - start_time >= 30:  # Исправлено: было time.Time()
+                        print("Время истекло, выход из цикла")
+                        # break  # выход из цикла
+                        self.root.after(100, self.loop_function)
 
             # Планируем следующий вызов через 100 мс
             self.root.after(100, self.loop_function)
