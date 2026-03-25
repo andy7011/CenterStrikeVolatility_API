@@ -18,10 +18,10 @@ from FinLabPy.Config import brokers, default_broker  # Все брокеры и 
 from threading import Thread  # Запускаем поток подписки
 from AlorPy import AlorPy  # Работа с Alor OpenAPI V2
 from FinamPy import FinamPy
-from FinamPy.grpc.orders.orders_service_pb2 import Order, OrderState, OrderType, CancelOrderRequest, \
+from FinamPy.grpc.orders_service_pb2 import Order, OrderState, OrderType, CancelOrderRequest, \
     StopCondition  # Заявки
 import FinamPy.grpc.side_pb2 as side  # Направление заявки
-from FinamPy.grpc.marketdata.marketdata_service_pb2 import QuoteRequest, QuoteResponse  # Последняя цена сделки
+from FinamPy.grpc.marketdata_service_pb2 import QuoteRequest, QuoteResponse  # Последняя цена сделки
 from FinLabPy.Config import brokers, default_broker  # Все брокеры и брокер по умолчанию
 from QUIK_Stream_v1_7 import calculate_open_data_open_price_open_iv
 
@@ -178,8 +178,6 @@ def _on_order(order): logger.info(f'Заявка - {order}')
 
 # Словарь сделок
 trade_dict = {}
-
-
 def _on_trade(trade):
     logger.info(f'Сделка - {trade}')
     # Извлекаем данные из объекта trade
@@ -332,6 +330,7 @@ def selected_profit(app_instance):
     last_buy = new_quotes[buy_ticker]['last_price']
     # print(f'ask_buy: {ask_buy}, bid_buy: {bid_buy}, last_buy: {last_buy}')
     S, K, T, opt_type_buy = get_option_data_for_calc_price(dataname_buy)  # Получаем данные опциона dataname_sell
+    # print(f'opt_type_buy {opt_type_buy}')
     if opt_type_buy == 'C':
         sigma = options_data[dataname_buy]['volatility'] / 100
         ask_iv_buy = newton_vol_call(S, K, T, ask_buy, r, sigma) * 100
@@ -339,9 +338,9 @@ def selected_profit(app_instance):
         last_iv_buy = newton_vol_call(S, K, T, last_buy, r, sigma) * 100
     else:
         sigma = options_data[dataname_buy]['volatility'] / 100
-        ask_iv_buy = newton_vol_call(S, K, T, ask_buy, r, sigma) * 100
-        bid_iv_buy = newton_vol_call(S, K, T, bid_buy, r, sigma) * 100
-        last_iv_buy = newton_vol_call(S, K, T, last_buy, r, sigma) * 100
+        ask_iv_buy = newton_vol_put(S, K, T, ask_buy, r, sigma) * 100
+        bid_iv_buy = newton_vol_put(S, K, T, bid_buy, r, sigma) * 100
+        last_iv_buy = newton_vol_put(S, K, T, last_buy, r, sigma) * 100
     theor_iv_buy = options_data[dataname_buy]['volatility']
     # print(f'ask_iv_buy: {round(ask_iv_buy, 2)}, bid_iv_buy: {round(bid_iv_buy, 2)}, last_iv_buy: {round(last_iv_buy, 2)}')
 
@@ -373,7 +372,7 @@ def selected_profit(app_instance):
         print(f'{dataname_sell:<30} {dataname_buy:<30}')
         print(f'{"ask:":<15} {ask_sell:<15} {"ask:":<15} {ask_buy:<15}')
         print(f'{"bid:":<15} {bid_sell:<15} {"bid:":<15} {bid_buy:<15}')
-        print(f'{"Целевая IV:":<15} {bid_iv_sell:<15} {"Лимитная IV:":<15} {round(target_iv_buy, 2):<15}')
+        print(f'{"Целевая IV:":<15} {round(bid_iv_sell, 2):<15} {"Лимитная IV:":<15} {round(target_iv_buy, 2):<15}')
         print(f'{"Целевая цена:":<15} {bid_sell:<15} {"Лимитная цена:":<15} {limit_price_buy:<15}')
 
     # print(f'\n')
@@ -954,10 +953,11 @@ class App:
                 # print(f'Целевая цена для мгновенной продажи {dataname_sell}: {target_price_sell}')  # Если покупка свершилась мгновенно продаем
 
                 # Логика выставления лимитной цены на покупку опциона dataname_buy
-                if target_price_buy <= bid_buy:
+                if target_price_buy < bid_buy:
                     limit_price_buy = target_price_buy
-                    print(
-                        f'Цена на покупку опциона {dataname_buy} в стакане {bid_buy} выше целевой цены {target_price_buy}, заявка не выставляется!')
+                    print(f'Цена на покупку {dataname_buy} в стакане {bid_buy} выше целевой цены {target_price_buy}')
+                    print('Заявка не выставляется!')
+                    sleep(timeout)
                     self.root.after(100, self.loop_function)
                     return
                 else:
@@ -1053,8 +1053,8 @@ class App:
 
                 # Логика выставления лимитной цены для котирования продажи опциона dataname_sell
                 if target_price_sell > ask_sell:
-                    print(
-                        f'Цена на продажу опциона {dataname_sell} в стакане {ask_sell} ниже целевой цены {target_price_sell}, заявка не выставляется!')
+                    print(f'Цена на продажу опциона {dataname_sell} в стакане {ask_sell} ниже целевой цены {target_price_sell}')
+                    print('Заявка не выставляется!')
                     sleep(timeout)
                     self.root.after(100, self.loop_function)
                     return
