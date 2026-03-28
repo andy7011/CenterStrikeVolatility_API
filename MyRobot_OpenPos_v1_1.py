@@ -946,7 +946,27 @@ class App:
                         return
                 else:
                     # print(f'Заявка на покупку по данному тикеру {dataname_buy} не существует')
-
+                    if target_price_buy > bid_buy:  # Цена на продажу вне спреда
+                        # print(f'Цена на покупку опциона {dataname_buy} в стакане {bid_buy} ниже целевой цены {target_price_buy}')
+                        # print('Заявка не выставляется!')
+                        self.root.after(100, self.loop_function)
+                        return
+                    else:
+                        # При нулевой расчетной цене ставим минимальный шаг цены step_price, иначе - target_price_buy
+                        limit_price_buy = bid_buy + step_price if target_price_buy != 0 else step_price
+                        # Подбираем количество в зависимости от имеющегося количества в противоположной котировке (есть риск частичного исполнения заявки) и Basket_size
+                        quantity_buy = max(1, min(bid_sell_vol, lot_count - lot_count_step, basket_size))
+                        # print(f'Выставляем лимитную заявку на покупку опциона {dataname_buy} по цене {limit_price_buy} и количеством {quantity_buy}')
+                        # Вызов функции выставления заявки на покупку
+                        order_id_buy, status_buy = get_order_buy(
+                            account_id=account_id,  # Укажите реальный номер счета
+                            symbol_buy=symbol_buy,  # Укажите реальный тикер
+                            quantity_buy=quantity_buy,  # Укажите количество
+                            limit_price_buy=limit_price_buy  # Укажите цену
+                        )
+                        # print(f'Заявка на покупку выставлена: order_id_buy {order_id_buy}, status {status_buy}')
+                        old_bid_sell = bid_sell
+                        sleep(1)
 
 
 
@@ -974,8 +994,7 @@ class App:
                 # Лимитная цена на мгновенную продажу опциона dataname_sell
                 limit_price_sell = step_price if target_price_sell == 0 else target_price_sell  # При нулевой расчетной цене ставим мин шаг цены
 
-                # Подбираем количество в зависимости от имеющегося количества в противоположной котировке (есть риск частичного исполнения заявки) и Basket_size
-                quantity_buy = max(1, min(bid_sell_vol, lot_count - lot_count_step, basket_size))
+
 
                 # Здесь введём проверку, что заявка на покупку по данному тикеру в order_dict уже существует!
                 if symbol_buy in order_dict and order_dict[symbol_buy]['status'] == 1 and order_dict[symbol_buy][
@@ -986,17 +1005,7 @@ class App:
                     self.root.after(100, self.loop_function)
                     return
                 else:
-                    # print(f'Выставляем лимитную заявку на покупку опциона {dataname_buy} по цене {limit_price_buy} и количеством {quantity_buy}')
-                    # Вызов функции выставления заявки на покупку
-                    order_id_buy, status_buy = get_order_buy(
-                        account_id=account_id,  # Укажите реальный номер счета
-                        symbol_buy=symbol_buy,  # Укажите реальный тикер
-                        quantity_buy=quantity_buy,  # Укажите количество
-                        limit_price_buy=limit_price_buy  # Укажите цену
-                    )
-                    # print(f'Заявка на покупку выставлена: order_id_buy {order_id_buy}, status {status_buy}')
-                    old_bid_sell = bid_sell
-                    sleep(1)
+
                 position = trade_dict.get(order_id_buy)
                 if position:  # Сделка на покупку состоялась
                     print(f'timestamp - {position['timestamp']}')
