@@ -1007,22 +1007,26 @@ class App:
                             else:
                                     print(f'Заявка на продажу не состоялась.')
                         else:  # Сделка на покупку не состоялась
-
-
-
-                else:
-                    ticker_buy = dataname_buy.split('.')[-1]
-                    ticker_sell = dataname_sell.split('.')[-1]
-                    new_bid_buy = int(round(new_quotes[ticker_buy]['bid'], decimals))
-                    new_bid_sell = int(round(new_quotes[ticker_sell]['bid'], decimals))
-                    # print(f'old_bid_buy: {old_bid_sell}, new_bid_buy: {new_bid_sell}')
-                    # print(f'limit_price_sell: {limit_price_buy}, new_ask_sell: {new_bid_buy}')
-                    # Проверка на изменение цен в стаканах
-                    if old_bid_sell != new_bid_sell or limit_price_sell < new_bid_buy:
-                        get_cancel_order(account_id, order_id_buy)
-                        print(f'Заявка на покупку снята: order_id - {order_id_buy}')
-                        sleep(1)
-                    sleep(timeout)
+                            # Сравниваем с предыдущими значениями и выводим при изменении
+                            if (old_target_price_buy != target_price_buy or
+                                    old_target_price_sell != target_price_sell):
+                                current_time = datetime.now().strftime('%H:%M:%S')
+                                opt_type = CALL if options_data[dataname_buy]['optionSide'] == 'Call' else PUT
+                                if opt_type == CALL:
+                                    print(f'                    PUT      CALL')
+                                    print(f'{current_time} Target: BUY {target_price_buy} SELL {target_price_sell}')
+                                else:
+                                    print(f'                    PUT      CALL')
+                                    print(f'{current_time} Target: SELL {target_price_sell} BUY {target_price_buy}')
+                            # Проверка на изменение target-цен
+                            if target_price_buy != float(
+                                    order_dict[symbol_buy]['limit_price']) or target_price_buy != limit_price_buy:
+                                # Сохраняем новые значения
+                                old_target_price_sell = target_price_sell
+                                old_target_price_buy = target_price_buy
+                                get_cancel_order(account_id, order_id_buy)
+                                print(f'Заявка на покупку снята:{order_id_buy}')
+                            sleep(1)
 
 
             # Вариант 2 "Котируем продажу"
