@@ -925,16 +925,38 @@ class App:
                 old_bid_buy = bid_buy  # Запоминаем последнюю цену ask на покупку
                 old_bid_sell = bid_sell  # Запоминаем последнюю цену ask на продажу
                 # Логика выставления лимитной цены на покупку опциона dataname_buy
-                if target_price_buy <= bid_buy:
+
+                # Здесь введём проверку, что заявка на покупку по данному тикеру в order_dict уже существует!
+                # print(f'order_dict {order_dict}')
+                # print(f'symbol_buy: {symbol_buy}, status: {order_dict[symbol_buy]['status']}, side: {order_dict[symbol_buy]['side']}, quantity: {order_dict[symbol_buy]['quantity']}')
+                if symbol_buy in order_dict and order_dict[symbol_buy]['status'] == 1 and order_dict[symbol_buy][
+                    'side'] == 2 and float(order_dict[symbol_buy]['quantity']) == quantity_buy:
+                    # print(f'Заявка на покупку по данному тикеру {dataname_buy} уже существует: {order_dict[symbol_buy]["order_id"]}')
+
+                    # Проверка на соответствие лимтной цены в заявке target-цене
+                    if target_price_buy != float(order_dict[symbol_buy]['limit_price']):
+                        # Снимаем старую заявку
+                        get_cancel_order(account_id, order_dict[symbol_buy]['order_id'])
+                        print(f'Заявка на покупку снята:{order_dict[symbol_buy]['order_id']}')
+                        self.root.after(100, self.loop_function)
+                        return
+                    else:
+                        # print(f'Цена на покупку опциона {dataname_buy} не изменилась')
+                        self.root.after(100, self.loop_function)
+                        return
+                else:
+                    # print(f'Заявка на покупку по данному тикеру {dataname_buy} не существует')
+
+
+
+
+
+                if target_price_buy < bid_buy:
                     # print(f'Цена на покупку {dataname_buy} в стакане {bid_buy} выше целевой цены {target_price_buy}')
                     # print('Заявка не выставляется!')
 
-                    # Здесь введём проверку, что заявка на продажу по данному тикеру в order_dict уже существует!
-                    # print(f'order_dict {order_dict}')
-                    # print(f'symbol_sell: {symbol_sell}, status: {order_dict[symbol_sell]['status']}, side: {order_dict[symbol_sell]['side']}, quantity: {order_dict[symbol_sell]['quantity']}')
-                    if symbol_buy in order_dict and order_dict[symbol_buy]['status'] == 1 and order_dict[symbol_buy][
-                        'side'] == 2 and float(order_dict[symbol_buy]['quantity']) == quantity_sell:
-                        # print(f'Заявка на покупку по данному тикеру {dataname_buy} уже существует: {order_dict[symbol_buy]["order_id"]}')
+
+
                         get_cancel_order(account_id, order_dict[symbol_buy]["order_id"])
                         # print(f'Заявка на продажу снята: order_id - {order_dict[symbol_buy]["order_id"]}')
                         # print(f'Начинаем новый цикл')
