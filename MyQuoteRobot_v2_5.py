@@ -918,7 +918,7 @@ class App:
                         return
                     else:
                         # При нулевой расчетной цене ставим минимальный шаг цены step_price, иначе - target_price_buy
-                        limit_price_buy = bid_buy + (step_price * indent)
+                        limit_price_buy = bid_buy + step_price + (step_price * indent)
                         # Подбираем количество в зависимости от имеющегося количества в противоположной котировке (есть риск частичного исполнения заявки) и Basket_size
                         quantity_buy = max(1, min(bid_sell_vol, lot_count - lot_count_step, basket_size))
                         # print(f'Выставляем лимитную заявку на покупку опциона {dataname_buy} по цене {limit_price_buy} и количеством {quantity_buy}')
@@ -972,8 +972,9 @@ class App:
                                 print(f'Заявка на продажу не состоялась.')
                         else:  # Сделка на покупку не состоялась
                             # Проверка на изменение target-цен
+                            ticker = options_data[dataname_sell]['ticker']
                             if target_price_buy != float(
-                                    order_dict[symbol_buy]['limit_price']) or target_price_buy != limit_price_buy:
+                                    order_dict[symbol_buy]['limit_price']) or target_price_sell != int(round(new_quotes[ticker]['bid'], decimals)):
                                 # Сохраняем новые значения
                                 get_cancel_order(account_id, order_id_buy)
                                 print(f'Заявка на покупку снята:{order_id_buy}')
@@ -1056,7 +1057,7 @@ class App:
                         self.root.after(100, self.loop_function)
                         return
                     else:
-                        limit_price_sell = target_price_sell - (step_price * indent)
+                        limit_price_sell = ask_sell - step_price - (step_price * indent)
                         # Подбираем количество в зависимости от количества в противоположной котировке
                         quantity_sell = max(1, min(ask_buy_vol, lot_count - lot_count_step, basket_size))
                         # print(f'Выставляем лимитную заявку на продажу: {dataname_sell} ')
@@ -1112,6 +1113,7 @@ class App:
                                 # get_cancel_order(account_id, order_id_buy)
                         else:  # Сделка на продажу не состоялась
                             # Проверка на изменение target-цен
+                            ticker = options_data[dataname_buy]['ticker']
                             if symbol_sell in order_dict and target_price_sell != float(
                                     order_dict[symbol_sell]['limit_price']) or target_price_buy != int(round(new_quotes[ticker]['ask'], decimals)):
                                 # Сохраняем новые значения

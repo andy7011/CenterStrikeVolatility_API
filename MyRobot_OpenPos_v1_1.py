@@ -918,6 +918,7 @@ class App:
                                     print(f'Заявка на продажу не состоялась.')
                         else:  # Сделка на покупку не состоялась
                             # Проверка на изменение target-цен
+                            ticker = options_data[dataname_sell]['ticker']
                             if target_price_buy != float(order_dict[symbol_buy]['limit_price']) or target_price_buy != limit_price_buy:
                                 # Сохраняем новые значения
                                 get_cancel_order(account_id, order_id_buy)
@@ -1013,7 +1014,7 @@ class App:
                             # Подбираем количество в зависимости от количества исполненной заявки на покупку
                             quantity_buy = quantity_sell
                             # Лимитная цена на мгновенную покупку опциона dataname_buy
-                            limit_price_buy = step_price if target_price_buy == 0 else target_price_buy
+                            limit_price_buy = target_price_buy
                             # print(f'Выставляем лимитную заявку на покупку опциона {dataname_buy} по цене {limit_price_buy} в количестве {quantity_buy}')
                             # Вызов функции выставления заявки на покупку
                             order_id_buy, status_buy = get_order_buy(
@@ -1043,8 +1044,9 @@ class App:
                                 # get_cancel_order(account_id, order_id_buy)
                         else: # Сделка на продажу не состоялась
                             # Проверка на изменение target-цен
+                            ticker = options_data[dataname_buy]['ticker']
                             if symbol_sell in order_dict and target_price_sell != float(
-                                    order_dict[symbol_sell]['limit_price']) or target_price_buy != limit_price_buy:
+                                    order_dict[symbol_sell]['limit_price']) or target_price_buy != int(round(new_quotes[ticker]['ask'], decimals)):
                                 # Сохраняем новые значения
                                 get_cancel_order(account_id, order_id)
                                 print(f'Заявка на продажу снята:{order_id}')
