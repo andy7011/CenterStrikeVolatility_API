@@ -911,13 +911,12 @@ class App:
                         return
                 else:
                     # print(f'Заявка на покупку по данному тикеру {dataname_buy} не существует')
-                    if target_price_buy < bid_buy:  # Цена на продажу вне спреда
+                    if target_price_buy < bid_buy:  # Цена на покупку вне спреда
                         # print(f'Цена на покупку опциона {dataname_buy} в стакане {bid_buy} ниже целевой цены {target_price_buy}')
                         # print('Заявка не выставляется!')
                         self.root.after(100, self.loop_function)
                         return
                     else:
-                        # При нулевой расчетной цене ставим минимальный шаг цены step_price, иначе - target_price_buy
                         limit_price_buy = bid_buy + step_price + (step_price * indent)
                         # Подбираем количество в зависимости от имеющегося количества в противоположной котировке (есть риск частичного исполнения заявки) и Basket_size
                         quantity_buy = max(1, min(bid_sell_vol, lot_count - lot_count_step, basket_size))
@@ -1113,9 +1112,11 @@ class App:
                                 # get_cancel_order(account_id, order_id_buy)
                         else:  # Сделка на продажу не состоялась
                             # Проверка на изменение target-цен
-                            ticker = options_data[dataname_buy]['ticker']
-                            if symbol_sell in order_dict and target_price_sell != float(
-                                    order_dict[symbol_sell]['limit_price']) or target_price_buy != int(round(new_quotes[ticker]['ask'], decimals)):
+                            ticker_buy = options_data[dataname_buy]['ticker']
+                            ticker_sell = options_data[dataname_sell]['ticker']
+                            if symbol_sell in order_dict and new_quotes[ticker_sell]['ask'] != float(
+                                    order_dict[symbol_sell]['limit_price']) or target_price_buy != \
+                                    new_quotes[ticker_buy]['ask']:
                                 # Сохраняем новые значения
                                 get_cancel_order(account_id, order_id)
                                 print(f'Заявка на продажу снята:{order_id}')

@@ -1046,7 +1046,8 @@ class App:
                             # Проверка на изменение target-цен
                             ticker = options_data[dataname_buy]['ticker']
                             if symbol_sell in order_dict and target_price_sell != float(
-                                    order_dict[symbol_sell]['limit_price']) or target_price_buy != int(round(new_quotes[ticker]['ask'], decimals)):
+                                    order_dict[symbol_sell]['limit_price']) or target_price_buy != int(
+                                round(new_quotes[ticker]['ask'], decimals)):
                                 # Сохраняем новые значения
                                 get_cancel_order(account_id, order_id)
                                 print(f'Заявка на продажу снята:{order_id}')
