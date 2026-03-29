@@ -781,33 +781,21 @@ class App:
             symbol_buy = symbol
             account_id = fp_provider.account_ids[0]  # Торговый счет, где будут выставляться заявки
             quantity_buy = options_data[dataname_buy]['lot_size']  # Количество в шт
-            theoretical_price_buy_ = options_data[dataname_buy]['theorPrice']
-            theor_iv_buy = options_data[dataname_buy]['volatility']
-            profit_iv_buy = theor_iv_buy - expected_profit
-            # Далее вычисляем profit_price_buy из profit_iv_buy по формуле Блэка-Шоулза
-            S, K, T, opt_type = get_option_data_for_calc_price(dataname_buy)  # Получаем данные опциона dataname_sell
-            # print(f'S: {S}, K: {K}, T: {T}, opt_type: {opt_type}')
-            profit_price_buy = option_price(S, profit_iv_buy / 100, K, T, r, opt_type=opt_type)
-            limit_price_buy = int(round((profit_price_buy // step_price) * step_price, decimals))
-            theoretical_price_buy = int(round((theoretical_price_buy_ // step_price) * step_price, decimals))
             # Получаем ask, bid из потока котировок по подписке из обновляемого словаря new_quotes
             ticker = options_data[dataname_buy]['ticker']
             ask_buy = int(round(new_quotes[ticker]['ask'], decimals))
             ask_buy_vol = int(round(new_quotes[ticker]['ask_vol'], decimals))
             bid_buy = int(round(new_quotes[ticker]['bid'], decimals))
             bid_buy_vol = int(round(new_quotes[ticker]['bid_vol'], decimals))
-            last_price_buy = int(round(new_quotes[ticker]['last_price'], decimals))
             # print(f'Котировки ask_buy: {ask_buy} ask_buy_vol: {ask_buy_vol} bid_buy: {bid_buy} bid_buy_vol: {bid_buy_vol}')
             if opt_type == 'C':
                 sigma = options_data[dataname_buy]['volatility'] / 100
                 ask_iv_buy = newton_vol_call(S, K, T, ask_buy, r, sigma) * 100
                 bid_iv_buy = newton_vol_call(S, K, T, bid_buy, r, sigma) * 100
-                last_iv_buy = newton_vol_call(S, K, T, last_price_buy, r, sigma) * 100
             else:
                 sigma = options_data[dataname_buy]['volatility'] / 100
                 ask_iv_buy = newton_vol_put(S, K, T, ask_buy, r, sigma) * 100
                 bid_iv_buy = newton_vol_put(S, K, T, bid_buy, r, sigma) * 100
-                last_iv_buy = newton_vol_put(S, K, T, last_price_buy, r, sigma) * 100
             # print(f'Волатильность ask_iv_buy: {round(ask_iv_buy, 2)} bid_iv_buy: {round(bid_iv_buy, 2)}')
 
             # Вариант 1 "Котируем покупку"
@@ -871,13 +859,12 @@ class App:
                 else:
                     # print(f'Заявка на покупку по данному тикеру {dataname_buy} не существует')
                     if target_price_buy < bid_buy:  # Цена на продажу вне спреда
-                        # print(f'Цена на покупку опциона {dataname_buy} в стакане {bid_buy} ниже целевой цены {target_price_buy}')
-                        # print('Заявка не выставляется!')
+                        # print(f'Цена вне спреда')
                         self.root.after(100, self.loop_function)
                         return
                     else:
                         # При нулевой расчетной цене ставим минимальный шаг цены step_price, иначе - target_price_buy
-                        limit_price_buy = bid_buy + step_price if target_price_buy != 0 else step_price
+                        limit_price_buy = target_price_buy + (step_price * indent) if target_price_buy != 0 else step_price
                         # Подбираем количество в зависимости от имеющегося количества в противоположной котировке (есть риск частичного исполнения заявки) и Basket_size
                         quantity_buy = max(1, min(bid_sell_vol, lot_count - lot_count_step, basket_size))
                         # print(f'Выставляем лимитную заявку на покупку опциона {dataname_buy} по цене {limit_price_buy} и количеством {quantity_buy}')
