@@ -1,38 +1,22 @@
 import logging  # Выводим лог на консоль и в файл
-# logging.basicConfig(level=logging.WARNING)  # уровень логгирования
+# logging.basicConfig(level=logging.WARNING)  # уровень логирования
 import os.path
 import tkinter as tk
 from tkinter import ttk
-import time
 from app.supported_base_asset import MAP
-import requests
-import inspect
-from datetime import datetime, timedelta, UTC  # Дата и время
-from datetime import timedelta
-import pandas as pd
-import random
 from pytz import utc
-
-from FinLabPy.Config import brokers, default_broker  # Все брокеры и брокер по умолчанию
 from threading import Thread  # Запускаем поток подписки
 from AlorPy import AlorPy  # Работа с Alor OpenAPI V2
 from FinamPy import FinamPy
-from FinamPy.grpc.orders_service_pb2 import Order, OrderState, OrderType, CancelOrderRequest, \
-    StopCondition  # Заявки
+from FinamPy.grpc.orders_service_pb2 import Order, OrderState, OrderType, CancelOrderRequest
 import FinamPy.grpc.side_pb2 as side  # Направление заявки
-from FinamPy.grpc.marketdata_service_pb2 import QuoteRequest, QuoteResponse  # Последняя цена сделки
-from FinLabPy.Config import brokers, default_broker  # Все брокеры и брокер по умолчанию
-from QUIK_Stream_v1_7 import calculate_open_data_open_price_open_iv
 from moex_api import get_option_board, get_option_expirations
-
-import sys
 import math
 import numpy as np
-from datetime import datetime, timezone  # Дата и время
+from datetime import datetime
 from time import sleep  # Задержка в секундах перед выполнением операций
 from scipy.stats import norm
 from google.type.decimal_pb2 import Decimal
-import time
 
 # Глобальные переменные для хранения данных
 # global base_asset_list, option_list, expiration_dates, selected_expiration_date, base_asset_ticker, sell_tickers_call, sell_tickers_put
@@ -61,7 +45,6 @@ r = 0  # Безрисковая ставка
 # Список GUID для отписки
 guids = []
 
-
 def utc_to_msk_datetime(dt, tzinfo=False):
     """Перевод времени из UTC в московское
 
@@ -84,7 +67,6 @@ def utc_timestamp_to_msk_datetime(seconds) -> datetime:
     dt_utc = datetime.fromtimestamp(seconds)  # Переводим кол-во секунд, прошедших с 01.01.1970 в UTC
     return utc_to_msk_datetime(dt_utc)  # Переводим время из UTC в московское
 
-
 # Словарь новых котироок
 new_quotes = {}
 def _on_new_quotes(response):
@@ -106,7 +88,6 @@ def _on_new_quotes(response):
         'last_price': last_price
     }
     # print(f"Котировки для {description}: ask={ask}, ask_vol={ask_vol}, bid={bid}, bid_vol={bid_vol}, last_price={last_price}")
-
 
 # Словарь заявок (symbol в формате ?)
 order_dict = {}
@@ -148,7 +129,6 @@ def _on_order(order):
     }
     # print(f"Заявка для {symbol}: {order_dict[symbol]}")
     # print(f"Весь словарь: {order_dict}")
-
 
 # Словарь сделок
 trade_dict = {}
@@ -235,7 +215,6 @@ def selected_sell(app_instance):
     dataname_sell = "SPBOPT." + selected_sell_ticker
     option_data_sell = get_opion_data_alor(dataname_sell)
 
-
 def get_put_option_type_buy(app_instance):
     global sell_tickers_call, sell_tickers_put
     put_option_type_buy = app_instance.option_type_buy.get()  # Получаем текущее значение переменной
@@ -248,19 +227,16 @@ def get_put_option_type_buy(app_instance):
     app_instance.combobox_buy['values'] = list(buy_tickers_type)
     app_instance.combobox_buy.set(buy_tickers_type[0])
 
-
 def selected_buy(app_instance):
     global dataname_buy
     selected_buy_ticker = app_instance.combobox_buy.get()
     dataname_buy = "SPBOPT." + selected_buy_ticker
     option_data_buy = get_opion_data_alor(dataname_buy)
 
-
 def get_quoter_side(app_instance):
     global quoter_side
     quoter_side = app_instance.quoter_side.get()
     print(f"Котировщик SELL/BUY: {quoter_side}")
-
 
 def selected_profit(app_instance):
     global expected_profit, dataname_sell, dataname_buy
@@ -352,35 +328,28 @@ def selected_profit(app_instance):
             print(f'{"bid:":<10}{round(bid_buy, decimals):<10}{round(bid_iv_buy,2):<10}{"bid:":<10}{round(bid_sell, decimals):<10}{round(bid_iv_sell,2):<10}')
             print(f'{"target:":<10}{round(limit_price_buy,decimals):<10}{round(target_iv_buy,2):<10}{"target:":<10}{round(bid_sell,decimals):<10}{round(bid_iv_sell,2):<10}')
 
-
 def selected_lot_count(app_instance):
     global lot_count
     lot_count = int(app_instance.spinbox_lot_count_var.get())
     print(f"Выбранное количество лотов: {lot_count}")
-
 
 def selected_basket_size(app_instance):
     global basket_size
     basket_size = app_instance.spinbox_basket_size.get()
     print(f"Выбранный basket size: {basket_size}")
 
-
 def selected_timeout(app_instance):
     global timeout
     timeout = int(app_instance.spinbox_timeout.get())
     print(f"Выбранный timeout: {timeout}")
-
 
 def selected_indent(app_instance):
     global indent
     indent = int(app_instance.spinbox_indent.get())
     print(f"Выбранный indent: {indent}")
 
-
 # Получаем данные по опционам, сохраняем в словарь
 options_data = {}
-
-
 # Получаем информацию о тикере, создаем подписку на котировки
 def get_opion_data_alor(dataname):
     alor_board, symbol = ap_provider.dataname_to_alor_board_symbol(dataname)  # Код режима торгов Алора и код и тикер
@@ -405,7 +374,6 @@ def get_opion_data_alor(dataname):
     guids.append(guid)
     logger.info(f'Подписка на котировки {guid} тикера {dataname} создана')
     return options_data
-
 
 # Выставление лимитной заявки на продажу инструмента symbol_sell (типа 'RI127500BD6@RTSX') в количестве quantity_sell
 # по цене limit_price_sell. Возвращаем номер заявки order_id
@@ -436,7 +404,6 @@ def get_order_sell(account_id, symbol_sell, quantity_sell, limit_price_sell):
         logger.error(f"Ошибка размещения ордера: {e}")
         return None, "ERROR"
 
-
 # Выставление лимитной заявки на покупку инструмента symbol_buy в количестве quantity_buy
 # по цене limit_price_buy. Возвращаем номер заявки order_id
 def get_order_buy(account_id, symbol_buy, quantity_buy, limit_price_buy):
@@ -466,7 +433,6 @@ def get_order_buy(account_id, symbol_buy, quantity_buy, limit_price_buy):
         logger.error(f"Ошибка размещения ордера: {e}")
         return None, "ERROR"
 
-
 # Удаление существующей лимитной заявки
 def get_cancel_order(account_id, order_id):
     # print(f'Отмена заявки {order_id}')
@@ -477,7 +443,6 @@ def get_cancel_order(account_id, order_id):
     logger.debug(order_state)
     logger.info(f'Статус заявки: {order_state.status}')
     return order_state.status
-
 
 # Сбор данных по опциону и БА для расчета цены опциона
 def get_option_data_for_calc_price(dataname):
@@ -491,7 +456,6 @@ def get_option_data_for_calc_price(dataname):
     opt_type = CALL if options_data[dataname]['optionSide'] == 'Call' else PUT
     # print(f'S: {S}, K: {K}, T: {T}, opt_type: {opt_type}')
     return S, K, T, opt_type
-
 
 # Вычисление стоимости опциона по формуле Black-Scholes
 def option_price(S, sigma, K, T, r: float, opt_type):
@@ -509,7 +473,6 @@ def option_price(S, sigma, K, T, r: float, opt_type):
         DF = math.exp(-r * T)
         price = K * DF * n2 - S * n1
     return price
-
 
 # Сбор данных опциона CALL для расчета IV
 def option_data_for_IV_calculation_call(dataname, price_call):
@@ -530,7 +493,6 @@ def option_data_for_IV_calculation_call(dataname, price_call):
     sigma = options_data[dataname]['volatility'] / 100
     return S, K, T, C, sigma
 
-
 # Сбор данных опциона PUT для расчета IV
 def option_data_for_IV_calculation_put(dataname, price_put):
     # S: последняя цена БА из обновляемого словаря new_quotes
@@ -549,7 +511,6 @@ def option_data_for_IV_calculation_put(dataname, price_put):
     P = price_put
     sigma = options_data[dataname]['volatility'] / 100
     return S, K, T, P, sigma
-
 
 # Расчет IV Метод Ньютона для опциона CALL
 def newton_vol_call(S, K, T, C, r, sigma):
@@ -579,7 +540,6 @@ def newton_vol_call(S, K, T, C, r, sigma):
         iteration += 1
     return abs(xnew)
 
-
 # Расчет IV Метод Ньютона для опциона PUT
 def newton_vol_put(S, K, T, P, r, sigma):
     # S: spot price
@@ -606,7 +566,6 @@ def newton_vol_put(S, K, T, P, r, sigma):
         xnew = xnew - fx / vega
         iteration += 1
     return abs(xnew)
-
 
 class App:
     def __init__(self):
@@ -782,9 +741,6 @@ class App:
             self.status_label.config(text="Status: Running")
 
             lot_count_step = 0
-
-            # print(f'lot_count: {lot_count} basket_size: {basket_size} timeout: {timeout} lot_count_step: {lot_count_step}')
-            # print(f'dataname_sell: {dataname_sell}')
             finam_board, ticker = fp_provider.dataname_to_finam_board_ticker(
                 dataname_sell)  # Код режима торгов Финама и тикер
             mic = fp_provider.get_mic(finam_board, ticker)  # Биржа тикера
@@ -809,20 +765,16 @@ class App:
             ask_sell_vol = int(round(new_quotes[ticker]['ask_vol'], decimals))
             bid_sell = int(round(new_quotes[ticker]['bid'], decimals))
             bid_sell_vol = int(round(new_quotes[ticker]['bid_vol'], decimals))
-            last_sell = int(round(new_quotes[ticker]['last_price'], decimals))
             # print(f'ask_sell: {ask_sell}, bid_sell: {bid_sell} ask_sell_vol: {ask_sell_vol}, bid_sell_vol: {bid_sell_vol}')
             if opt_type == 'C':
                 sigma = options_data[dataname_sell]['volatility'] / 100
                 ask_iv_sell = newton_vol_call(S, K, T, ask_sell, r, sigma) * 100
                 bid_iv_sell = newton_vol_call(S, K, T, bid_sell, r, sigma) * 100
-                last_iv_sell = newton_vol_call(S, K, T, last_sell, r, sigma) * 100
             else:
                 sigma = options_data[dataname_sell]['volatility'] / 100
                 ask_iv_sell = newton_vol_put(S, K, T, ask_sell, r, sigma) * 100
                 bid_iv_sell = newton_vol_put(S, K, T, bid_sell, r, sigma) * 100
-                last_iv_sell = newton_vol_put(S, K, T, last_sell, r, sigma) * 100
 
-            # print(f'dataname_buy: {dataname_buy}')
             finam_board, ticker = fp_provider.dataname_to_finam_board_ticker(dataname_buy)  # Код режима торгов Финама и тикер
             mic = fp_provider.get_mic(finam_board, ticker)  # Биржа тикера
             symbol = f'{ticker}@{mic}'  # Тикер Финама
@@ -884,28 +836,28 @@ class App:
                 # print(f'Целевая цена для котирования покупки {dataname_buy}: {target_price_buy}')  # Сначала котируем покупку
                 # print(f'Целевая цена для мгновенной продажи {dataname_sell}: {target_price_sell}')  # Если покупка свершилась мгновенно продаем
 
-                # Сравниваем с предыдущими значениями и выводим при изменении
-                if (old_target_price_sell != target_price_sell or
-                        old_target_price_buy != target_price_buy):
-                    current_time = datetime.now().strftime('%H:%M:%S')
-                    print(f'{current_time} Target: SELL {target_price_sell} BUY {target_price_buy}')
+                # # Сравниваем с предыдущими значениями и выводим при изменении
+                # if (old_target_price_sell != target_price_sell or
+                #         old_target_price_buy != target_price_buy):
+                #     current_time = datetime.now().strftime('%H:%M:%S')
+                #     print(f'{current_time} Target: SELL {target_price_sell} BUY {target_price_buy}')
+                #
+                # # Сохраняем новые значения
+                # old_target_price_sell = target_price_sell
+                # old_target_price_buy = target_price_buy
 
-                # Сохраняем новые значения
-                old_target_price_sell = target_price_sell
-                old_target_price_buy = target_price_buy
+                # old_bid_buy = bid_buy  # Запоминаем последнюю цену ask на покупку
+                # old_bid_sell = bid_sell  # Запоминаем последнюю цену ask на продажу
 
-                old_bid_buy = bid_buy  # Запоминаем последнюю цену ask на покупку
-                old_bid_sell = bid_sell  # Запоминаем последнюю цену ask на продажу
                 # Логика выставления лимитной цены на покупку опциона dataname_buy
 
                 # Здесь введём проверку, что заявка на покупку по данному тикеру в order_dict уже существует!
-                # print(f'order_dict {order_dict}')
-                # print(f'symbol_buy: {symbol_buy}, status: {order_dict[symbol_buy]['status']}, side: {order_dict[symbol_buy]['side']}, quantity: {order_dict[symbol_buy]['quantity']}')
+                # print(f'symbol_buy: {symbol_buy}, status: {order_dict[symbol_buy]['status']}, side: {order_dict[symbol_buy]['side']}, quantity: {order_dict[symbol_buy]['quantity']} client_order_id {order_dict[symbol_buy]['client_order_id']}')
                 if symbol_buy in order_dict and order_dict[symbol_buy]['status'] == 1 and order_dict[symbol_buy][
                     'side'] == 2 and float(order_dict[symbol_buy]['quantity']) == quantity_buy and order_dict[symbol_buy]['client_order_id'] == filename:
                     # print(f'Заявка на покупку по данному тикеру {dataname_buy} уже существует: {order_dict[symbol_buy]["order_id"]}')
 
-                    # Проверка на соответствие лимтной цены в заявке target-цене
+                    # Проверка на соответствие лимитной цены в заявке target-цене
                     if target_price_buy != float(order_dict[symbol_buy]['limit_price']):
                         # Снимаем старую заявку
                         get_cancel_order(account_id, order_dict[symbol_buy]['order_id'])
@@ -968,8 +920,7 @@ class App:
                                 print(f'side - {position['side']}')
                                 print(f'size - {position['size']}')
                                 print(f'price - {position['price']}')
-                                self.counter += 1
-                                # lot_count_step = lot_count_step + int(float(position['size']))
+                                self.counter += int(float(position['size']))
                                 print(f'Завершение цикла N {lot_count_step}')
                                 if self.counter >= lot_count:
                                     print(
@@ -1046,8 +997,7 @@ class App:
                 else:
                     # print(f'Заявка на продажу по данному тикеру {dataname_sell} не существует')
                     if target_price_sell > ask_sell:  # Цена на продажу вне спреда
-                        # print(f'Цена на продажу опциона {dataname_sell} в стакане {ask_sell} ниже целевой цены {target_price_sell}')
-                        # print('Заявка не выставляется!')
+                        # print(f'Вне спреда')
                         self.root.after(100, self.loop_function)
                         return
                     else:
@@ -1094,8 +1044,6 @@ class App:
                                 print(f'side - {position['side']}')
                                 print(f'size - {position['size']}')
                                 print(f'price - {position['price']}')
-                                # self.counter += 1
-                                # lot_count_step = lot_count_step + int(float(position['size']))
                                 self.counter += int(float(position['size']))
                                 print(f'Завершение цикла N {lot_count_step}')
                                 if self.counter >= lot_count:
@@ -1108,7 +1056,8 @@ class App:
                                 # get_cancel_order(account_id, order_id_buy)
                         else: # Сделка на продажу не состоялась
                             # Проверка на изменение target-цен
-                            if target_price_sell != float(order_dict[symbol_sell]['limit_price']) or target_price_buy != limit_price_buy:
+                            if symbol_sell in order_dict and target_price_sell != float(
+                                    order_dict[symbol_sell]['limit_price']) or target_price_buy != limit_price_buy:
                                 # Сохраняем новые значения
                                 get_cancel_order(account_id, order_id)
                                 print(f'Заявка на продажу снята:{order_id}')
@@ -1168,9 +1117,6 @@ class App:
         ap_provider.close_web_socket()  # Перед выходом закрываем соединение с WebSocket
         print("Выход из программы")
         self.root.destroy()
-
-
-lot_count_step = 0
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',  # Формат сообщения
                     datefmt='%d.%m.%Y %H:%M:%S',  # Формат даты

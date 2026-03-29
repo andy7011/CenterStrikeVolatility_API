@@ -1,38 +1,22 @@
 import logging  # Выводим лог на консоль и в файл
-logging.basicConfig(level=logging.WARNING)  # уровень логгирования
+# logging.basicConfig(level=logging.WARNING)  # уровень логгирования
 import os.path
 import tkinter as tk
 from tkinter import ttk
-import time
 from app.supported_base_asset import MAP
-import requests
-import inspect
-from datetime import datetime, timedelta, UTC  # Дата и время
-from datetime import timedelta
-import pandas as pd
-import random
 from pytz import utc
-
-from FinLabPy.Config import brokers, default_broker  # Все брокеры и брокер по умолчанию
 from threading import Thread  # Запускаем поток подписки
 from AlorPy import AlorPy  # Работа с Alor OpenAPI V2
 from FinamPy import FinamPy
-from FinamPy.grpc.orders_service_pb2 import Order, OrderState, OrderType, CancelOrderRequest, \
-    StopCondition  # Заявки
+from FinamPy.grpc.orders_service_pb2 import Order, OrderState, OrderType, CancelOrderRequest
 import FinamPy.grpc.side_pb2 as side  # Направление заявки
-from FinamPy.grpc.marketdata_service_pb2 import QuoteRequest, QuoteResponse  # Последняя цена сделки
-from FinLabPy.Config import brokers, default_broker  # Все брокеры и брокер по умолчанию
-from QUIK_Stream_v1_7 import calculate_open_data_open_price_open_iv
 from moex_api import get_option_board, get_option_expirations
-
-import sys
 import math
 import numpy as np
-from datetime import datetime, timezone  # Дата и время
+from datetime import datetime
 from time import sleep  # Задержка в секундах перед выполнением операций
 from scipy.stats import norm
 from google.type.decimal_pb2 import Decimal
-import time
 
 # Глобальные переменные для хранения данных
 # global base_asset_list, option_list, expiration_dates, selected_expiration_date, base_asset_ticker, sell_tickers_call, sell_tickers_put
@@ -807,9 +791,6 @@ class App:
             self.status_label.config(text="Status: Running")
 
             lot_count_step = 0
-
-            # print(f'lot_count: {lot_count} basket_size: {basket_size} timeout: {timeout} lot_count_step: {lot_count_step}')
-            # print(f'dataname_sell: {dataname_sell}')
             finam_board, ticker = fp_provider.dataname_to_finam_board_ticker(
                 dataname_sell)  # Код режима торгов Финама и тикер
             mic = fp_provider.get_mic(finam_board, ticker)  # Биржа тикера
@@ -840,14 +821,11 @@ class App:
                 sigma = options_data[dataname_sell]['volatility'] / 100
                 ask_iv_sell = newton_vol_call(S, K, T, ask_sell, r, sigma) * 100
                 bid_iv_sell = newton_vol_call(S, K, T, bid_sell, r, sigma) * 100
-                last_iv_sell = newton_vol_call(S, K, T, last_sell, r, sigma) * 100
             else:
                 sigma = options_data[dataname_sell]['volatility'] / 100
                 ask_iv_sell = newton_vol_put(S, K, T, ask_sell, r, sigma) * 100
                 bid_iv_sell = newton_vol_put(S, K, T, bid_sell, r, sigma) * 100
-                last_iv_sell = newton_vol_put(S, K, T, last_sell, r, sigma) * 100
 
-            # print(f'dataname_buy: {dataname_buy}')
             finam_board, ticker = fp_provider.dataname_to_finam_board_ticker(
                 dataname_buy)  # Код режима торгов Финама и тикер
             mic = fp_provider.get_mic(finam_board, ticker)  # Биржа тикера
@@ -870,18 +848,15 @@ class App:
             ask_buy_vol = int(round(new_quotes[ticker]['ask_vol'], decimals))
             bid_buy = int(round(new_quotes[ticker]['bid'], decimals))
             bid_buy_vol = int(round(new_quotes[ticker]['bid_vol'], decimals))
-            last_price_buy = int(round(new_quotes[ticker]['last_price'], decimals))
             # print(f'Котировки ask_buy: {ask_buy} ask_buy_vol: {ask_buy_vol} bid_buy: {bid_buy} bid_buy_vol: {bid_buy_vol}')
             if opt_type == 'C':
                 sigma = options_data[dataname_buy]['volatility'] / 100
                 ask_iv_buy = newton_vol_call(S, K, T, ask_buy, r, sigma) * 100
                 bid_iv_buy = newton_vol_call(S, K, T, bid_buy, r, sigma) * 100
-                last_iv_buy = newton_vol_call(S, K, T, last_price_buy, r, sigma) * 100
             else:
                 sigma = options_data[dataname_buy]['volatility'] / 100
                 ask_iv_buy = newton_vol_put(S, K, T, ask_buy, r, sigma) * 100
                 bid_iv_buy = newton_vol_put(S, K, T, bid_buy, r, sigma) * 100
-                last_iv_buy = newton_vol_put(S, K, T, last_price_buy, r, sigma) * 100
             # print(f'Волатильность ask_iv_buy: {round(ask_iv_buy, 2)} bid_iv_buy: {round(bid_iv_buy, 2)}')
 
             # Вариант 1 "Котируем покупку"
@@ -910,29 +885,33 @@ class App:
                 # print(f'Целевая цена для котирования покупки {dataname_buy}: {target_price_buy}')  # Сначала котируем покупку
                 # print(f'Целевая цена для мгновенной продажи {dataname_sell}: {target_price_sell}')  # Если покупка свершилась мгновенно продаем
 
-                # Сравниваем с предыдущими значениями и выводим при изменении
-                if (old_target_price_sell != target_price_sell or
-                        old_target_price_buy != target_price_buy):
-                    current_time = datetime.now().strftime('%H:%M:%S')
-                    print(f'{current_time} Target: SELL {target_price_sell} BUY {target_price_buy}')
+                # # Сравниваем с предыдущими значениями и выводим при изменении
+                # if (old_target_price_sell != target_price_sell or
+                #         old_target_price_buy != target_price_buy):
+                #     current_time = datetime.now().strftime('%H:%M:%S')
+                #     print(f'{current_time} Target: SELL {target_price_sell} BUY {target_price_buy}')
+                #
+                # # Сохраняем новые значения
+                # old_target_price_sell = target_price_sell
+                # old_target_price_buy = target_price_buy
 
-                # Сохраняем новые значения
-                old_target_price_sell = target_price_sell
-                old_target_price_buy = target_price_buy
+                # old_bid_buy = bid_buy  # Запоминаем последнюю цену ask на покупку
+                # old_bid_sell = bid_sell  # Запоминаем последнюю цену ask на продажу
 
-                old_bid_buy = bid_buy  # Запоминаем последнюю цену ask на покупку
-                old_bid_sell = bid_sell  # Запоминаем последнюю цену ask на продажу
                 # Логика выставления лимитной цены на покупку опциона dataname_buy
+
+                # Здесь введём проверку, что заявка на продажу по данному тикеру в order_dict уже существует!
+                # print(f'order_dict {order_dict}')
+                # print(f'symbol_sell: {symbol_sell}, status: {order_dict[symbol_sell]['status']}, side: {order_dict[symbol_sell]['side']}, quantity: {order_dict[symbol_sell]['quantity']}')
+                if symbol_buy in order_dict and order_dict[symbol_buy]['status'] == 1 and order_dict[symbol_buy][
+                    'side'] == 2 and float(order_dict[symbol_buy]['quantity']) == quantity_sell:
+                # print(f'Заявка на покупку по данному тикеру {dataname_buy} уже существует: {order_dict[symbol_buy]["order_id"]}')
+
                 if target_price_buy <= bid_buy:
                     # print(f'Цена на покупку {dataname_buy} в стакане {bid_buy} выше целевой цены {target_price_buy}')
                     # print('Заявка не выставляется!')
 
-                    # Здесь введём проверку, что заявка на продажу по данному тикеру в order_dict уже существует!
-                    # print(f'order_dict {order_dict}')
-                    # print(f'symbol_sell: {symbol_sell}, status: {order_dict[symbol_sell]['status']}, side: {order_dict[symbol_sell]['side']}, quantity: {order_dict[symbol_sell]['quantity']}')
-                    if symbol_buy in order_dict and order_dict[symbol_buy]['status'] == 1 and order_dict[symbol_buy][
-                        'side'] == 2 and float(order_dict[symbol_buy]['quantity']) == quantity_sell:
-                        # print(f'Заявка на покупку по данному тикеру {dataname_buy} уже существует: {order_dict[symbol_buy]["order_id"]}')
+
                         get_cancel_order(account_id, order_dict[symbol_buy]["order_id"])
                         # print(f'Заявка на продажу снята: order_id - {order_dict[symbol_buy]["order_id"]}')
                         # print(f'Начинаем новый цикл')
