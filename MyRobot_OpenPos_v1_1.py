@@ -323,7 +323,7 @@ def selected_profit(app_instance):
         opt_type = CALL if options_data[dataname_sell]['optionSide'] == 'Call' else PUT
         if opt_type == CALL:
             print(f'\n')
-            print(f'{"PUT":<15}{"BUY:":<15}{"CALL":<15}{"SELL:":<15}')
+            print(f'{"PUT BUY:":<30}{"CALL SELL:":<30}')
             print(f'{dataname_buy:<30}{dataname_sell:<30}')
             print(f'{"ask:":<10}{round(ask_buy, decimals):<10}{round(ask_iv_buy,2):<10}{"ask:":<10}{round(ask_sell, decimals):<10}{round(ask_iv_sell,2):<10}')
             print(f'{"bid:":<10}{round(bid_buy, decimals):<10}{round(bid_iv_buy,2):<10}{"bid:":<10}{round(bid_sell, decimals):<10}{round(bid_iv_sell,2):<10}')
@@ -351,12 +351,11 @@ def selected_profit(app_instance):
             print(f'{"target:":<10}{round(bid_sell, decimals):<10}{round(bid_iv_sell,2):<10}{"target:":<10}{round(limit_price_buy, decimals):<10}{round(target_iv_buy,2):<10}')
         else:
             print(f'\n')
-            print(f'{"PUT BUY:":<30}{"CALL SELL:":<30}
+            print(f'{"PUT BUY:":<30}{"CALL SELL:":<30}')
             print(f'{dataname_buy:<30}{dataname_sell:<30}')
             print(f'{"ask:":<10}{round(ask_buy, decimals):<10}{round(ask_iv_buy,2):<10}{"ask:":<10}{round(ask_sell, decimals):<10}{round(ask_iv_sell,2):<10}')
             print(f'{"bid:":<10}{round(bid_buy, decimals):<10}{round(bid_iv_buy,2):<10}{"bid:":<10}{round(bid_sell, decimals):<10}{round(bid_iv_sell,2):<10}')
-            print(f'{"target:":<10}{round(limit_price_buy,decimals):<10}{round(target_iv_buy,2):<10}{"target:":<10}{round(bid_sell, decimals):<10}{round(bid_iv_sell,2):<10}')
-            # print(f'{"Лимитная цена:":<15}{round(limit_price_buy, 2):<15}{"Целевая цена:":<15}{round(bid_sell, decimals):<15}')
+            print(f'{"target:":<10}{round(limit_price_buy,decimals):<10}{round(target_iv_buy,2):<10}{"target:":<10}{round(bid_sell,decimals):<10}{round(bid_iv_sell,2):<10}')
 
 
 def selected_lot_count(app_instance):
