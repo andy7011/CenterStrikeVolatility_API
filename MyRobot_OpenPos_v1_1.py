@@ -1,7 +1,5 @@
 import logging  # Выводим лог на консоль и в файл
-
 # logging.basicConfig(level=logging.WARNING)  # уровень логгирования
-import os
 import os.path
 import tkinter as tk
 from tkinter import ttk
@@ -37,7 +35,7 @@ from google.type.decimal_pb2 import Decimal
 import time
 
 # Глобальные переменные для хранения данных
-global base_asset_list, option_list, expiration_dates, selected_expiration_date, base_asset_ticker, sell_tickers_call, sell_tickers_put
+# global base_asset_list, option_list, expiration_dates, selected_expiration_date, base_asset_ticker, sell_tickers_call, sell_tickers_put
 expiration_dates = []
 sell_tickers_call = []
 sell_tickers_put = []
@@ -45,7 +43,7 @@ old_target_price_sell = None
 old_target_price_buy = None
 
 # Глобальные переменные
-global filename, dataname_sell, dataname_buy, base_asset_ticker, quoter_side, expected_profit, lot_count, basket_size, timeout
+# global filename, dataname_sell, dataname_buy, base_asset_ticker, quoter_side, expected_profit, lot_count, basket_size, timeout
 filename = os.path.basename(__file__) # Получаем имя файла без пути
 dataname_sell = ''
 dataname_buy = ''
@@ -56,9 +54,6 @@ lot_count = 1
 basket_size = 1
 timeout = 5
 indent = 0
-global theor_profit_buy, theor_profit_sell
-theor_profit_buy = 0.0
-theor_profit_sell = 0.0
 
 CALL = 'C'
 PUT = 'P'
