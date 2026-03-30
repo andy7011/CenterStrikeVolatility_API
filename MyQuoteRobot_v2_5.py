@@ -906,7 +906,7 @@ class App:
                     else:
                         limit_price_buy = bid_buy + step_price + (step_price * indent)
                         # Подбираем количество в зависимости от имеющегося количества в противоположной котировке (есть риск частичного исполнения заявки) и Basket_size
-                        quantity_buy = max(1, min(float(bid_sell_vol), lot_count - lot_count_step, basket_size))
+                        quantity_buy = basket_size
                         # print(f'Выставляем лимитную заявку на покупку опциона {dataname_buy} по цене {limit_price_buy} и количеством {quantity_buy}')
                         # Вызов функции выставления заявки на покупку
                         order_id_buy, status_buy = get_order_buy(
@@ -950,7 +950,7 @@ class App:
                                 print(f'Завершение цикла N {lot_count_step}')
                                 if self.counter >= lot_count:
                                     print(
-                                        f'Заданное количество лотов {lot_count} исполнено. Завершение работы котировщика!')
+                                        f'Заданное количество лотов {self.counter} исполнено. Завершение работы котировщика!')
                                     sleep(timeout)
                                     self.running = False
                             else:
@@ -1032,7 +1032,7 @@ class App:
                     else:
                         limit_price_sell = ask_sell - step_price - (step_price * indent)
                         # Подбираем количество в зависимости от количества в противоположной котировке
-                        quantity_sell = max(1, min(float(ask_buy_vol), lot_count - lot_count_step, basket_size))
+                        quantity_sell = basket_size
                         # print(f'Выставляем лимитную заявку на продажу: {dataname_sell} ')
                         # print(f'                              по цене: {limit_price_sell} колич: {quantity_sell}.')
                         # Вызов функции выставления заявки на продажу
