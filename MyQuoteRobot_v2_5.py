@@ -270,19 +270,16 @@ def selected_profit(app_instance):
     sell_ticker = dataname_sell.split('.')[-1]
     ask_sell = new_quotes[sell_ticker]['ask']
     bid_sell = new_quotes[sell_ticker]['bid']
-    last_sell = new_quotes[sell_ticker]['last_price']
     # print(f'ask_sell: {ask_sell}, bid_sell: {bid_sell}, last_sell: {last_sell}')
     S, K, T, opt_type_sell = get_option_data_for_calc_price(dataname_sell)  # Получаем данные опциона dataname_sell
     if opt_type_sell == 'C':
         sigma = options_data[dataname_sell]['volatility'] / 100
         ask_iv_sell = newton_vol_call(S, K, T, ask_sell, r, sigma) * 100
         bid_iv_sell = newton_vol_call(S, K, T, bid_sell, r, sigma) * 100
-        last_iv_sell = newton_vol_call(S, K, T, last_sell, r, sigma) * 100
     else:  # opt_type_sell == 'P'
         sigma = options_data[dataname_sell]['volatility'] / 100
         ask_iv_sell = newton_vol_put(S, K, T, ask_sell, r, sigma) * 100
         bid_iv_sell = newton_vol_put(S, K, T, bid_sell, r, sigma) * 100
-        last_iv_sell = newton_vol_put(S, K, T, last_sell, r, sigma) * 100
     theor_iv_sell = options_data[dataname_sell]['volatility']
     # print(f'ask_iv_sell: {round(ask_iv_sell, 2)}, bid_iv_sell: {round(bid_iv_sell, 2)}, last_iv_sell: {round(last_iv_sell, 2)}')
 
@@ -290,19 +287,16 @@ def selected_profit(app_instance):
     buy_ticker = dataname_buy.split('.')[-1]
     ask_buy = new_quotes[buy_ticker]['ask']
     bid_buy = new_quotes[buy_ticker]['bid']
-    last_buy = new_quotes[buy_ticker]['last_price']
     # print(f'ask_buy: {ask_buy}, bid_buy: {bid_buy}, last_buy: {last_buy}')
     S, K, T, opt_type_buy = get_option_data_for_calc_price(dataname_buy)  # Получаем данные опциона dataname_sell
     if opt_type_buy == 'C':
         sigma = options_data[dataname_buy]['volatility'] / 100
         ask_iv_buy = newton_vol_call(S, K, T, ask_buy, r, sigma) * 100
         bid_iv_buy = newton_vol_call(S, K, T, bid_buy, r, sigma) * 100
-        last_iv_buy = newton_vol_call(S, K, T, last_buy, r, sigma) * 100
     else:
         sigma = options_data[dataname_buy]['volatility'] / 100
         ask_iv_buy = newton_vol_put(S, K, T, ask_buy, r, sigma) * 100
         bid_iv_buy = newton_vol_put(S, K, T, bid_buy, r, sigma) * 100
-        last_iv_buy = newton_vol_put(S, K, T, last_buy, r, sigma) * 100
     theor_iv_buy = options_data[dataname_buy]['volatility']
     # print(f'ask_iv_buy: {round(ask_iv_buy, 2)}, bid_iv_buy: {round(bid_iv_buy, 2)}, last_iv_buy: {round(last_iv_buy, 2)}')
 
