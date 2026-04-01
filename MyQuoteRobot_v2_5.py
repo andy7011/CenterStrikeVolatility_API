@@ -11,6 +11,8 @@ from AlorPy import AlorPy  # Работа с Alor OpenAPI V2
 from FinamPy import FinamPy
 from FinamPy.grpc.orders_service_pb2 import Order, OrderState, OrderType, CancelOrderRequest
 import FinamPy.grpc.side_pb2 as side  # Направление заявки
+from FinLabPy.Schedule.MOEX import Futures  # Расписание торгов срочного рынка
+from zoneinfo import ZoneInfo  # ВременнАя зона
 from moex_api import get_option_board, get_option_expirations
 import math
 import numpy as np
@@ -612,6 +614,18 @@ def newton_vol_put(S, K, T, P, r, sigma):
     return abs(xnew)
 
 
+# Проверка торговой сессии
+def schedule_market(market_dt: datetime):
+    """Проверяет, идет ли сейчас торговая сессия"""
+    if schedule.trade_session(market_dt) is None:  # Если биржа не работает
+        print('Биржа не работает')
+        return None
+    else:
+        session = schedule.trade_session(market_dt)
+        print(f'Торговая сессия: {session.time_begin} - {session.time_end}')
+        return session
+
+
 class App:
     def __init__(self):
         self.root = tk.Tk()
@@ -779,8 +793,23 @@ class App:
 
     def loop_function(self):
         global options_data, old_target_price_sell, old_target_price_buy, indent
+
         """Функция, которая будет выполняться в цикле"""
         if self.running:
+
+            # # Проверяем, работает ли биржа
+            # current_time = datetime.now(schedule.market_timezone)  # Получаем текущее время с учетом временной зоны
+            # session = schedule_market(current_time)
+
+            # if session is None:
+            # # Если биржа не работает, ждем до следующей сессии
+            # print("Ожидание начала торговой сессии...")
+            # sleep(60)  # Ждем 1 минуту перед повторной проверкой
+            # return
+
+            # # Основная логика цикла, если биржа работает
+            # print("Биржа работает, запускаем основной цикл...")
+            # # Здесь добавьте вашу основную логику
 
             self.counter_label.config(text=f"Счётчик сделок: {self.counter}")
             self.status_label.config(text="Status: Running")
@@ -810,7 +839,6 @@ class App:
             ask_sell_vol = int(round(new_quotes[ticker]['ask_vol'], decimals))
             bid_sell = int(round(new_quotes[ticker]['bid'], decimals))
             bid_sell_vol = int(round(new_quotes[ticker]['bid_vol'], decimals))
-            last_sell = int(round(new_quotes[ticker]['last_price'], decimals))
             # print(f'ask_sell: {ask_sell}, bid_sell: {bid_sell} ask_sell_vol: {ask_sell_vol}, bid_sell_vol: {bid_sell_vol}')
             if opt_type == 'C':
                 sigma = options_data[dataname_sell]['volatility'] / 100
@@ -875,15 +903,15 @@ class App:
                 # Здесь введём проверку, что заявка на покупку по данному тикеру в order_dict уже существует!
                 # print(f'symbol_buy: {symbol_buy}, status: {order_dict[symbol_buy]['status']}, side: {order_dict[symbol_buy]['side']}, quantity: {order_dict[symbol_buy]['quantity']} client_order_id {order_dict[symbol_buy]['client_order_id']}')
                 if symbol_buy in order_dict and order_dict[symbol_buy]['status'] == 1 and order_dict[symbol_buy][
-                    'side'] == 2 and float(order_dict[symbol_buy]['quantity']) == quantity_buy:
+                    'side'] == 1 and float(order_dict[symbol_buy]['quantity']) == quantity_buy:
                     # print(f'Заявка на покупку по данному тикеру {dataname_buy} уже существует: {order_dict[symbol_buy]["order_id"]}')
 
                     # Проверка на соответствие лимитной цены в заявке target-цене
-                    if bid_buy > float(order_dict[symbol_buy]['limit_price']) or old_target_price_buy != target_price_buy:
+                    if bid_buy > float(
+                            order_dict[symbol_buy]['limit_price']) or old_target_price_buy != target_price_buy:
                         # Снимаем старую заявку
                         get_cancel_order(account_id, order_dict[symbol_buy]['order_id'])
                         # print(f'Заявка на покупку снята:{order_dict[symbol_buy]['order_id']}')
-                        sleep(1)
                         self.root.after(1000, self.loop_function)
                         return
                     else:
@@ -968,7 +996,7 @@ class App:
                         print(f'{current_time} Target: BUY {target_price_buy} SELL {target_price_sell}')
                     else:
                         print(f'                    PUT      CALL')
-                        print(f'{current_time} Target: SELL {target_price_sell} BUY {target_price_buy}')
+                        print(f'{current_time} Target: BUY {target_price_buy} SELL {target_price_sell}')
                     # Сохраняем новые значения
                     old_target_price_sell = target_price_sell
                     old_target_price_buy = target_price_buy
@@ -1006,11 +1034,11 @@ class App:
                     # print(f'Заявка на продажу по данному тикеру {dataname_sell} уже существует: {order_dict[symbol_sell]["order_id"]}')
 
                     # Проверка на соответствие лимтной цены в заявке target-цене
-                    if ask_sell < float(order_dict[symbol_sell]['limit_price']) or old_target_price_sell != target_price_sell:
+                    if ask_sell < float(
+                            order_dict[symbol_sell]['limit_price']) or old_target_price_sell != target_price_sell:
                         # Снимаем старую заявку
                         get_cancel_order(account_id, order_dict[symbol_sell]['order_id'])
                         # print(f'Заявка на продажу снята limit_price:{order_dict[symbol_sell]['limit_price']} ask_sell: {ask_sell}')
-                        sleep(1)
                         self.root.after(1000, self.loop_function)
                         return
                     else:
@@ -1071,7 +1099,7 @@ class App:
                                 print(f'Завершение цикла N {lot_count_step}')
                                 if self.counter >= lot_count:
                                     print(
-                                        f'Заданное количество лотов {lot_count} исполнено. Завершение работы котировщика!')
+                                        f'Заданное количество лотов {self.counter} исполнено. Завершение работы котировщика!')
                                     sleep(timeout)
                                     self.running = False
                             else:
@@ -1109,6 +1137,23 @@ class App:
         """Запуск цикла"""
         if not self.running:
             self.running = True
+            # Используем правильный способ получения временной зоны
+            from zoneinfo import ZoneInfo
+            market_timezone = ZoneInfo('Europe/Moscow')
+            market_dt = datetime.now(market_timezone)
+
+            while True:
+                session = schedule.trade_session(market_dt)
+                if session is None:
+                    # Если биржа не работает, ждем до следующей сессии
+                    print("Ожидание начала торговой сессии...")
+                    sleep(1)  # Ждем 1 секунду перед повторной проверкой
+                    # Обновляем время перед следующей проверкой
+                    market_dt = datetime.now(market_timezone)
+                    continue
+                else:
+                    # Если биржа работает, продолжаем выполнение
+                    break
             self.loop_function()  # Запускаем цикл
 
     def stop_loop(self):
@@ -1156,6 +1201,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 # logging.Formatter.converter = lambda *args: datetime.now(tz=fp_provider.tz_msk).timetuple()  # В логе время указываем по МСК
 
 logger = logging.getLogger('MyControlPanel')  # Будем вести лог
+schedule = Futures()
 fp_provider = FinamPy()  # Подключаемся ко всем торговым счетам
 ap_provider = AlorPy()  # Подключаемся ко всем торговым счетам
 # Подписываемся на события

@@ -1,11 +1,37 @@
-from AlorPy import AlorPy
+import tkinter as tk
+from tkinter import ttk
 
-# Создаем экземпляр
-ap_provider = AlorPy()
+def set_dark_theme():
+    style = ttk.Style()
+    style.theme_use('clam')  # Используем тему 'clam' как основу
 
-# Получаем котировки для конкретного тикера
-quotes = ap_provider.get_quotes('MOEX:RI97500BO6')[0]  # Получаем первую котировку
-print(quotes)
+    # Определяем цвета
+    bg = '#2e2e2e'
+    fg = '#ffffff'
+    select_bg = '#4a4a4a'
+    field_bg = '#3c3c3c'
+    disabled_fg = '#777777'
 
-# Не забываем закрыть соединение
-ap_provider.close_web_socket()
+    # Применяем стили
+    style.configure('.', background=bg, foreground=fg)
+    style.configure('TFrame', background=bg)
+    style.configure('TLabel', background=bg, foreground=fg)
+    style.configure('TButton', background=field_bg, foreground=fg)
+    style.configure('TEntry', fieldbackground=field_bg, foreground=fg)
+    style.configure('TCombobox', fieldbackground=field_bg, foreground=fg)
+    style.map('TCombobox', fieldbackground=[('readonly', field_bg)])
+    style.configure('TCheckbutton', background=bg, foreground=fg)
+    style.configure('TRadiobutton', background=bg, foreground=fg)
+    style.configure('Treeview', background=field_bg, foreground=fg)
+    style.configure('Vertical.TScrollbar', background=bg)
+    style.configure('Horizontal.TScrollbar', background=bg)
+
+root = tk.Tk()
+set_dark_theme()
+
+# Пример элементов
+ttk.Label(root, text="Темная тема").pack(pady=10)
+ttk.Entry(root).pack(pady=5)
+ttk.Button(root, text="Кнопка").pack(pady=5)
+
+root.mainloop()
