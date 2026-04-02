@@ -264,6 +264,8 @@ def get_quoter_side(app_instance):
 
 def selected_profit(app_instance):
     global expected_profit, dataname_sell, dataname_buy
+    # self.target_price_put = 0
+    # self.target_price_call = 0
     expected_profit = float(app_instance.spinbox_profit.get())
     decimals = options_data[dataname_sell]['decimals']
     step_price = int(float(options_data[dataname_sell]['minstep']))  # Минимальный шаг цены
@@ -339,6 +341,8 @@ def selected_profit(app_instance):
         # PUT - слева CALL - справа
         opt_type = CALL if options_data[dataname_buy]['optionSide'] == 'Call' else PUT
         if opt_type == CALL:
+            # self.target_price_call = limit_price_buy
+            # self.target_price_label.config(text=f"{self.target_price_call}")
             print(f'\n')
             print(f'{"PUT SELL:":<30}{"CALL BUY:":<30}')
             print(f'{dataname_sell:<30}{dataname_buy:<30}')
@@ -349,6 +353,8 @@ def selected_profit(app_instance):
             print(
                 f'{"target:":<10}{round(bid_sell, decimals):<10}{round(bid_iv_sell, 2):<10}{"target:":<10}{round(limit_price_buy, decimals):<10}{round(target_iv_buy, 2):<10}')
         else:
+            # self.target_price_put = limit_price_buy
+            # self.target_price_label.config(text=f"{self.target_price_put}")
             print(f'\n')
             print(f'{"PUT BUY:":<30}{"CALL SELL:":<30}')
             print(f'{dataname_buy:<30}{dataname_sell:<30}')
@@ -630,13 +636,15 @@ class App:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title(filename)
-        self.root.geometry("200x700")
+        self.root.geometry("200x720")
 
         self.running = False
         self.counter = 0
+        self.target_price_put = 0
+        self.target_price_call = 0
 
         # Label My Quote Robot
-        self.label = tk.Label(self.root, text="My Quote Robot v2.5")
+        self.label = tk.Label(self.root, text=filename)
         self.label.pack(pady=1)
 
         # Label base_tickers_list
@@ -712,7 +720,6 @@ class App:
         # Сделка по второй ноге происходит по рынку
         radio_frame = tk.Frame(self.root)
         radio_frame.pack(pady=1)
-        # self.SELL_radio = tk.StringVar(value="SELL")  # Установить SELL по умолчанию
         self.quoter_side = tk.StringVar(value="BUY")  # или "SELL", по умолчанию "BUY"
         self.SELL_radio = tk.Radiobutton(radio_frame, text="SELL", variable=self.quoter_side, value="SELL",
                                          command=lambda: get_quoter_side(self))
@@ -730,6 +737,28 @@ class App:
         self.spinbox_profit = tk.Spinbox(self.root, from_=-10, to=10, increment=0.01, format="%.2f", width=8,
                                          textvariable=self.spinbox_profit_var, command=lambda: selected_profit(self))
         self.spinbox_profit.pack(pady=1)
+
+        # Target-цены
+        self.target_label = tk.Label(self.root, text="PUT   CALL")
+        self.target_label.pack(pady=1)
+
+        # Создаем фрейм для целевых цен
+        radio_frame = tk.Frame(self.root)
+        radio_frame.pack(pady=1)
+        self.target_price_label_put = tk.Label(radio_frame, text="", fg="gray")
+        self.target_price_label_call = tk.Label(radio_frame, text="", fg="gray")
+        # self.target_price_label_put = tk.Label(radio_frame, text="", fg="#8B0000")  # Тёмно-красный
+        # self.target_price_label_call = tk.Label(radio_frame, text="", fg="#006400")  # Тёмно-зелёный
+        if self.option_type_sell.get() == "P":
+            self.target_price_label_put = tk.Label(radio_frame, text="", fg="#8B0000")  # Тёмно-красный
+        else:
+            self.target_price_label_call = tk.Label(radio_frame, text="", fg="#8B0000")  # Тёмно-красный
+        if self.option_type_buy.get() == "P":
+            self.target_price_label_put = tk.Label(radio_frame, text="", fg="#006400")  # Тёмно-зелёный
+        else:
+            self.target_price_label_call = tk.Label(radio_frame, text="", fg="#006400")  # Тёмно-зелёный
+        self.target_price_label_put.pack(side=tk.LEFT, pady=1)
+        self.target_price_label_call.pack(side=tk.LEFT, pady=1)
 
         # Label Lot count
         self.lot_count_label = tk.Label(self.root, text="Lot count: ")
@@ -766,7 +795,7 @@ class App:
 
         # Label indent
         self.indent_label = tk.Label(self.root, text="Indent: ")
-        self.indent_label.pack(pady=1)
+        self.indent_label.pack(pady=2)
 
         # Spinbox Переменная indent
         self.spinbox_indent_var = tk.IntVar(value=0)
@@ -785,9 +814,11 @@ class App:
         self.exit_button = tk.Button(self.root, text="Exit", command=self.exit)
         self.exit_button.pack(pady=2)
 
+        # Label status
         self.status_label = tk.Label(self.root, text="Status: Stopped")
         self.status_label.pack(pady=1)
 
+        # Label counter
         self.counter_label = tk.Label(self.root, text="Счётчик сделок: 0")
         self.counter_label.pack(pady=1)
 
@@ -796,20 +827,6 @@ class App:
 
         """Функция, которая будет выполняться в цикле"""
         if self.running:
-
-            # # Проверяем, работает ли биржа
-            # current_time = datetime.now(schedule.market_timezone)  # Получаем текущее время с учетом временной зоны
-            # session = schedule_market(current_time)
-
-            # if session is None:
-            # # Если биржа не работает, ждем до следующей сессии
-            # print("Ожидание начала торговой сессии...")
-            # sleep(60)  # Ждем 1 минуту перед повторной проверкой
-            # return
-
-            # # Основная логика цикла, если биржа работает
-            # print("Биржа работает, запускаем основной цикл...")
-            # # Здесь добавьте вашу основную логику
 
             self.counter_label.config(text=f"Счётчик сделок: {self.counter}")
             self.status_label.config(text="Status: Running")
@@ -886,6 +903,14 @@ class App:
                 target_iv_sell = bid_iv_sell  # Целевая IV для мгновенной продажи
                 # print(f'1. Целевая IV для мгновенной продажи: {round(target_iv_sell, 2)}')
                 target_price_sell = bid_sell  # Целевая ЦЕНА для мгновенной продажи
+                opt_type_sell = CALL if options_data[dataname_sell]['optionSide'] == 'Call' else PUT
+                if opt_type_sell == CALL:
+                    self.target_price_call = target_price_sell
+                    self.target_price_label_call.config(text=f"{self.target_price_put}   {self.target_price_call}")
+                else:
+                    self.target_price_put = target_price_sell
+                    self.target_price_label_put.config(text=f"{self.target_price_put}   {self.target_price_call}")
+
                 # print(f'2. Целевая ЦЕНА для мгновенной продажи: {round(target_price_sell, 2)}')
                 # target_profit_sell = bid_iv_sell - open_iv_sell  # Целевая прибыль для мгновенной продажи
                 # print(f'3. Целевая прибыль для мгновенной продажи: {round(target_profit_sell, 2)}')
@@ -897,6 +922,12 @@ class App:
                 target_price_buy_ = option_price(S, target_iv_buy / 100, K, T, r,
                                                  opt_type=opt_type)  # Целевая цена для котирования покупки
                 target_price_buy = int(round((target_price_buy_ // step_price) * step_price, decimals))
+                if opt_type == 'C':
+                    self.target_price_call = target_price_buy
+                    self.target_price_label_call.config(text=f"{self.target_price_put}   {self.target_price_call}")
+                else:
+                    self.target_price_put = target_price_buy
+                    self.target_price_label_put.config(text=f"{self.target_price_put}   {self.target_price_call}")
 
                 # Логика выставления лимитной цены на покупку опциона dataname_buy
 
@@ -922,6 +953,20 @@ class App:
                     # print(f'Заявка на покупку по данному тикеру {dataname_buy} не существует')
                     if target_price_buy < bid_buy:  # Цена на покупку вне спреда
                         # print(f'Вне спреда')
+
+                        # В каждом цикле сравниваем target_price с предыдущими значениями old_target_price и выводим на экран при изменении
+                        if old_target_price_buy != target_price_buy or old_target_price_sell != target_price_sell:
+                            current_time = datetime.now().strftime('%H:%M:%S')
+                            opt_type = CALL if options_data[dataname_buy]['optionSide'] == 'Call' else PUT
+                            if opt_type == CALL:
+                                print(f'                    PUT      CALL')
+                                print(f'{current_time} Target: BUY {target_price_buy} SELL {target_price_sell}')
+                            else:
+                                print(f'                    PUT      CALL')
+                                print(f'{current_time} Target: BUY {target_price_buy} SELL {target_price_sell}')
+                            # Сохраняем новые значения
+                            old_target_price_sell = target_price_sell
+                            old_target_price_buy = target_price_buy
                         # print('Заявка не выставляется!')
                         self.root.after(1000, self.loop_function)
                         return
@@ -1012,6 +1057,14 @@ class App:
                 # Для случая, когда опцион на покупку dataname_buy (т.е. проданый ранее) имеет профит больше, чем опцион на продажу dataname_sell (купленный ранее)
                 target_iv_buy = ask_iv_buy  # Целевая IV для мгновенной покупки
                 target_price_buy = ask_buy  # Целевая цена для мгновенной покупки
+                opt_type_buy = CALL if options_data[dataname_buy]['optionSide'] == 'Call' else PUT
+                if opt_type_buy == CALL:
+                    self.target_price_call = target_price_buy
+                    self.target_price_label_call.config(text=f"{self.target_price_call}")
+                else:
+                    self.target_price_put = target_price_buy
+                    self.target_price_label_put.config(text=f"{self.target_price_put}")
+
                 # target_profit_sell = open_iv_buy - ask_iv_buy  # Целевая прибыль для мгновенной покупки
                 # print(f'3. Целевая прибыль для мгновенной покупки: {round(target_profit_sell, 2)}')
                 target_profit_sell = ask_iv_buy + expected_profit  # Целевая прибыль для котирования продажи
@@ -1023,6 +1076,12 @@ class App:
                 target_price_sell_ = option_price(S, target_iv_sell / 100, K, T, r,
                                                   opt_type=opt_type)  # Целевая цена для котирования продажи
                 target_price_sell = int(round((target_price_sell_ // step_price) * step_price, decimals))
+                if opt_type == 'C':
+                    self.target_price_call = target_price_sell
+                    self.target_price_label_call.config(text=f"{self.target_price_call}")
+                else:
+                    self.target_price_put = target_price_sell
+                    self.target_price_label_put.config(text=f"{self.target_price_put}")
 
                 # Логика выставления лимитной цены для котирования продажи опциона dataname_sell
 
@@ -1049,6 +1108,21 @@ class App:
                     # print(f'Заявка на продажу по данному тикеру {dataname_sell} не существует')
                     if target_price_sell > ask_sell:  # Цена на продажу вне спреда
                         # print(f'Вне спреда')
+
+                        # В каждом цикле сравниваем target_price с предыдущими значениями old_target_price и выводим на экран при изменении
+                        if old_target_price_sell != target_price_sell or old_target_price_buy != target_price_buy:
+                            current_time = datetime.now().strftime('%H:%M:%S')
+                            opt_type = CALL if options_data[dataname_sell]['optionSide'] == 'Call' else PUT
+                            if opt_type == CALL:
+                                print(f'                    PUT      CALL')
+                                print(f'{current_time} Target: BUY {target_price_buy} SELL {target_price_sell}')
+                            else:
+                                print(f'                    PUT      CALL')
+                                print(f'{current_time} Target: SELL {target_price_sell} BUY {target_price_buy}')
+                            # Сохраняем новые значения
+                            old_target_price_sell = target_price_sell
+                            old_target_price_buy = target_price_buy
+
                         self.root.after(1000, self.loop_function)
                         return
                     else:
