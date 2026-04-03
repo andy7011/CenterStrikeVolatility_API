@@ -21,6 +21,7 @@ from time import sleep  # Задержка в секундах перед вып
 from scipy.stats import norm
 from google.type.decimal_pb2 import Decimal
 
+app_instance = None
 # Глобальные переменные для хранения данных
 # global base_asset_list, option_list, expiration_dates, selected_expiration_date, base_asset_ticker, sell_tickers_call, sell_tickers_put
 base_asset_list = []
@@ -169,12 +170,12 @@ def _on_trade(trade):
 
 
 # Получаем данные по базовому активу, подписываемся на котировки
-def on_base_asset_change(event, app_instance):
+def on_base_asset_change(self, event):
     global base_asset_ticker
     base_asset_ticker = app_instance.combobox_base_asset.get()
     dataname_base_asset_ticker = 'SPBFUT.' + base_asset_ticker
     # print(f'dataname_base_asset_ticker {dataname_base_asset_ticker}')
-    print('Получаем данные по базовому активу, подписываемся на котировки')
+    print(f'Получаем данные по базовому активу {base_asset_ticker}, подписываемся на котировки')
     alor_board, symbol = ap_provider.dataname_to_alor_board_symbol(
         base_asset_ticker)  # Код режима торгов Алора и код и тикер
     exchange = ap_provider.get_exchange(alor_board, symbol)  # Код биржи
@@ -630,7 +631,7 @@ class App:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title(filename)
-        self.root.geometry("200x720")
+        self.root.geometry("800x720")
 
         self.running = False
         self.counter = 0
@@ -639,36 +640,52 @@ class App:
         self.target_iv_put = 0
         self.target_iv_call = 0
 
+        # Создаем фрейм для основных элементов
+        main_frame = tk.Frame(self.root)
+        main_frame.pack(side=tk.LEFT, fill=tk.Y, padx=5, pady=5)
+
+        # Создаем фрейм для окна сообщений
+        # self.message_frame = tk.Frame(self.root, width=650, bg='lightgray')
+        self.message_frame = tk.Frame(self.root, width=700, height=700, bg='lightgray')
+        self.message_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=1, pady=1)
+        self.message_frame.pack_propagate(False)  # Не изменять размер по содержимому
+
+        # Создаем текстовое поле для сообщений
+        self.message_text = tk.Text(self.message_frame, height=20, width=70)
+        self.message_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        # self.message_text = tk.Text(self.message_frame, height=20, width=70)
+        # self.message_text.pack(padx=5, pady=5)
+
         # Label My Quote Robot
-        self.label = tk.Label(self.root, text=filename)
+        self.label = tk.Label(main_frame, text=filename)
         self.label.pack(pady=1)
 
         # Label base_tickers_list
-        self.base_asset_ticker_label = tk.Label(self.root, text="Базовый актив: ")
+        self.base_asset_ticker_label = tk.Label(main_frame, text="Базовый актив: ")
         self.base_asset_ticker_label.pack(pady=1)
 
         # Выбор базового актива
-        self.combobox_base_asset = ttk.Combobox(self.root, values=list(MAP.keys()))
+        self.combobox_base_asset = ttk.Combobox(main_frame, values=list(MAP.keys()))
         self.combobox_base_asset.set(list(MAP.keys())[0])  # Установить первый элемент по умолчанию
         self.combobox_base_asset.pack(pady=1)
         # Передаем self в обработчик
         self.combobox_base_asset.bind("<<ComboboxSelected>>", lambda event: on_base_asset_change(event, self))
 
         # Label Выбор опционной серии
-        self.exp_date_label = tk.Label(self.root, text="Дата экспирации: ")
+        self.exp_date_label = tk.Label(main_frame, text="Дата экспирации: ")
         self.exp_date_label.pack(pady=1)
 
         # Combobox Выбор опционной серии
-        self.combobox_expire = ttk.Combobox(self.root, values=expiration_dates)
+        self.combobox_expire = ttk.Combobox(main_frame, values=expiration_dates)
         self.combobox_expire.pack(pady=1)
         self.combobox_expire.bind("<<ComboboxSelected>>", lambda event: on_expiration_date_change(event, self))
 
         # Label Выбор опциона на продажу
-        self.sell_option_label = tk.Label(self.root, text="Опцион на продажу:")
+        self.sell_option_label = tk.Label(main_frame, text="Опцион на продажу:")
         self.sell_option_label.pack(pady=1)
 
         # Radiobutton Выбор тип опциона "на продажу" (Call/Put)
-        radio_frame = tk.Frame(self.root)
+        radio_frame = tk.Frame(main_frame)
         radio_frame.pack(pady=1)
         self.option_type_sell = tk.StringVar(value="C")
         self.call_radio_sell = tk.Radiobutton(radio_frame, text="Call", variable=self.option_type_sell, value="C",
@@ -679,16 +696,16 @@ class App:
         self.put_radio_sell.pack(side=tk.LEFT, padx=10)
 
         # Combobox Выбор опциона на продажу
-        self.combobox_sell = ttk.Combobox(self.root, values=[])
+        self.combobox_sell = ttk.Combobox(main_frame, values=[])
         self.combobox_sell.pack(pady=1)
         self.combobox_sell.bind("<<ComboboxSelected>>", lambda event: selected_sell(self))
 
         # Label Выбор опциона на покупку
-        self.buy_option_label = tk.Label(self.root, text="Опцион на покупку:")
+        self.buy_option_label = tk.Label(main_frame, text="Опцион на покупку:")
         self.buy_option_label.pack(pady=1)
 
         # Выбор тип опциона на покупку(Call/Put)
-        radio_frame = tk.Frame(self.root)
+        radio_frame = tk.Frame(main_frame)
         radio_frame.pack(pady=1)
         self.option_type_buy = tk.StringVar(value="P")  # Установить Put по умолчанию
         self.call_radio_buy = tk.Radiobutton(radio_frame, text="Call", variable=self.option_type_buy, value="C",
@@ -698,20 +715,19 @@ class App:
         self.call_radio_buy.pack(side=tk.LEFT, padx=10)
         self.put_radio_buy.pack(side=tk.LEFT, padx=10)
 
-        # Выбор опциона на покупку
-        self.combobox_buy = ttk.Combobox(self.root, values=[])
-        # self.combobox_buy.set('')  # Установить первый
+        # Combobox Выбор опциона на покупку
+        self.combobox_buy = ttk.Combobox(main_frame, values=[])
         self.combobox_buy.pack(pady=1)
-        self.combobox_buy.bind('<<ComboboxSelected>>', lambda event: selected_buy(self))
+        self.combobox_buy.bind("<<ComboboxSelected>>", lambda event: selected_buy(self))
 
-        # Label Котировщик (SELL - котируем опцион на продажу, BUY - котируем опцион на покупку)
-        self.quoter_label = tk.Label(self.root, text="Котировщик:")
-        self.quoter_label.pack(pady=1)
+        # Label Выбор стороны котирования
+        self.quoter_side_label = tk.Label(main_frame, text="Сторона котирования:")
+        self.quoter_side_label.pack(pady=1)
 
         # Выбор SELL - котируем опцион на продажу, BUY - котируем опцион на покупку
         # Сделка по второй ноге происходит по рынку
-        radio_frame = tk.Frame(self.root)
-        radio_frame.pack(pady=1)
+        radio_frame = tk.Frame(main_frame)
+        radio_frame.pack(pady=1, side=tk.TOP)  # Явно указываем side
         self.quoter_side = tk.StringVar(value="BUY")  # или "SELL", по умолчанию "BUY"
         self.SELL_radio = tk.Radiobutton(radio_frame, text="SELL", variable=self.quoter_side, value="SELL",
                                          command=lambda: get_quoter_side(self))
@@ -720,22 +736,23 @@ class App:
         self.SELL_radio.pack(side=tk.LEFT, padx=10)
         self.BUY_radio.pack(side=tk.LEFT, padx=10)
 
-        # Метка Expected profit, %:
-        self.expected_profit_label = tk.Label(self.root, text="Expected profit, % : ")
-        self.expected_profit_label.pack(pady=1)
+        # Label Выбор прибыли
+        self.profit_label = tk.Label(main_frame, text="Expected profit (%):")
+        self.profit_label.pack(pady=1)
 
-        # Спинбокс spinbox_profit Expected profit
-        self.spinbox_profit_var = tk.DoubleVar(value=2.00)
-        self.spinbox_profit = tk.Spinbox(self.root, from_=-10, to=10, increment=0.01, format="%.2f", width=8,
-                                         textvariable=self.spinbox_profit_var, command=lambda: selected_profit(self))
+        # Spinbox Выбор прибыли
+        self.spinbox_profit = tk.Spinbox(main_frame, from_=0, to=100, increment=0.1, width=10)
+        self.spinbox_profit.delete(0, "end")
+        self.spinbox_profit.insert(0, expected_profit)
         self.spinbox_profit.pack(pady=1)
+        self.spinbox_profit.bind("<Return>", lambda event: selected_profit(self))
 
         # Target-цены
-        self.target_label = tk.Label(self.root, text=" PUT   CALL")
+        self.target_label = tk.Label(main_frame, text=" PUT   CALL")
         self.target_label.pack(pady=1)
 
         # Создаем фрейм для целевых цен
-        radio_frame = tk.Frame(self.root)
+        radio_frame = tk.Frame(main_frame)
         radio_frame.pack(pady=1)
         self.target_price_label_put = tk.Label(radio_frame, text="", fg="gray")
         self.target_price_label_call = tk.Label(radio_frame, text="", fg="gray")
@@ -758,67 +775,76 @@ class App:
         self.target_price_label_call.pack(side=tk.LEFT, pady=1)
         self.target_iv_label_call.pack(side=tk.LEFT, pady=1)
 
-        # Label Lot count
-        self.lot_count_label = tk.Label(self.root, text="Lot count: ")
+        # Label Выбор количества лотов
+        self.lot_count_label = tk.Label(main_frame, text="Количество лотов:")
         self.lot_count_label.pack(pady=1)
 
         # # Spinbox Переменная lot_count
         # self.spinbox_lot_count_var = tk.IntVar(value=1)
         self.spinbox_lot_count_var = tk.StringVar(value="1")  # Используем StringVar
-        self.spinbox_lot_count = tk.Spinbox(self.root, from_=1, to=100, increment=1, width=8,
+        self.spinbox_lot_count = tk.Spinbox(main_frame, from_=1, to=100, increment=1, width=8,
                                             textvariable=self.spinbox_lot_count_var,
                                             command=lambda: selected_lot_count(self))
         self.spinbox_lot_count.pack(pady=1)
 
-        # Label Basket size
-        self.basket_size_label = tk.Label(self.root, text="Basket size: ")
+        # Label Выбор размера корзины
+        self.basket_size_label = tk.Label(main_frame, text="Размер лота:")
         self.basket_size_label.pack(pady=1)
 
         # Spinbox Переменная Basket_size
         self.spinbox_basket_size_var = tk.IntVar(value=1)
-        self.spinbox_basket_size = tk.Spinbox(self.root, from_=1, to=100, increment=1, width=8,
+        self.spinbox_basket_size = tk.Spinbox(main_frame, from_=1, to=100, increment=1, width=8,
                                               textvariable=self.spinbox_basket_size_var,
                                               command=lambda: selected_basket_size(self))
         self.spinbox_basket_size.pack(pady=1)
 
-        # Label timeout
-        self.timeout_label = tk.Label(self.root, text="timeout: ")
+        # Label Выбор таймаута
+        self.timeout_label = tk.Label(main_frame, text="Таймаут (сек):")
         self.timeout_label.pack(pady=1)
 
-        # Spinbox Переменная timeout
-        self.spinbox_timeout_var = tk.IntVar(value=5)
-        self.spinbox_timeout = tk.Spinbox(self.root, from_=1, to=30, increment=1, width=8,
-                                          textvariable=self.spinbox_timeout_var, command=lambda: selected_timeout(self))
+        # Spinbox Выбор таймаута
+        self.spinbox_timeout = tk.Spinbox(main_frame, from_=1, to=100, increment=1, width=10)
+        self.spinbox_timeout.delete(0, "end")
+        self.spinbox_timeout.insert(0, timeout)
         self.spinbox_timeout.pack(pady=1)
+        self.spinbox_timeout.bind("<Return>", lambda event: selected_timeout(self))
 
-        # Label indent
-        self.indent_label = tk.Label(self.root, text="Indent: ")
-        self.indent_label.pack(pady=2)
+        # Label Выбор отступа
+        self.indent_label = tk.Label(main_frame, text="Сдвиг (в шагах цены):")
+        self.indent_label.pack(pady=1)
 
-        # Spinbox Переменная indent
-        self.spinbox_indent_var = tk.IntVar(value=0)
-        self.spinbox_indent = tk.Spinbox(self.root, from_=-10, to=10, increment=1, width=8,
-                                         textvariable=self.spinbox_indent_var, command=lambda: selected_indent(self))
-        self.spinbox_indent.pack(pady=1)
+        # Spinbox Переменная Basket_size
+        self.spinbox_basket_size_var = tk.IntVar(value=1)
+        self.spinbox_basket_size = tk.Spinbox(main_frame, from_=1, to=100, increment=1, width=8,
+                                              textvariable=self.spinbox_basket_size_var,
+                                              command=lambda: selected_basket_size(self))
+        self.spinbox_basket_size.pack(pady=1)
 
-        # Создаем кнопки
-        self.start_button = tk.Button(self.root, text="Start", command=self.start_loop)
+        # Кнопка старт
+        self.start_button = tk.Button(main_frame, text="Старт", command=self.start_loop)
         self.start_button.pack(pady=2)
 
-        self.stop_button = tk.Button(self.root, text="Stop", command=self.stop_loop)
+        # Кнопка стоп
+        self.stop_button = tk.Button(main_frame, text="Стоп", command=self.stop_loop)
         self.stop_button.pack(pady=2)
 
         # Button Exit
-        self.exit_button = tk.Button(self.root, text="Exit", command=self.exit)
+        self.exit_button = tk.Button(main_frame, text="Exit", command=self.exit)
         self.exit_button.pack(pady=2)
 
         # Label status
-        self.status_label = tk.Label(self.root, text="Status: Stopped")
+        self.status_label = tk.Label(main_frame, text="Status: Stopped")
         self.status_label.pack(pady=1)
 
         # Label counter
-        self.counter_label = tk.Label(self.root, text="Счётчик сделок: 0")
+        self.counter_label = tk.Label(main_frame, text="Счётчик сделок: 0")
         self.counter_label.pack(pady=1)
+
+
+    def add_message(self, message):
+        """Добавление сообщения в окно"""
+        self.message_text.insert(tk.END, f"{message}\n")
+        self.message_text.see(tk.END)  # Прокрутка к последнему сообщению
 
     def loop_function(self):
         global options_data, old_target_price_sell, old_target_price_buy, indent
@@ -1227,6 +1253,8 @@ class App:
         """Запуск цикла"""
         if not self.running:
             self.running = True
+            self.status_label.config(text="Status: Running")
+
             # Используем правильный способ получения временной зоны
             from zoneinfo import ZoneInfo
             market_timezone = ZoneInfo('Europe/Moscow')
@@ -1237,14 +1265,18 @@ class App:
                 if session is None:
                     # Если биржа не работает, ждем до следующей сессии
                     print("Ожидание начала торговой сессии...")
-                    sleep(3)  # Ждем 1 секунду перед повторной проверкой
+                    sleep(3)  # Ждем 3 секунды перед повторной проверкой
                     # Обновляем время перед следующей проверкой
                     market_dt = datetime.now(market_timezone)
                     continue
                 else:
                     # Если биржа работает, продолжаем выполнение
                     break
-            self.loop_function()  # Запускаем цикл
+
+            # Запускаем основной цикл в отдельном потоке для предотвращения блокировки интерфейса
+            self.thread = Thread(target=self.loop_function)
+            self.thread.daemon = True
+            self.thread.start()
 
     def stop_loop(self):
         """Остановка цикла и снятие активных заявок"""
@@ -1255,10 +1287,19 @@ class App:
         for symbol, order_data in order_dict.items():
             if order_data['status'] == 1:  # Активная заявка
                 # Отменяем заявку через API
-                get_cancel_order(order_data['account_id'], order_data['order_id'])
+                try:
+                    get_cancel_order(order_data['account_id'], order_data['order_id'])
+                except Exception as e:
+                    print(f"Ошибка отмены заявки {order_data['order_id']}: {e}")
 
         # Обновляем статус в интерфейсе
         self.status_label.config(text="Status: Stopped")
+
+    def reset(self):
+        """Сброс параметров"""
+        self.counter = 0
+        self.counter_label.config(text=f"Счётчик сделок: {self.counter}")
+        # Здесь будет ваш код сброса параметров
 
     def exit(self):
         """Выход из приложения"""
