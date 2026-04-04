@@ -22,6 +22,8 @@ import inspect
 
 from FinLabPy.Config import brokers, default_broker  # Все брокеры и брокер по умолчанию
 from FinLabPy.Core import bars_to_df  # Перевод бар в pandas DataFrame
+from AlorPy import AlorPy  # Работа с Alor OpenAPI V2
+ap_provider = AlorPy()  # Подключаемся ко всем торговым счетам
 
 temp_str = 'C:\\Users\\шадрин\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
@@ -143,6 +145,7 @@ df['expiration_date'] = df['_expiration_datetime'].dt.strftime('%d.%m.%Y')
 
 dff = df[(df._base_asset_ticker == first_key)]  # оставим только опционы базового актива
 
+base_asset_last_price = None
 for asset in base_asset_list:
     if asset['_ticker'] == first_key:
         base_asset_last_price = asset['_last_price']  # получаем последнюю цену базового актива
@@ -215,11 +218,21 @@ def get_candles_request(dataname, time_frame, dt_from):
     broker = brokers['АС']  # Брокер по ключу из Config.py словаря brokers
     symbol = broker.get_symbol_by_dataname(dataname)  # Тикер по названию
     bars = broker.get_history(symbol, time_frame, dt_from=dt_from)  # Получаем историю тикера за 140 дней
+
+    # alor_board, symbol = ap_provider.dataname_to_alor_board_symbol(dataname)  # Код режима торгов Алора и тикер
+    # exchange = ap_provider.get_exchange(alor_board, symbol)  # Биржа тикера
+    # class_code = 'SPBFUT'  # Фьючерсы (RFUD)
+    # symbol = ap_provider.get_symbol_info(exchange, symbol)  # Получаем информацию о тикере
+    # bars = ap_provider.get_history(exchange, symbol, time_frame, seconds_from=dt_from)  # Запрос истории рынка
+
     print(f"Запрос свечей: {dataname} {time_frame} начиная с даты {dt_from}")
     # print(f"Первый бар: {bars[0]}")  # Первый бар
     # print(f"Последний бар: {bars[-1]}")  # Последний бар
     df_candles = bars_to_df(bars)  # Все бары в pandas DataFrame pd_bars
     # print(df_candles)  # Все бары в pandas DataFrame pd_bars
+
+    ap_provider.close_web_socket()  # Перед выходом закрываем соединение с WebSocket
+
     return df_candles
 
 # Вызов функции после её определения

@@ -1245,9 +1245,11 @@ class App:
         self.status_label.config(text="Status: Stopped")
 
     def exit(self):
+        global guids
         """Выход из приложения"""
         # Отписываемся от всех котировок
         for guid in guids:
+            ap_provider.unsubscribe(guid)
             try:
                 logger.info(f'Подписка на котировки {ap_provider.unsubscribe(guid)} отменена')
             except Exception as e:

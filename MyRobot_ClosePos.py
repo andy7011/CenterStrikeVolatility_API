@@ -720,7 +720,7 @@ class App:
         self.SELL_radio.pack(side=tk.LEFT, padx=10)
         self.BUY_radio.pack(side=tk.LEFT, padx=10)
 
-        # Метка Expected profit, %:
+        # Label Expected profit, %:
         self.expected_profit_label = tk.Label(self.root, text="Expected profit, % : ")
         self.expected_profit_label.pack(pady=1)
 
