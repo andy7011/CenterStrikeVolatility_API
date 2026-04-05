@@ -193,7 +193,7 @@ def on_base_asset_change(event, app_instance):
     # Сортируем и форматируем даты
     expiration_dates = [date.split('-')[2] + '.' + date.split('-')[1] + '.' + date.split('-')[0]
                         for date in sorted(expiration_dates_, key=lambda x: datetime.strptime(x, '%Y-%m-%d'))]
-    app_instance.add_message(f'expiration dates: {expiration_dates}')
+    app_instance.add_message(f'Даты экспирации опционов базового актива {base_asset_ticker}: {expiration_dates}')
 
     # Обновляем значения в combobox_expire
     app_instance.combobox_expire['values'] = list(expiration_dates)
@@ -206,12 +206,12 @@ def on_expiration_date_change(event, app_instance):
     global base_asset_ticker, sell_tickers_call, sell_tickers_put
 
     selected_expiration_date = app_instance.combobox_expire.get()
-    app_instance.add_message(f"Selected expiration date: {selected_expiration_date}")
+    app_instance.add_message(f"Выбрана дата экспирации: {selected_expiration_date}")
     formatted_date = datetime.strptime(selected_expiration_date, "%d.%m.%Y").strftime("%Y-%m-%d")
 
     # Получить доску опционов базового актива - два списка 'C' и 'P'
     data = get_option_board(base_asset_ticker, formatted_date)
-    app_instance.add_message(f'Получить доску опционов базового актива {base_asset_ticker}, дата окончания действия: {formatted_date}')
+    app_instance.add_message(f'Получаем доску опционов базового актива {base_asset_ticker}, дата экспирации: {formatted_date}')
     # print(data)
 
     # Извлекаем SECID из списков 'C' и 'P'
@@ -238,7 +238,7 @@ def selected_sell(app_instance):
     selected_sell_ticker = app_instance.combobox_sell.get()
     dataname_sell = "SPBOPT." + selected_sell_ticker
     option_data_sell = get_opion_data_alor(dataname_sell)
-    app_instance.add_message(f'Подписка на котировки {selected_sell_ticker}')
+    app_instance.add_message(f'Подписка на котировки опциона {selected_sell_ticker}')
 
 
 def get_put_option_type_buy(app_instance):
@@ -259,7 +259,7 @@ def selected_buy(app_instance):
     selected_buy_ticker = app_instance.combobox_buy.get()
     dataname_buy = "SPBOPT." + selected_buy_ticker
     option_data_buy = get_opion_data_alor(dataname_buy)
-    app_instance.add_message(f'Подписка на котировки {selected_buy_ticker}')
+    app_instance.add_message(f'Подписка на котировки опциона {selected_buy_ticker}')
 
 
 def get_quoter_side(app_instance):
@@ -369,13 +369,13 @@ def selected_profit(app_instance):
 def selected_lot_count(app_instance):
     global lot_count
     lot_count = int(app_instance.spinbox_lot_count_var.get())
-    app_instance.add_message(f"Выбранное количество лотов: {lot_count}")
+    app_instance.add_message(f"Количество лотов: {lot_count}")
 
 
 def selected_basket_size(app_instance):
     global basket_size
     basket_size = app_instance.spinbox_basket_size.get()
-    app_instance.add_message(f"Выбранный basket size: {basket_size}")
+    app_instance.add_message(f"Размер лота: {basket_size}")
 
 
 def selected_timeout(app_instance):
@@ -387,7 +387,7 @@ def selected_timeout(app_instance):
 def selected_indent(app_instance):
     global indent
     indent = int(app_instance.spinbox_indent.get())
-    app_instance.add_message(f"Выбранный indent: {indent}")
+    app_instance.add_message(f"Сдвиг ордера в шагах цены: {indent}")
 
 
 # Получаем данные по опционам, сохраняем в словарь
@@ -671,7 +671,7 @@ class App:
 
         # Выбор базового актива
         self.combobox_base_asset = ttk.Combobox(main_frame, values=list(MAP.keys()))
-        self.combobox_base_asset.set(list(MAP.keys())[0])  # Установить первый элемент по умолчанию
+        # self.combobox_base_asset.set(list(MAP.keys())[0])  # Установить первый элемент по умолчанию
         self.combobox_base_asset.pack(pady=1)
         # Передаем self в обработчик
         self.combobox_base_asset.bind("<<ComboboxSelected>>", lambda event: on_base_asset_change(event, self))
@@ -977,10 +977,12 @@ class App:
                         # Снимаем старую заявку
                         get_cancel_order(account_id, order_dict[symbol_buy]['order_id'])
                         # print(f'Заявка на покупку снята:{order_dict[symbol_buy]['order_id']}')
+                        # Планируем следующий вызов через 1000 мс
                         self.root.after(1000, self.loop_function)
                         return
                     else:
                         # print(f'Цена на покупку опциона {dataname_buy} и таргет не изменилась')
+                        # Планируем следующий вызов через 1000 мс
                         self.root.after(1000, self.loop_function)
                         return
                 else:
@@ -1003,6 +1005,7 @@ class App:
                             old_target_price_buy = target_price_buy
 
                         # print('Заявка не выставляется!')
+                        # Планируем следующий вызов через 1000 мс
                         self.root.after(1000, self.loop_function)
                         return
                     else:
@@ -1049,7 +1052,7 @@ class App:
                                 self.add_message(f'size - {position['size']}')
                                 self.add_message(f'price - {position['price']}')
                                 self.counter += int(float(position['size']))
-                                print(f'Завершение цикла N {lot_count_step}')
+                                print(f'Завершение цикла N {self.counter}')
                                 if self.counter >= lot_count:
                                     self.add_message(
                                         f'Заданное количество лотов {self.counter} исполнено. Завершение работы котировщика!')
@@ -1140,10 +1143,12 @@ class App:
                         # Снимаем старую заявку
                         get_cancel_order(account_id, order_dict[symbol_sell]['order_id'])
                         # print(f'Заявка на продажу снята limit_price:{order_dict[symbol_sell]['limit_price']} ask_sell: {ask_sell}')
+                        # Планируем следующий вызов через 1000 мс
                         self.root.after(1000, self.loop_function)
                         return
                     else:
                         # print(f'Цена на продажу опциона {dataname_sell} и таргет не изменилась')
+                        # Планируем следующий вызов через 1000 мс
                         self.root.after(1000, self.loop_function)
                         return
                 else:
@@ -1164,7 +1169,7 @@ class App:
                             # Сохраняем новые значения
                             old_target_price_sell = target_price_sell
                             old_target_price_buy = target_price_buy
-
+                        # Планируем следующий вызов через 1000 мс
                         self.root.after(1000, self.loop_function)
                         return
                     else:
@@ -1215,7 +1220,7 @@ class App:
                                 self.add_message(f'price - {position['price']}')
 
                                 self.counter += int(float(position['size']))
-                                self.add_message(f'Завершение цикла N {lot_count_step}')
+                                self.add_message(f'Завершение цикла N {self.counter}')
                                 if self.counter >= lot_count:
                                     self.add_message(
                                         f'Заданное количество лотов {self.counter} исполнено. Завершение работы котировщика!')
@@ -1249,7 +1254,7 @@ class App:
                     old_target_price_sell = target_price_sell
                     old_target_price_buy = target_price_buy
 
-            # Планируем следующий вызов через 100 мс
+            # Планируем следующий вызов через 1000 мс
             self.root.after(1000, self.loop_function)
 
     def start_loop(self):
@@ -1272,6 +1277,7 @@ class App:
                 if session is None:
                     # Если биржа не работает, ждем до следующей сессии
                     self.add_message("Ожидание начала торговой сессии...")
+                    self.root.update()  # Принудительно обновляем интерфейс
                     sleep(3)  # Ждем 3 секунды перед повторной проверкой
                     # Обновляем время перед следующей проверкой
                     market_dt = datetime.now(market_timezone)
@@ -1314,9 +1320,9 @@ class App:
         # Здесь будет ваш код сброса параметров
 
     def exit(self):
-
         global guids
         """Выход из приложения"""
+        self.add_message('Отмена подписок')
         # Отписываемся от всех каналов
         if guids:  # Проверяем, есть ли подписки
             for guid in guids:
@@ -1339,6 +1345,10 @@ class App:
         fp_provider.close_channel()  # Закрываем канал перед выходом
         ap_provider.close_web_socket()  # Перед выходом закрываем соединение с WebSocket
         self.add_message("Выход из программы")
+        # Добавляем небольшую задержку для отображения сообщений
+        self.root.update()  # Принудительно обновляем интерфейс
+        sleep(3)  # Небольшая задержка для отображения сообщений
+
         self.root.destroy()
 
 
@@ -1364,7 +1374,7 @@ Thread(target=fp_provider.subscribe_orders_thread,
        name='SubscriptionOrdersThread').start()  # Создаем и запускаем поток обработки своих заявок
 Thread(target=fp_provider.subscribe_trades_thread,
        name='SubscriptionTradesThread').start()  # Создаем и запускаем поток обработки своих сделок
-sleep(1)  # Ждем 1 секунду
+sleep(5)  # Ждем 1 секунду
 
 # Запуск приложения
 if __name__ == "__main__":
