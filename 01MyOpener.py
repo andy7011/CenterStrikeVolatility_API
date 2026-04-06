@@ -1,6 +1,5 @@
 import logging  # Выводим лог на консоль и в файл
-
-logging.basicConfig(level=logging.WARNING)  # уровень логгирования
+# logging.basicConfig(level=logging.WARNING)  # уровень логгирования
 import os.path
 import tkinter as tk
 from tkinter import ttk
@@ -219,7 +218,7 @@ def on_expiration_date_change(event, app_instance):
     sell_tickers_put = [option['SECID'] for option in data['P']]
 
 
-def get_call_option_type_sell(app_instance):
+def get_option_type_sell(app_instance):
     global sell_tickers_call, sell_tickers_put
     call_option_type_sell = app_instance.option_type_sell.get()  # Получаем текущее значение переменной
 
@@ -241,7 +240,7 @@ def selected_sell(app_instance):
     app_instance.add_message(f'Подписка на котировки опциона {selected_sell_ticker}')
 
 
-def get_put_option_type_buy(app_instance):
+def get_option_type_buy(app_instance):
     global sell_tickers_call, sell_tickers_put
     put_option_type_buy = app_instance.option_type_buy.get()  # Получаем текущее значение переменной
     # Фильтруем по типу опциона (P для Put)
@@ -695,9 +694,9 @@ class App:
         radio_frame.pack(pady=1)
         self.option_type_sell = tk.StringVar(value="C")
         self.call_radio_sell = tk.Radiobutton(radio_frame, text="Call", variable=self.option_type_sell, value="C",
-                                              command=lambda: get_call_option_type_sell(self))
+                                              command=lambda: get_option_type_sell(self))
         self.put_radio_sell = tk.Radiobutton(radio_frame, text="Put", variable=self.option_type_sell, value="P",
-                                             command=lambda: get_call_option_type_sell(self))
+                                             command=lambda: get_option_type_sell(self))
         self.call_radio_sell.pack(side=tk.LEFT, padx=10)
         self.put_radio_sell.pack(side=tk.LEFT, padx=10)
 
@@ -715,9 +714,9 @@ class App:
         radio_frame.pack(pady=1)
         self.option_type_buy = tk.StringVar(value="P")  # Установить Put по умолчанию
         self.call_radio_buy = tk.Radiobutton(radio_frame, text="Call", variable=self.option_type_buy, value="C",
-                                             command=lambda: get_put_option_type_buy(self))
+                                             command=lambda: get_option_type_buy(self))
         self.put_radio_buy = tk.Radiobutton(radio_frame, text="Put", variable=self.option_type_buy, value="P",
-                                            command=lambda: get_put_option_type_buy(self))
+                                            command=lambda: get_option_type_buy(self))
         self.call_radio_buy.pack(side=tk.LEFT, padx=10)
         self.put_radio_buy.pack(side=tk.LEFT, padx=10)
 
@@ -763,18 +762,25 @@ class App:
         self.target_price_label_call = tk.Label(radio_frame, text="", fg="gray")
         self.target_iv_label_put = tk.Label(radio_frame, text="", fg="gray")
         self.target_iv_label_call = tk.Label(radio_frame, text="", fg="gray")
-        if self.option_type_sell.get() == "P":
+        # if self.option_type_sell.get() == "P":
+        # print(get_option_type_sell(self))
+        print(self.option_type_sell.get())
+        if self.option_type_sell == "P":
             self.target_price_label_put = tk.Label(radio_frame, text="", fg="#8B0000")  # Тёмно-красный
             self.target_iv_label_put = tk.Label(radio_frame, text="", fg="#8B0000")  # Тёмно-красный
-        else:
-            self.target_price_label_call = tk.Label(radio_frame, text="", fg="#8B0000")  # Тёмно-красный
-            self.target_iv_label_call = tk.Label(radio_frame, text="", fg="#8B0000")  # Тёмно-красный
-        if self.option_type_buy.get() == "P":
-            self.target_price_label_put = tk.Label(radio_frame, text="", fg="#006400")  # Тёмно-зелёный
-            self.target_iv_label_put = tk.Label(radio_frame, text="", fg="#006400")  # Тёмно-зелёный
-        else:
             self.target_price_label_call = tk.Label(radio_frame, text="", fg="#006400")  # Тёмно-зелёный
             self.target_iv_label_call = tk.Label(radio_frame, text="", fg="#006400")  # Тёмно-зелёный
+        else:
+            self.target_price_label_put = tk.Label(radio_frame, text="", fg="#006400")  # Тёмно-зелёный
+            self.target_iv_label_put = tk.Label(radio_frame, text="", fg="#006400")  # Тёмно-зелёный
+            self.target_price_label_call = tk.Label(radio_frame, text="", fg="#8B0000")  # Тёмно-красный
+            self.target_iv_label_call = tk.Label(radio_frame, text="", fg="#8B0000")  # Тёмно-красный
+        # if self.option_type_buy.get() == "P":
+        #     self.target_price_label_put = tk.Label(radio_frame, text="", fg="#006400")  # Тёмно-зелёный
+        #     self.target_iv_label_put = tk.Label(radio_frame, text="", fg="#006400")  # Тёмно-зелёный
+        # else:
+        #     self.target_price_label_call = tk.Label(radio_frame, text="", fg="#006400")  # Тёмно-зелёный
+        #     self.target_iv_label_call = tk.Label(radio_frame, text="", fg="#006400")  # Тёмно-зелёный
         self.target_iv_label_put.pack(side=tk.LEFT, pady=1)
         self.target_price_label_put.pack(side=tk.LEFT, pady=1)
         self.target_price_label_call.pack(side=tk.LEFT, pady=1)

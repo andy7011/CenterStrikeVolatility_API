@@ -1,6 +1,5 @@
 import logging  # Выводим лог на консоль и в файл
-
-logging.basicConfig(level=logging.WARNING)  # уровень логгирования
+# logging.basicConfig(level=logging.WARNING)  # уровень логгирования
 import os.path
 import tkinter as tk
 from tkinter import ttk
@@ -34,7 +33,7 @@ old_target_price_buy = None
 
 # Глобальные переменные
 # global filename, dataname_sell, dataname_buy, base_asset_ticker, quoter_side, expected_profit, lot_count, basket_size, timeout
-filename = os.path.splitext(os.path.basename(__file__))[0]  # Получаем имя файла без пути до точки .py
+filename = os.path.splitext(os.path.basename(__file__))[0]  # Получаем имя файла (не более 10 символов исключая служебные) без пути до точки .py
 dataname_sell = ''
 dataname_buy = ''
 base_asset_ticker = ''
@@ -432,7 +431,7 @@ def get_order_sell(account_id, symbol_sell, quantity_sell, limit_price_sell):
                 side=side.SIDE_SELL,
                 type=OrderType.ORDER_TYPE_LIMIT,
                 limit_price=Decimal(value=str(limit_price_sell)),
-                client_order_id=str(int(datetime.now().timestamp()))
+                client_order_id=filename + str(int(datetime.now().timestamp()))
             )
         )
         if order_state is None:
@@ -462,7 +461,7 @@ def get_order_buy(account_id, symbol_buy, quantity_buy, limit_price_buy):
                 side=side.SIDE_BUY,
                 type=OrderType.ORDER_TYPE_LIMIT,
                 limit_price=Decimal(value=str(limit_price_buy)),
-                client_order_id=str(int(datetime.now().timestamp()))
+                client_order_id=filename + str(int(datetime.now().timestamp()))
             )
         )
         if order_state is None:
@@ -644,6 +643,7 @@ class App:
         self.target_price_call = 0
         self.target_iv_put = 0
         self.target_iv_call = 0
+        self.trade_count = 0  # Счётчик циклов попыток исполнения встречной заявки
 
         # Создаем фрейм для основных элементов
         main_frame = tk.Frame(self.root)
@@ -968,7 +968,8 @@ class App:
                 # Здесь введём проверку, что заявка на покупку по данному тикеру в order_dict уже существует!
                 # print(f'symbol_buy: {symbol_buy}, status: {order_dict[symbol_buy]['status']}, side: {order_dict[symbol_buy]['side']}, quantity: {order_dict[symbol_buy]['quantity']} client_order_id {order_dict[symbol_buy]['client_order_id']}')
                 if symbol_buy in order_dict and order_dict[symbol_buy]['status'] == 1 and order_dict[symbol_buy][
-                    'side'] == 1 and float(order_dict[symbol_buy]['quantity']) == quantity_buy:
+                    'side'] == 1 and float(order_dict[symbol_buy]['quantity']) == quantity_buy and order_dict[
+                    symbol_buy]['client_order_id'][:10] == filename:
                     # print(f'Заявка на покупку по данному тикеру {dataname_buy} уже существует: {order_dict[symbol_buy]["order_id"]}')
 
                     # Проверка на соответствие лимитной цены в заявке target-цене
@@ -1042,31 +1043,45 @@ class App:
                                 quantity_sell=quantity_sell,  # Укажите количество
                                 limit_price_sell=limit_price_sell  # Укажите цену
                             )
-                            # print(f'Заявка на продажу выставлена: {order_id}, статус: {status} ')
+                            self.add_message(f'Заявка на продажу выставлена: {order_id}, статус: {status} ')
                             sleep(1)
-                            position = trade_dict.get(order_id)
-                            if position:  # Если сделка на продажу состоялась
-                                self.add_message(f'timestamp - {position['timestamp']}')
-                                self.add_message(f'trade_id - {position['trade_id']}')
-                                self.add_message(f'side - {position['side']}')
-                                self.add_message(f'size - {position['size']}')
-                                self.add_message(f'price - {position['price']}')
-                                self.counter += int(float(position['size']))
-                                print(f'Завершение цикла N {self.counter}')
-                                if self.counter >= lot_count:
+                            while self.running:
+                                self.trade_count += 1  # Увеличиваем счётчик
+                                if self.trade_count > 30:  # Проверяем ограничение
                                     self.add_message(
-                                        f'Заданное количество лотов {self.counter} исполнено. Завершение работы котировщика!')
-                                    sleep(timeout)
+                                        "Достигнуто максимальное количество попыток (30). Завершение работы.")
                                     self.running = False
-                            else:
-                                print(f'Заявка на продажу не состоялась.')
+                                    break
+
+                                position = trade_dict.get(order_id)
+                                if position:  # Если сделка на продажу состоялась
+                                    self.add_message(f'timestamp - {position['timestamp']}')
+                                    self.add_message(f'trade_id - {position['trade_id']}')
+                                    self.add_message(f'side - {position['side']}')
+                                    self.add_message(f'size - {position['size']}')
+                                    self.add_message(f'price - {position['price']}')
+                                    # Увеличиваем счетчик
+                                    self.counter += int(float(position['size']))
+                                    self.add_message(f'Завершение цикла N{self.counter} из {lot_count}')
+                                    if self.counter >= lot_count:
+                                        self.add_message(f'Заданное количество лотов {self.counter} исполнено. Завершение работы котировщика!')
+                                        sleep(timeout)
+                                        self.running = False
+                                    else:
+                                        # Начинаем новый цикл через 1000 мс
+                                        self.root.after(1000, self.loop_function)
+                                        return
+                                else:
+                                    self.add_message(f'Заявка на продажу не состоялась.')
+                                    self.root.update()  # Принудительно обновляем интерфейс
+                                    sleep(1)  # Пауза перед следующей проверкой
                         else:  # Сделка на покупку не состоялась
                             # Проверка на изменение target-цен
                             ticker_buy = options_data[dataname_buy]['ticker']
                             ticker_sell = options_data[dataname_sell]['ticker']
                             if symbol_buy in order_dict and new_quotes[ticker_buy]['bid'] != float(
                                     order_dict[symbol_buy]['limit_price']) or target_price_sell != int(
-                                round(new_quotes[ticker_sell]['bid'], decimals)):
+                                round(new_quotes[ticker_sell]['bid'], decimals)) and order_dict[symbol_buy]['client_order_id'][:10] == filename:
                                 get_cancel_order(account_id, order_id_buy)
                                 self.add_message(f'Заявка на покупку снята:{order_id_buy}')
                             sleep(1)
@@ -1134,7 +1149,8 @@ class App:
                 # print(f'order_dict {order_dict}')
                 # print(f'symbol_sell: {symbol_sell}, status: {order_dict[symbol_sell]['status']}, side: {order_dict[symbol_sell]['side']}, quantity: {order_dict[symbol_sell]['quantity']}')
                 if symbol_sell in order_dict and order_dict[symbol_sell]['status'] == 1 and order_dict[symbol_sell][
-                    'side'] == 2 and float(order_dict[symbol_sell]['quantity']) == quantity_sell:
+                    'side'] == 2 and float(order_dict[symbol_sell]['quantity']) == quantity_sell and order_dict[
+                    symbol_sell]['client_order_id'][:10] == filename:
                     # print(f'Заявка на продажу по данному тикеру {dataname_sell} уже существует: {order_dict[symbol_sell]["order_id"]}')
 
                     # Проверка на соответствие лимтной цены в заявке target-цене
@@ -1174,7 +1190,6 @@ class App:
                         return
                     else:
                         limit_price_sell = target_price_sell - (step_price * indent)
-                        # Подбираем количество в зависимости от количества в противоположной котировке
                         quantity_sell = basket_size
                         # print(f'Выставляем лимитную заявку на продажу: {dataname_sell} ')
                         # print(f'                              по цене: {limit_price_sell} колич: {quantity_sell}.')
@@ -1195,7 +1210,6 @@ class App:
                             self.add_message(f'side - {position['side']}')
                             self.add_message(f'size - {position['size']}')
                             self.add_message(f'price - {position['price']}')
-
                             # Подбираем количество в зависимости от количества исполненной заявки на покупку
                             quantity_buy = quantity_sell
                             # Лимитная цена на мгновенную покупку опциона dataname_buy
@@ -1208,35 +1222,45 @@ class App:
                                 quantity_buy=quantity_buy,  # Укажите количество
                                 limit_price_buy=limit_price_buy  # Укажите цену
                             )
-                            print(f'Заявка на покупку выставлена: {order_id_buy}, status {status_buy}')
+                            self.add_message(f'Заявка на покупку выставлена: {order_id_buy}, status {status_buy}')
                             sleep(1)
 
-                            position = trade_dict.get(order_id_buy)
-                            if position:  # Если сделка на покупку состоялась
-                                self.add_message(f'timestamp - {position['timestamp']}')
-                                self.add_message(f'trade_id - {position['trade_id']}')
-                                self.add_message(f'side - {position['side']}')
-                                self.add_message(f'size - {position['size']}')
-                                self.add_message(f'price - {position['price']}')
-
-                                self.counter += int(float(position['size']))
-                                self.add_message(f'Завершение цикла N {self.counter}')
-                                if self.counter >= lot_count:
+                            while self.running:
+                                self.trade_count += 1  # Увеличиваем счётчик
+                                if self.trade_count > 30:  # Проверяем ограничение
                                     self.add_message(
-                                        f'Заданное количество лотов {self.counter} исполнено. Завершение работы котировщика!')
-                                    sleep(timeout)
+                                        "Достигнуто максимальное количество попыток (30). Завершение работы.")
                                     self.running = False
-                            else:
-                                self.add_message(f'Заявка на покупку не исполнена: order_id_buy - {order_id_buy}')
-                                # # Снятие заявки на покупку
-                                # get_cancel_order(account_id, order_id_buy)
+                                    break
+                                position = trade_dict.get(order_id_buy)
+                                if position:  # Если сделка на покупку состоялась
+                                    self.add_message(f'timestamp - {position["timestamp"]}')
+                                    self.add_message(f'trade_id - {position["trade_id"]}')
+                                    self.add_message(f'side - {position["side"]}')
+                                    self.add_message(f'size - {position["size"]}')
+                                    self.add_message(f'price - {position["price"]}')
+                                    # Увеличиваем счетчик
+                                    self.counter += int(float(position['size']))
+                                    self.add_message(f'Завершение цикла N{self.counter} из {lot_count}')
+                                    if self.counter >= lot_count:
+                                        self.add_message(f'Заданное количество лотов {self.counter} исполнено. Завершение работы котировщика!')
+                                        sleep(timeout)
+                                        self.running = False
+                                    else:
+                                        # Начинаем новый цикл через 1000 мс
+                                        self.root.after(1000, self.loop_function)
+                                        return
+                                else:
+                                    self.add_message(f'Заявка на покупку не исполнена: order_id_buy - {order_id_buy}')
+                                    self.root.update()  # Принудительно обновляем интерфейс
+                                    sleep(1)  # Пауза перед следующей проверкой
                         else:  # Сделка на продажу не состоялась
                             # Проверка на изменение target-цен
                             ticker_buy = options_data[dataname_buy]['ticker']
                             ticker_sell = options_data[dataname_sell]['ticker']
                             if symbol_sell in order_dict and new_quotes[ticker_sell]['ask'] != float(
                                     order_dict[symbol_sell]['limit_price']) or target_price_buy != \
-                                    new_quotes[ticker_buy]['ask']:
+                                    new_quotes[ticker_buy]['ask'] and order_dict[symbol_sell]['client_order_id'][:10] == filename:
                                 get_cancel_order(account_id, order_id)
                                 self.add_message(f'Заявка на продажу снята:{order_id}')
                             sleep(1)
@@ -1303,7 +1327,7 @@ class App:
 
         # Снимаем все активные заявки
         for symbol, order_data in order_dict.items():
-            if order_data['status'] == 1:  # Активная заявка
+            if order_data['status'] == 1 and order_data['client_order_id'][:10] == filename:  # Активная заявка для данного файла
                 # Отменяем заявку через API
                 try:
                     get_cancel_order(order_data['account_id'], order_data['order_id'])
@@ -1361,7 +1385,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
                               logging.StreamHandler()])  # Лог записываем в файл и выводим на консоль
 # logging.Formatter.converter = lambda *args: datetime.now(tz=fp_provider.tz_msk).timetuple()  # В логе время указываем по МСК
 
-logger = logging.getLogger('MyControlPanel')  # Будем вести лог
+logger = logging.getLogger('01MyQuoter')  # Будем вести лог
 schedule = Futures()
 fp_provider = FinamPy()  # Подключаемся ко всем торговым счетам
 ap_provider = AlorPy()  # Подключаемся ко всем торговым счетам
