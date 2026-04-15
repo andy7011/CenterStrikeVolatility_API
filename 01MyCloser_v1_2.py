@@ -1093,7 +1093,7 @@ class App:
                 else: # Заявка на покупку по данному тикеру не существует
                     # print(f'Заявка на покупку по данному тикеру {dataname_buy} не существует')
                     # Прежде чем выставлять новую заявку нужно вставить проверку исполнилась ли старая заявка на продажу за время цикла
-                    position_control = trade_dict.get(order_id_sell_control)
+                    position_control = trade_dict.get(order_id_buy_control)
                     if position_control:  # Старая заявка исполнилась за время цикла
                         logger.info(f'Старая заявка на покупку исполнилась за время цикла: {order_id_buy_control}')
                         order_id_buy_control = None
@@ -1110,14 +1110,13 @@ class App:
                             limit_price_sell = target_price_sell
                             # print(f'Выставляем лимитную заявку на продажу опциона {dataname_sell} по цене {limit_price_sell} в количестве {quantity_sell}')
                             # Вызов функции выставления заявки на продажу
-                            order_id, status = get_order_sell(
+                            order_id_sell, status_sell = get_order_sell(
                                 account_id=account_id,  # Укажите реальный номер счета
                                 symbol_sell=symbol_sell,  # Укажите реальный тикер
                                 quantity_sell=quantity_sell,  # Укажите количество
                                 limit_price_sell=limit_price_sell  # Укажите цену
                             )
                             self.add_message(f'Заявка на продажу выставлена: {order_id_sell}, status {status_sell}')
-                            order_id_sell_control = order_id_sell
                             logger.info(f'Заявка на продажу выставлена {order_id_sell} статус {status_sell}')
                             sleep(1)
                             position = trade_dict.get(order_id_sell)
@@ -1197,6 +1196,7 @@ class App:
                                     limit_price_sell=limit_price_sell  # Укажите цену
                                 )
                                 self.add_message(f'Заявка на продажу выставлена: {order_id}, статус: {status} ')
+                                order_id_sell_control = order_id  # Запоминаем номер ордера встречной заявки для последующей проверки исполнения
                                 logger.info(f'Заявка на продажу выставлена {order_id} статус {status}')
                                 sleep(1)
                                 position = trade_dict.get(order_id)
@@ -1348,7 +1348,6 @@ class App:
                                 limit_price_buy=limit_price_buy  # Укажите цену
                             )
                             self.add_message(f'Заявка на покупку выставлена: {order_id_buy}, status {status_buy}')
-                            order_id_buy_control = order_id_buy
                             logger.info(f'Заявка на покупку выставлена {order_id_buy} статус {status_buy}')
                             sleep(1)
                             position = trade_dict.get(order_id_buy)

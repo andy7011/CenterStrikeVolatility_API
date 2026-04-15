@@ -220,17 +220,16 @@ def on_expiration_date_change(event, app_instance):
 
 def get_option_type_sell(app_instance):
     global sell_tickers_call, sell_tickers_put
-    option_type_sell = app_instance.option_type_sell.get()  # Получаем текущее значение переменной
+    call_option_type_sell = app_instance.option_type_sell.get()  # Получаем текущее значение переменной
 
     # Фильтруем по типу опциона (C для Call)
-    if option_type_sell == "C":
+    if call_option_type_sell == "C":
         sell_tickers_type = sell_tickers_call
     else:
         sell_tickers_type = sell_tickers_put
     # Обновляем sell_tickers
     app_instance.combobox_sell['values'] = list(sell_tickers_type)
     app_instance.combobox_sell.set(sell_tickers_type[0])
-    return option_type_sell  # Возвращаем значение
 
 
 def selected_sell(app_instance):
@@ -309,73 +308,61 @@ def selected_profit(app_instance):
     # print(f'ask_iv_buy: {round(ask_iv_buy, 2)}, bid_iv_buy: {round(bid_iv_buy, 2)}, last_iv_buy: {round(last_iv_buy, 2)}')
 
     if quoter_side == 'SELL':
-
-        S, K, T, opt_type_sell = get_option_data_for_calc_price(dataname_sell)  # Получаем данные опциона dataname_sell
-
+        target_iv_sell = ask_iv_buy + expected_profit  # Целевая прибыль для котирования продажи
+        S, K, T, opt_type = get_option_data_for_calc_price(dataname_sell)  # Получаем данные опциона dataname_sell
+        limit_price_sell_ = option_price(S, target_iv_sell / 100, K, T, r,
+                                         opt_type=opt_type)  # Целевая цена для котирования продажи
+        limit_price_sell = int(round((limit_price_sell_ // step_price) * step_price, decimals))
         # PUT - слева CALL - справа
-        opt_type_sell = CALL if options_data[dataname_sell]['optionSide'] == 'Call' else PUT
-        if opt_type_sell == CALL:
-            target_iv_sell = ask_iv_buy + expected_profit  # Целевая прибыль для котирования продажи
-            limit_price_sell_ = option_price(S, target_iv_sell / 100, K, T, r,
-                                             opt_type=opt_type_sell)  # Целевая цена для котирования продажи
-            limit_price_sell = int(round((limit_price_sell_ // step_price) * step_price, decimals))
+        opt_type = CALL if options_data[dataname_sell]['optionSide'] == 'Call' else PUT
+        if opt_type == CALL:
             app_instance.add_message(f'\n')
-            app_instance.add_message(f'{"PUT BUY:":<21}{"CALL SELL:":<21}')
-            app_instance.add_message(f'{dataname_buy:<21}{dataname_sell:<21}')
+            app_instance.add_message(f'{"PUT BUY:":<30}{"CALL SELL:":<30}')
+            app_instance.add_message(f'{dataname_buy:<30}{dataname_sell:<30}')
             app_instance.add_message(
-                f'{"ask:":<7}{round(ask_buy, decimals):<7}{round(ask_iv_buy, 2):<7}{"ask:":<7}{round(ask_sell, decimals):<7}{round(ask_iv_sell, 2):<7}')
+                f'{"ask:":<10}{round(ask_buy, decimals):<10}{round(ask_iv_buy, 2):<10}{"ask:":<10}{round(ask_sell, decimals):<10}{round(ask_iv_sell, 2):<10}')
             app_instance.add_message(
-                f'{"bid:":<7}{round(bid_buy, decimals):<7}{round(bid_iv_buy, 2):<7}{"bid:":<7}{round(bid_sell, decimals):<7}{round(bid_iv_sell, 2):<7}')
+                f'{"bid:":<10}{round(bid_buy, decimals):<10}{round(bid_iv_buy, 2):<10}{"bid:":<10}{round(bid_sell, decimals):<10}{round(bid_iv_sell, 2):<10}')
             app_instance.add_message(
-                f'{"target:":<7}{round(ask_buy, decimals):<7}{round(ask_iv_buy, 2):<7}{"target:":<7}{round(limit_price_sell, decimals):<7}{round(target_iv_sell, 2):<7}')
-        else:  # opt_type_sell == PUT
-            target_iv_sell = ask_iv_buy - expected_profit  # Целевая прибыль для котирования продажи
-            limit_price_sell_ = option_price(S, target_iv_sell / 100, K, T, r,
-                                             opt_type=opt_type_sell)  # Целевая цена для котирования продажи
-            limit_price_sell = int(round((limit_price_sell_ // step_price) * step_price, decimals))
+                f'{"target:":<10}{round(ask_buy, decimals):<10}{round(ask_iv_buy, 2):<10}{"target:":<10}{round(limit_price_sell, decimals):<10}{round(target_iv_sell, 2):<10}')
+        else:  # opt_type == PUT
             app_instance.add_message(f'\n')
-            app_instance.add_message(f'{"PUT SELL:":<21}{"CALL BUY:":<21}')
-            app_instance.add_message(f'{dataname_sell:<21}{dataname_buy:<21}')
+            app_instance.add_message(f'{"PUT SELL:":<30}{"CALL BUY:":<30}')
+            app_instance.add_message(f'{dataname_sell:<30}{dataname_buy:<30}')
             app_instance.add_message(
-                f'{"ask:":<7}{round(ask_sell, decimals):<7}{round(ask_iv_sell, 2):<7}{"ask:":<7}{round(ask_buy, decimals):<7}{round(ask_iv_buy, 2):<7}')
+                f'{"ask:":<10}{round(ask_sell, decimals):<10}{round(ask_iv_sell, 2):<10}{"ask:":<10}{round(ask_buy, decimals):<10}{round(ask_iv_buy, 2):<10}')
             app_instance.add_message(
-                f'{"bid:":<7}{round(bid_sell, decimals):<7}{round(bid_iv_sell, 2):<7}{"bid:":<7}{round(bid_buy, decimals):<7}{round(bid_iv_buy, 2):<7}')
+                f'{"bid:":<10}{round(bid_sell, decimals):<10}{round(bid_iv_sell, 2):<10}{"bid:":<10}{round(bid_buy, decimals):<10}{round(bid_iv_buy, 2):<10}')
             app_instance.add_message(
-                f'{"target:":<7}{round(limit_price_sell, decimals):<7}{round(target_iv_sell, 2):<7}{"target:":<7}{round(ask_buy, decimals):<7}{round(ask_iv_buy, 2):<7}')
+                f'{"target:":<10}{round(limit_price_sell, decimals):<10}{round(target_iv_sell, 2):<10}{"target:":<10}{round(ask_buy, decimals):<10}{round(ask_iv_buy, 2):<10}')
     else:  # quoter_side == 'BUY'
-
-        S, K, T, opt_type_buy = get_option_data_for_calc_price(dataname_buy)  # Получаем данные опциона dataname_sell
-
+        target_iv_buy = bid_iv_sell - expected_profit  # Целевая прибыль для котирования покупки
+        S, K, T, opt_type = get_option_data_for_calc_price(dataname_buy)  # Получаем данные опциона dataname_sell
+        limit_price_buy_ = option_price(S, target_iv_buy / 100, K, T, r,
+                                        opt_type=opt_type)  # Целевая цена для котирования покупки
+        limit_price_buy = int(round((limit_price_buy_ // step_price) * step_price, decimals))
         # PUT - слева CALL - справа
-        opt_type_buy = CALL if options_data[dataname_buy]['optionSide'] == 'Call' else PUT
-        if opt_type_buy == CALL:
-            target_iv_buy = bid_iv_sell + expected_profit  # Целевая прибыль для котирования покупки
-            limit_price_buy_ = option_price(S, target_iv_buy / 100, K, T, r,
-                                            opt_type=opt_type_buy)  # Целевая цена для котирования покупки
-            limit_price_buy = int(round((limit_price_buy_ // step_price) * step_price, decimals))
+        opt_type = CALL if options_data[dataname_buy]['optionSide'] == 'Call' else PUT
+        if opt_type == CALL:
             app_instance.add_message(f'\n')
-            app_instance.add_message(f'{"PUT SELL:":<21}{"CALL BUY:":<21}')
-            app_instance.add_message(f'{dataname_sell:<21}{dataname_buy:<21}')
+            app_instance.add_message(f'{"PUT SELL:":<30}{"CALL BUY:":<30}')
+            app_instance.add_message(f'{dataname_sell:<30}{dataname_buy:<30}')
             app_instance.add_message(
-                f'{"ask:":<7}{round(ask_sell, decimals):<7}{round(ask_iv_sell, 2):<7}{"ask:":<7}{round(ask_buy, decimals):<7}{round(ask_iv_buy, 2):<7}')
+                f'{"ask:":<10}{round(ask_sell, decimals):<10}{round(ask_iv_sell, 2):<10}{"ask:":<10}{round(ask_buy, decimals):<10}{round(ask_iv_buy, 2):<10}')
             app_instance.add_message(
-                f'{"bid:":<7}{round(bid_sell, decimals):<7}{round(bid_iv_sell, 2):<7}{"bid:":<7}{round(bid_buy, decimals):<7}{round(bid_iv_buy, 2):<7}')
+                f'{"bid:":<10}{round(bid_sell, decimals):<10}{round(bid_iv_sell, 2):<10}{"bid:":<10}{round(bid_buy, decimals):<10}{round(bid_iv_buy, 2):<10}')
             app_instance.add_message(
-                f'{"target:":<7}{round(bid_sell, decimals):<7}{round(bid_iv_sell, 2):<7}{"target:":<7}{round(limit_price_buy, decimals):<7}{round(target_iv_buy, 2):<7}')
+                f'{"target:":<10}{round(bid_sell, decimals):<10}{round(bid_iv_sell, 2):<10}{"target:":<10}{round(limit_price_buy, decimals):<10}{round(target_iv_buy, 2):<10}')
         else:
-            target_iv_buy = bid_iv_sell - expected_profit  # Целевая прибыль для котирования покупки
-            limit_price_buy_ = option_price(S, target_iv_buy / 100, K, T, r,
-                                            opt_type=opt_type_buy)  # Целевая цена для котирования покупки
-            limit_price_buy = int(round((limit_price_buy_ // step_price) * step_price, decimals))
             app_instance.add_message(f'\n')
-            app_instance.add_message(f'{"PUT BUY:":<21}{"CALL SELL:":<21}')
-            app_instance.add_message(f'{dataname_buy:<21}{dataname_sell:<21}')
+            app_instance.add_message(f'{"PUT BUY:":<30}{"CALL SELL:":<30}')
+            app_instance.add_message(f'{dataname_buy:<30}{dataname_sell:<30}')
             app_instance.add_message(
-                f'{"ask:":<7}{round(ask_buy, decimals):<7}{round(ask_iv_buy, 2):<7}{"ask:":<7}{round(ask_sell, decimals):<7}{round(ask_iv_sell, 2):<7}')
+                f'{"ask:":<10}{round(ask_buy, decimals):<10}{round(ask_iv_buy, 2):<10}{"ask:":<10}{round(ask_sell, decimals):<10}{round(ask_iv_sell, 2):<10}')
             app_instance.add_message(
-                f'{"bid:":<7}{round(bid_buy, decimals):<7}{round(bid_iv_buy, 2):<7}{"bid:":<7}{round(bid_sell, decimals):<7}{round(bid_iv_sell, 2):<7}')
+                f'{"bid:":<10}{round(bid_buy, decimals):<10}{round(bid_iv_buy, 2):<10}{"bid:":<10}{round(bid_sell, decimals):<10}{round(bid_iv_sell, 2):<10}')
             app_instance.add_message(
-                f'{"target:":<7}{round(limit_price_buy, decimals):<7}{round(target_iv_buy, 2):<7}{"target:":<7}{round(bid_sell, decimals):<7}{round(bid_iv_sell, 2):<7}')
+                f'{"target:":<10}{round(limit_price_buy, decimals):<10}{round(target_iv_buy, 2):<10}{"target:":<10}{round(bid_sell, decimals):<10}{round(bid_iv_sell, 2):<10}')
 
 
 def selected_lot_count(app_instance):
@@ -648,11 +635,10 @@ class App:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title(filename)
-        self.root.geometry("550x720")
+        self.root.geometry("800x720")
 
         self.running = False
         self.counter = 0
-        self.target_opt_type = None
         self.target_price_put = 0
         self.target_price_call = 0
         self.target_iv_put = 0
@@ -760,7 +746,7 @@ class App:
         self.expected_profit_label.pack(pady=1)
 
         # Спинбокс spinbox_profit Expected profit
-        self.spinbox_profit_var = tk.DoubleVar(value=-2.00)
+        self.spinbox_profit_var = tk.DoubleVar(value=2.00)
         self.spinbox_profit = tk.Spinbox(main_frame, from_=-10, to=10, increment=0.01, format="%.2f", width=8,
                                          textvariable=self.spinbox_profit_var, command=lambda: selected_profit(self))
         self.spinbox_profit.pack(pady=1)
@@ -776,6 +762,25 @@ class App:
         self.target_price_label_call = tk.Label(radio_frame, text="", fg="gray")
         self.target_iv_label_put = tk.Label(radio_frame, text="", fg="gray")
         self.target_iv_label_call = tk.Label(radio_frame, text="", fg="gray")
+        # if self.option_type_sell.get() == "P":
+        # print(get_option_type_sell(self))
+        print(self.option_type_sell.get())
+        if self.option_type_sell == "P":
+            self.target_price_label_put = tk.Label(radio_frame, text="", fg="#8B0000")  # Тёмно-красный
+            self.target_iv_label_put = tk.Label(radio_frame, text="", fg="#8B0000")  # Тёмно-красный
+            self.target_price_label_call = tk.Label(radio_frame, text="", fg="#006400")  # Тёмно-зелёный
+            self.target_iv_label_call = tk.Label(radio_frame, text="", fg="#006400")  # Тёмно-зелёный
+        else:
+            self.target_price_label_put = tk.Label(radio_frame, text="", fg="#006400")  # Тёмно-зелёный
+            self.target_iv_label_put = tk.Label(radio_frame, text="", fg="#006400")  # Тёмно-зелёный
+            self.target_price_label_call = tk.Label(radio_frame, text="", fg="#8B0000")  # Тёмно-красный
+            self.target_iv_label_call = tk.Label(radio_frame, text="", fg="#8B0000")  # Тёмно-красный
+        # if self.option_type_buy.get() == "P":
+        #     self.target_price_label_put = tk.Label(radio_frame, text="", fg="#006400")  # Тёмно-зелёный
+        #     self.target_iv_label_put = tk.Label(radio_frame, text="", fg="#006400")  # Тёмно-зелёный
+        # else:
+        #     self.target_price_label_call = tk.Label(radio_frame, text="", fg="#006400")  # Тёмно-зелёный
+        #     self.target_iv_label_call = tk.Label(radio_frame, text="", fg="#006400")  # Тёмно-зелёный
         self.target_iv_label_put.pack(side=tk.LEFT, pady=1)
         self.target_price_label_put.pack(side=tk.LEFT, pady=1)
         self.target_price_label_call.pack(side=tk.LEFT, pady=1)
@@ -845,18 +850,6 @@ class App:
         self.counter_label = tk.Label(main_frame, text="Счётчик сделок: 0")
         self.counter_label.pack(pady=1)
 
-    def update_target_labels(self):
-        # print(self.target_opt_type)
-        if self.target_opt_type == "P":
-            self.target_price_label_put.config(fg="#8B0000")
-            self.target_iv_label_put.config(fg="#8B0000")
-            self.target_price_label_call.config(fg="#006400")
-            self.target_iv_label_call.config(fg="#006400")
-        else:
-            self.target_price_label_put.config(fg="#006400")
-            self.target_iv_label_put.config(fg="#006400")
-            self.target_price_label_call.config(fg="#8B0000")
-            self.target_iv_label_call.config(fg="#8B0000")
 
     def add_message(self, message):
         """Добавление сообщения в окно"""
@@ -873,7 +866,8 @@ class App:
             self.status_label.config(text="Status: Running")
 
             lot_count_step = 0
-            finam_board, ticker = fp_provider.dataname_to_finam_board_ticker(dataname_sell)  # Код режима торгов Финама и тикер
+            finam_board, ticker = fp_provider.dataname_to_finam_board_ticker(
+                dataname_sell)  # Код режима торгов Финама и тикер
             mic = fp_provider.get_mic(finam_board, ticker)  # Биржа тикера
             symbol = f'{ticker}@{mic}'  # Тикер Финама
             symbol_sell = symbol
@@ -883,13 +877,13 @@ class App:
             theoretical_price_sell_ = options_data[dataname_sell]['theorPrice']
             theor_iv_sell = options_data[dataname_sell]['volatility']
             decimals = options_data[dataname_sell]['decimals']
-            # profit_iv_sell = theor_iv_sell + expected_profit
-            # # Далее вычисляем profit_price_sell из profit_iv_sell по формуле Блэка-Шоулза
-            S, K, T, opt_type_sell = get_option_data_for_calc_price(dataname_sell)  # Получаем данные опциона dataname_sell
-            # # print(f'S: {S}, K: {K}, T: {T}, opt_type: {opt_type}')
-            # profit_price_sell = option_price(S, profit_iv_sell / 100, K, T, r, opt_type=opt_type)
-            # limit_price_sell = int(round((profit_price_sell // step_price) * step_price, decimals))
-            # theoretical_price_sell = int(round((theoretical_price_sell_ // step_price) * step_price, decimals))
+            profit_iv_sell = theor_iv_sell + expected_profit
+            # Далее вычисляем profit_price_sell из profit_iv_sell по формуле Блэка-Шоулза
+            S, K, T, opt_type = get_option_data_for_calc_price(dataname_sell)  # Получаем данные опциона dataname_sell
+            # print(f'S: {S}, K: {K}, T: {T}, opt_type: {opt_type}')
+            profit_price_sell = option_price(S, profit_iv_sell / 100, K, T, r, opt_type=opt_type)
+            limit_price_sell = int(round((profit_price_sell // step_price) * step_price, decimals))
+            theoretical_price_sell = int(round((theoretical_price_sell_ // step_price) * step_price, decimals))
             # Получаем ask, bid из потока котировок по подписке из обновляемого словаря new_quotes
             ticker = options_data[dataname_sell]['ticker']
             ask_sell = int(round(new_quotes[ticker]['ask'], decimals))
@@ -897,7 +891,7 @@ class App:
             bid_sell = int(round(new_quotes[ticker]['bid'], decimals))
             bid_sell_vol = int(round(new_quotes[ticker]['bid_vol'], decimals))
             # print(f'ask_sell: {ask_sell}, bid_sell: {bid_sell} ask_sell_vol: {ask_sell_vol}, bid_sell_vol: {bid_sell_vol}')
-            if opt_type_sell == CALL:
+            if opt_type == 'C':
                 sigma = options_data[dataname_sell]['volatility'] / 100
                 ask_iv_sell = newton_vol_call(S, K, T, ask_sell, r, sigma) * 100
                 bid_iv_sell = newton_vol_call(S, K, T, bid_sell, r, sigma) * 100
@@ -906,13 +900,14 @@ class App:
                 ask_iv_sell = newton_vol_put(S, K, T, ask_sell, r, sigma) * 100
                 bid_iv_sell = newton_vol_put(S, K, T, bid_sell, r, sigma) * 100
 
-            finam_board, ticker = fp_provider.dataname_to_finam_board_ticker(dataname_buy)  # Код режима торгов Финама и тикер
+            finam_board, ticker = fp_provider.dataname_to_finam_board_ticker(
+                dataname_buy)  # Код режима торгов Финама и тикер
             mic = fp_provider.get_mic(finam_board, ticker)  # Биржа тикера
             symbol = f'{ticker}@{mic}'  # Тикер Финама
             symbol_buy = symbol
             account_id = fp_provider.account_ids[0]  # Торговый счет, где будут выставляться заявки
             quantity_buy = options_data[dataname_buy]['lot_size']  # Количество в шт
-            S, K, T, opt_type_buy = get_option_data_for_calc_price(dataname_buy)  # Получаем данные опциона dataname_sell
+            S, K, T, opt_type = get_option_data_for_calc_price(dataname_buy)  # Получаем данные опциона dataname_sell
             # Получаем ask, bid из потока котировок по подписке из обновляемого словаря new_quotes
             ticker = options_data[dataname_buy]['ticker']
             ask_buy = int(round(new_quotes[ticker]['ask'], decimals))
@@ -920,7 +915,7 @@ class App:
             bid_buy = int(round(new_quotes[ticker]['bid'], decimals))
             bid_buy_vol = int(round(new_quotes[ticker]['bid_vol'], decimals))
             # print(f'opt_type {opt_type} Котировки ask_buy: {ask_buy} ask_buy_vol: {ask_buy_vol} bid_buy: {bid_buy} bid_buy_vol: {bid_buy_vol}')
-            if opt_type_buy == 'C':
+            if opt_type == 'C':
                 sigma = options_data[dataname_buy]['volatility'] / 100
                 ask_iv_buy = newton_vol_call(S, K, T, ask_buy, r, sigma) * 100
                 bid_iv_buy = newton_vol_call(S, K, T, bid_buy, r, sigma) * 100
@@ -940,39 +935,39 @@ class App:
                 # При свершении покупки сразу продаём опцион dataname_sell по цене target_price_sell
                 # Для случая, когда опцион на продажу dataname_sell (купленный ранее) имеет профит больше, чем опцион на покупку dataname_buy
                 target_iv_sell = bid_iv_sell  # Целевая IV для мгновенной продажи
+                # print(f'1. Целевая IV для мгновенной продажи: {round(target_iv_sell, 2)}')
                 target_price_sell = bid_sell  # Целевая ЦЕНА для мгновенной продажи
                 opt_type_sell = CALL if options_data[dataname_sell]['optionSide'] == 'Call' else PUT
-                # Таргет-цены на панель управления
                 if opt_type_sell == CALL:
-                    self.target_opt_type = 'C'
                     self.target_price_call = target_price_sell
                     self.target_price_label_call.config(text=f"{self.target_price_call}")
                     self.target_iv_call = round(target_iv_sell, 2)
                     self.target_iv_label_call.config(text=f"{self.target_iv_call}")
-                    self.update_target_labels()  # Вызов функции обновления меток
-                    target_profit_buy = bid_iv_sell - expected_profit # Целевая прибыль для котирования покупки
                 else:
-                    self.target_opt_type = 'P'
                     self.target_price_put = target_price_sell
                     self.target_price_label_put.config(text=f"{self.target_price_put}")
                     self.target_iv_put = round(target_iv_sell, 2)
                     self.target_iv_label_put.config(text=f"{self.target_iv_put}")
-                    self.update_target_labels()  # Вызов функции обновления меток
-                    target_profit_buy = bid_iv_sell + expected_profit # Целевая прибыль для котирования покупки
-                S, K, T, opt_type_buy = get_option_data_for_calc_price(dataname_buy)  # Получаем данные опциона dataname_buy
-                target_price_buy_ = option_price(S, target_profit_buy / 100, K, T, r,
-                                                 opt_type=opt_type_buy)  # Целевая цена для котирования покупки
+                # print(f'2. Целевая ЦЕНА для мгновенной продажи: {round(target_price_sell, 2)}')
+                # target_profit_sell = bid_iv_sell - open_iv_sell  # Целевая прибыль для мгновенной продажи
+                # print(f'3. Целевая прибыль для мгновенной продажи: {round(target_profit_sell, 2)}')
+                target_profit_buy = bid_iv_sell - expected_profit  # Целевая прибыль для котирования покупки
+                # print(f'4. Целевая прибыль для котирования покупки: {round(target_profit_buy, 2)}')
+                target_iv_buy = target_profit_buy  # IV для котирования покупки
+                # print(f'5. Целевая IV для котирования покупки: {round(target_iv_buy, 2)}')
+                S, K, T, opt_type = get_option_data_for_calc_price(dataname_buy)  # Получаем данные опциона dataname_buy
+                target_price_buy_ = option_price(S, target_iv_buy / 100, K, T, r,
+                                                 opt_type=opt_type)  # Целевая цена для котирования покупки
                 target_price_buy = int(round((target_price_buy_ // step_price) * step_price, decimals))
-                # Таргет-цены на панель управления
-                if opt_type_buy == CALL:
+                if opt_type == 'C':
                     self.target_price_call = target_price_buy
                     self.target_price_label_call.config(text=f"{self.target_price_call}")
-                    self.target_iv_call = round(target_profit_buy, 2)
+                    self.target_iv_call = round(target_iv_buy, 2)
                     self.target_iv_label_call.config(text=f"{self.target_iv_call}")
                 else:
                     self.target_price_put = target_price_buy
                     self.target_price_label_put.config(text=f"{self.target_price_put}")
-                    self.target_iv_put = round(target_profit_buy, 2)
+                    self.target_iv_put = round(target_iv_buy, 2)
                     self.target_iv_label_put.config(text=f"{self.target_iv_put}")
 
                 # Логика выставления лимитной цены на покупку опциона dataname_buy
@@ -985,7 +980,8 @@ class App:
                     # print(f'Заявка на покупку по данному тикеру {dataname_buy} уже существует: {order_dict[symbol_buy]["order_id"]}')
 
                     # Проверка на соответствие лимитной цены в заявке target-цене
-                    if bid_buy > float(order_dict[symbol_buy]['limit_price']) or old_target_price_buy != target_price_buy:
+                    if bid_buy > float(
+                            order_dict[symbol_buy]['limit_price']) or old_target_price_buy != target_price_buy:
                         # Снимаем старую заявку
                         get_cancel_order(account_id, order_dict[symbol_buy]['order_id'])
                         # print(f'Заявка на покупку снята:{order_dict[symbol_buy]['order_id']}')
@@ -1011,7 +1007,7 @@ class App:
                                 self.add_message(f'{current_time} Target: BUY {target_price_buy} SELL {target_price_sell}')
                             else:
                                 self.add_message(f'                    PUT      CALL')
-                                self.add_message(f'{current_time} Target: BUY {target_price_sell} SELL {target_price_buy}')
+                                self.add_message(f'{current_time} Target: BUY {target_price_buy} SELL {target_price_sell}')
                             # Сохраняем новые значения
                             old_target_price_sell = target_price_sell
                             old_target_price_buy = target_price_buy
@@ -1024,13 +1020,6 @@ class App:
                         limit_price_buy = target_price_buy + (step_price * indent)
                         # Подбираем количество в зависимости от имеющегося количества в противоположной котировке (есть риск частичного исполнения заявки) и Basket_size
                         quantity_buy = basket_size
-
-                        # # Временная заглушка !!!
-                        # # Планируем следующий вызов через 1000 мс
-                        # self.root.after(5000, self.loop_function)
-                        # return
-
-
                         # print(f'Выставляем лимитную заявку на покупку опциона {dataname_buy} по цене {limit_price_buy} и количеством {quantity_buy}')
                         # Вызов функции выставления заявки на покупку
                         order_id_buy, status_buy = get_order_buy(
@@ -1130,37 +1119,37 @@ class App:
                 target_iv_buy = ask_iv_buy  # Целевая IV для мгновенной покупки
                 target_price_buy = ask_buy  # Целевая цена для мгновенной покупки
                 opt_type_buy = CALL if options_data[dataname_buy]['optionSide'] == 'Call' else PUT
-                # Таргет-цены на панель управления
                 if opt_type_buy == CALL:
                     self.target_price_call = target_price_buy
                     self.target_price_label_call.config(text=f"{self.target_price_call}")
                     self.target_iv_call = round(target_iv_buy, 2)
                     self.target_iv_label_call.config(text=f"{self.target_iv_call}")
-                    target_profit_sell = ask_iv_buy - expected_profit  # Целевая прибыль для котирования продажи
                 else:
                     self.target_price_put = target_price_buy
                     self.target_price_label_put.config(text=f"{self.target_price_put}")
                     self.target_iv_put = round(target_iv_buy, 2)
                     self.target_iv_label_put.config(text=f"{self.target_iv_put}")
-                    target_profit_sell = ask_iv_buy + expected_profit  # Целевая прибыль для котирования продажи
-                S, K, T, opt_type_sell = get_option_data_for_calc_price(dataname_sell)  # Получаем данные опциона dataname_sell
-                target_price_sell_ = option_price(S, target_profit_sell / 100, K, T, r, opt_type=opt_type_sell)  # Целевая цена для котирования продажи
+                # target_profit_sell = open_iv_buy - ask_iv_buy  # Целевая прибыль для мгновенной покупки
+                # print(f'3. Целевая прибыль для мгновенной покупки: {round(target_profit_sell, 2)}')
+                target_profit_sell = ask_iv_buy + expected_profit  # Целевая прибыль для котирования продажи
+                # print(f'4. Целевая прибыль для котирования продажи: {round(target_profit_buy, 2)}')
+                target_iv_sell = target_profit_sell  # Целевая IV для котирования продажи
+                # print(f'5. Целевая IV для котирования продажи: {round(target_iv_sell, 2)}')
+                S, K, T, opt_type = get_option_data_for_calc_price(
+                    dataname_sell)  # Получаем данные опциона dataname_sell
+                target_price_sell_ = option_price(S, target_iv_sell / 100, K, T, r,
+                                                  opt_type=opt_type)  # Целевая цена для котирования продажи
                 target_price_sell = int(round((target_price_sell_ // step_price) * step_price, decimals))
-                # Таргет-цены на панель управления
-                if opt_type_sell == CALL:
-                    self.target_opt_type = 'C'  # Устанавливаем атрибут класса
+                if opt_type == 'C':
                     self.target_price_call = target_price_sell
                     self.target_price_label_call.config(text=f"{self.target_price_call}")
-                    self.target_iv_call = round(target_profit_sell, 2)
+                    self.target_iv_call = round(target_iv_sell, 2)
                     self.target_iv_label_call.config(text=f"{self.target_iv_call}")
-                    self.update_target_labels()  # Вызов функции обновления меток
                 else:
-                    self.target_opt_type = 'P'  # Устанавливаем атрибут класса
                     self.target_price_put = target_price_sell
                     self.target_price_label_put.config(text=f"{self.target_price_put}")
-                    self.target_iv_put = round(target_profit_sell, 2)
+                    self.target_iv_put = round(target_iv_sell, 2)
                     self.target_iv_label_put.config(text=f"{self.target_iv_put}")
-                    self.update_target_labels()  # Вызов функции обновления меток
 
                 # Логика выставления лимитной цены для котирования продажи опциона dataname_sell
 
@@ -1204,7 +1193,6 @@ class App:
                             # Сохраняем новые значения
                             old_target_price_sell = target_price_sell
                             old_target_price_buy = target_price_buy
-
                         # Планируем следующий вызов через 1000 мс
                         self.root.after(1000, self.loop_function)
                         return
@@ -1213,15 +1201,7 @@ class App:
                         # Подбираем количество в зависимости от количества в противоположной котировке
                         quantity_sell = basket_size
                         # print(f'Выставляем лимитную заявку на продажу: {dataname_sell} ')
-                        # print(f'по цене: {limit_price_sell} колич: {quantity_sell}.')
-
-
-                        # # Временная заглушка !!!
-                        # # Планируем следующий вызов через 1000 мс
-                        # self.root.after(5000, self.loop_function)
-                        # return
-
-
+                        # print(f'                              по цене: {limit_price_sell} колич: {quantity_sell}.')
                         # Вызов функции выставления заявки на продажу
                         order_id, status = get_order_sell(
                             account_id=account_id,  # Укажите реальный номер счета
@@ -1230,7 +1210,7 @@ class App:
                             limit_price_sell=limit_price_sell  # Укажите цену
                         )
                         # print(f'Заявка на продажу выставлена: {order_id}, статус: {status} ')
-                        sleep(2)
+                        sleep(1)
 
                         position = trade_dict.get(order_id)
                         if position:  # Сделка на продажу состоялась
@@ -1409,15 +1389,14 @@ class App:
 
 lot_count_step = 0
 
-log_filename = filename + ".log"
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',  # Формат сообщения
                     datefmt='%d.%m.%Y %H:%M:%S',  # Формат даты
                     level=logging.INFO,  # Уровень логируемых событий NOTSET/DEBUG/INFO/WARNING/ERROR/CRITICAL
-                    handlers=[logging.FileHandler(log_filename, encoding='utf-8'),
+                    handlers=[logging.FileHandler('01MyOpener.log', encoding='utf-8'),
                               logging.StreamHandler()])  # Лог записываем в файл и выводим на консоль
-logging.Formatter.converter = lambda *args: datetime.now(tz=fp_provider.tz_msk).timetuple()  # В логе время указываем по МСК
+# logging.Formatter.converter = lambda *args: datetime.now(tz=fp_provider.tz_msk).timetuple()  # В логе время указываем по МСК
 
-logger = logging.getLogger(filename)  # Будем вести лог
+logger = logging.getLogger('MyControlPanel')  # Будем вести лог
 schedule = Futures()
 fp_provider = FinamPy()  # Подключаемся ко всем торговым счетам
 ap_provider = AlorPy()  # Подключаемся ко всем торговым счетам
