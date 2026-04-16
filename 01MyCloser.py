@@ -1067,6 +1067,20 @@ class App:
                     self.target_iv_put = round(target_profit_buy, 2)
                     self.target_iv_label_put.config(text=f"{self.target_iv_put}")
 
+                # В каждом цикле сравниваем target_price с предыдущими значениями old_target_price и выводим на экран при изменении
+                if old_target_price_buy != target_price_buy or old_target_price_sell != target_price_sell:
+                    current_time = datetime.now().strftime('%H:%M:%S')
+                    opt_type = CALL if options_data[dataname_buy]['optionSide'] == 'Call' else PUT
+                    if opt_type == CALL:
+                        self.add_message(f'                    PUT      CALL')
+                        self.add_message(f'{current_time} Target: BUY {target_price_sell} SELL {target_price_buy}')
+                    else:
+                        self.add_message(f'                    PUT      CALL')
+                        self.add_message(f'{current_time} Target: BUY {target_price_buy} SELL {target_price_sell}')
+                    # Сохраняем новые значения
+                    old_target_price_sell = target_price_sell
+                    old_target_price_buy = target_price_buy
+
                 # Логика выставления лимитной цены на покупку опциона dataname_buy
 
                 # Здесь введём проверку, что заявка на покупку по данному тикеру в order_dict уже существует!
@@ -1077,6 +1091,8 @@ class App:
                     # logger.info(f'Заявка на покупку по данному тикеру {dataname_buy} уже существует: {order_dict[symbol_buy]["order_id"]}')
                     if target_price_buy < bid_buy:  # Цена на покупку вне спреда
                         # logger.info(f'Вне спреда')
+                        get_cancel_order(account_id, order_dict[symbol_buy]['order_id_buy_control'])
+                        logger.info(f'Заявка на покупку снята:{order_dict[symbol_buy]['order_id_buy_control']}')
                         # В начало цикла
                         self.root.after(1000, self.loop_function)
                         return
@@ -1086,7 +1102,7 @@ class App:
                                 order_dict[symbol_buy]['limit_price']) or old_target_price_buy != target_price_buy:
                             # Лимитная цена уже не соответствует таргет-цене, снимаем старую заявку
                             get_cancel_order(account_id, order_dict[symbol_buy]['order_id'])
-                            logger.info(f'Заявка на покупку снята:{order_dict[symbol_buy]['order_id']}')
+                            logger.info(f'Заявка на покупку снята:{order_dict[symbol_buy]['order_id_buy_control']}')
                             # В начало цикла
                             self.root.after(1000, self.loop_function)
                             return
@@ -1159,107 +1175,100 @@ class App:
                         # self.root.after(5000, self.loop_function)
                         # return
 
-                        # Проверка спреда
                         if target_price_buy < bid_buy:  # Цена на покупку вне спреда
                             # logger.info(f'Вне спреда')
                             # В начало цикла
                             self.root.after(1000, self.loop_function)
                             return
-                        else:
-                            limit_price_buy = target_price_buy + (step_price * indent)
-                            quantity_buy = basket_size
-                            logger.info(
-                                f'Выставляем лимитную заявку на покупку опциона {dataname_buy} по цене {limit_price_buy} и количеством {quantity_buy}')
-                            # Вызов функции выставления заявки на покупку
-                            order_id_buy, status_buy = get_order_buy(
-                                account_id=account_id,  # Укажите реальный номер счета
-                                symbol_buy=symbol_buy,  # Укажите реальный тикер
-                                quantity_buy=quantity_buy,  # Укажите количество
-                                limit_price_buy=limit_price_buy  # Укажите цену
-                            )
-                            logger.info(
-                                f'Заявка на покупку выставлена: order_id_buy {order_id_buy}, status {status_buy}')
-                            sleep(timeout)
-
-                            position = trade_dict.get(order_id_buy)
-                            if position:  # Сделка на покупку состоялась
-                                logger.info(f'Сделка на покупку {order_id_buy} состоялась')
-                                self.add_message(f'timestamp - {position['timestamp']}')
-                                self.add_message(f'trade_id - {position['trade_id']}')
-                                self.add_message(f'side - {position['side']}')
-                                self.add_message(f'size - {position['size']}')
-                                self.add_message(f'price - {position['price']}')
-                                # Подбираем количество в зависимости от количества исполненной заявки на покупку
-                                quantity_sell = quantity_buy
-                                # Лимитная цена на мгновенную продажу опциона dataname_sell
-                                limit_price_sell = target_price_sell
-                                # print(f'Выставляем лимитную заявку по цене {limit_price_sell}: {dataname_sell} колич.: {quantity_sell}')
-                                # Вызов функции выставления заявки на продажу
-                                order_id, status = get_order_sell(
+                        else:  # Цена внутри спреда
+                            # Проверка на соответствие лимитной цены в заявке target-цене
+                            if old_target_price_buy != target_price_buy:
+                                # В начало цикла
+                                self.root.after(1000, self.loop_function)
+                                return
+                            else:  # Лимитная цена соответствует таргет-цене
+                                limit_price_buy = target_price_buy + (step_price * indent)
+                                quantity_buy = basket_size
+                                logger.info(
+                                    f'Выставляем лимитную заявку на покупку опциона {dataname_buy} по цене {limit_price_buy} и количеством {quantity_buy}')
+                                # Вызов функции выставления заявки на покупку
+                                order_id_buy, status_buy = get_order_buy(
                                     account_id=account_id,  # Укажите реальный номер счета
-                                    symbol_sell=symbol_sell,  # Укажите реальный тикер
-                                    quantity_sell=quantity_sell,  # Укажите количество
-                                    limit_price_sell=limit_price_sell  # Укажите цену
+                                    symbol_buy=symbol_buy,  # Укажите реальный тикер
+                                    quantity_buy=quantity_buy,  # Укажите количество
+                                    limit_price_buy=limit_price_buy  # Укажите цену
                                 )
-                                self.add_message(f'Заявка на продажу выставлена: {order_id}, статус: {status} ')
-                                order_id_sell_control = order_id  # Запоминаем номер ордера встречной заявки для последующей проверки исполнения
-                                logger.info(f'Заявка на продажу выставлена {order_id} статус {status}')
-                                sleep(1)
-                                position = trade_dict.get(order_id)
-                                if position:  # Если сделка на продажу состоялась
-                                    logger.info(f'Сделка на продажу {order_id} состоялась')
+                                logger.info(
+                                    f'Заявка на покупку выставлена: order_id_buy {order_id_buy}, status {status_buy}')
+                                order_id_buy_control = order_id_buy  # Запоминаем номер ордера первичной заявки для последующей проверки исполнения
+                                sleep(timeout)
+
+                                position = trade_dict.get(order_id_buy)
+                                if position:  # Сделка на покупку состоялась
+                                    logger.info(f'Сделка на покупку {order_id_buy} состоялась')
                                     self.add_message(f'timestamp - {position['timestamp']}')
                                     self.add_message(f'trade_id - {position['trade_id']}')
                                     self.add_message(f'side - {position['side']}')
                                     self.add_message(f'size - {position['size']}')
                                     self.add_message(f'price - {position['price']}')
-                                    # Увеличиваем счетчик
-                                    self.counter += 1
-                                    self.add_message(f'Завершение цикла N{self.counter} из {lot_count}')
-                                    get_portfolio_positions()  # Обновляем портфель
-                                    if self.counter >= lot_count:
-                                        self.add_message(
-                                            f'Заданное количество лотов {self.counter} исполнено. Завершение работы котировщика!')
-                                        sleep(timeout)
-                                        self.running = False
+                                    # Подбираем количество в зависимости от количества исполненной заявки на покупку
+                                    quantity_sell = quantity_buy
+                                    # Лимитная цена на мгновенную продажу опциона dataname_sell
+                                    limit_price_sell = target_price_sell
+                                    # print(f'Выставляем лимитную заявку по цене {limit_price_sell}: {dataname_sell} колич.: {quantity_sell}')
+                                    # Вызов функции выставления заявки на продажу
+                                    order_id, status = get_order_sell(
+                                        account_id=account_id,  # Укажите реальный номер счета
+                                        symbol_sell=symbol_sell,  # Укажите реальный тикер
+                                        quantity_sell=quantity_sell,  # Укажите количество
+                                        limit_price_sell=limit_price_sell  # Укажите цену
+                                    )
+                                    self.add_message(f'Заявка на продажу выставлена: {order_id}, статус: {status} ')
+                                    order_id_sell_control = order_id  # Запоминаем номер ордера встречной заявки для последующей проверки исполнения
+                                    logger.info(f'Заявка на продажу выставлена {order_id} статус {status}')
+                                    sleep(1)
+                                    position = trade_dict.get(order_id)
+                                    if position:  # Если сделка на продажу состоялась
+                                        logger.info(f'Сделка на продажу {order_id} состоялась')
+                                        self.add_message(f'timestamp - {position['timestamp']}')
+                                        self.add_message(f'trade_id - {position['trade_id']}')
+                                        self.add_message(f'side - {position['side']}')
+                                        self.add_message(f'size - {position['size']}')
+                                        self.add_message(f'price - {position['price']}')
+                                        # Увеличиваем счетчик
+                                        self.counter += 1
+                                        self.add_message(f'Завершение цикла N{self.counter} из {lot_count}')
+                                        get_portfolio_positions()  # Обновляем портфель
+                                        if self.counter >= lot_count:
+                                            self.add_message(
+                                                f'Заданное количество лотов {self.counter} исполнено. Завершение работы котировщика!')
+                                            sleep(timeout)
+                                            self.running = False
+                                        else:
+                                            # Начинаем новый цикл через 1000 мс
+                                            self.root.after(1000, self.loop_function)
+                                            return
                                     else:
-                                        # Начинаем новый цикл через 1000 мс
+                                        self.add_message(f'Заявка на продажу не состоялась.')
+                                        self.root.update()  # Принудительно обновляем интерфейс
+                                        # В начало цикла
                                         self.root.after(1000, self.loop_function)
                                         return
-                                else:
-                                    self.add_message(f'Заявка на продажу не состоялась.')
-                                    self.root.update()  # Принудительно обновляем интерфейс
-                                    # В начало цикла
-                                    self.root.after(1000, self.loop_function)
-                                    return
-                            else:  # Сделка на покупку не состоялась
-                                # Проверка на изменение target-цен
-                                ticker_buy = options_data[dataname_buy]['ticker']
-                                ticker_sell = options_data[dataname_sell]['ticker']
-                                if symbol_buy in order_dict and new_quotes[ticker_buy]['bid'] != float(
-                                        order_dict[symbol_buy]['limit_price']) or target_price_sell != int(
-                                    round(new_quotes[ticker_sell]['bid'], decimals)) and order_dict[symbol_buy][
-                                    'client_order_id'][:10] == filename:
-                                    get_cancel_order(account_id, order_id_buy)
-                                    self.add_message(f'Заявка на покупку снята:{order_id_buy}')
-                                sleep(1)
-                # В каждом цикле сравниваем target_price с предыдущими значениями old_target_price и выводим на экран при изменении
-                if old_target_price_buy != target_price_buy or old_target_price_sell != target_price_sell:
-                    current_time = datetime.now().strftime('%H:%M:%S')
-                    opt_type = CALL if options_data[dataname_buy]['optionSide'] == 'Call' else PUT
-                    if opt_type == CALL:
-                        self.add_message(f'                    PUT      CALL')
-                        self.add_message(f'{current_time} Target: BUY {target_price_sell} SELL {target_price_buy}')
-                    else:
-                        self.add_message(f'                    PUT      CALL')
-                        self.add_message(f'{current_time} Target: BUY {target_price_buy} SELL {target_price_sell}')
-                    # Сохраняем новые значения
-                    old_target_price_sell = target_price_sell
-                    old_target_price_buy = target_price_buy
-
+                                else:  # Сделка на покупку не состоялась
+                                    # Проверка на изменение target-цен
+                                    ticker_buy = options_data[dataname_buy]['ticker']
+                                    ticker_sell = options_data[dataname_sell]['ticker']
+                                    if symbol_buy in order_dict and new_quotes[ticker_buy]['bid'] != float(
+                                            order_dict[symbol_buy]['limit_price']) or target_price_sell != int(
+                                        round(new_quotes[ticker_sell]['bid'], decimals)) and order_dict[symbol_buy][
+                                        'client_order_id'][:10] == filename:
+                                        get_cancel_order(account_id, order_id_buy)
+                                        self.add_message(f'Заявка на покупку снята:{order_id_buy}')
+                                    sleep(1)
 
             # Вариант 2 "Котируем продажу"
             else:  # 'SELL'
+
                 # print(f'{quoter_side} Котируем продажу, покупка - по рынку!')
                 # print(f'Вариант 2 "Котируем продажу"')
                 # print(f'Расчёт целевой цены продажи/купли target_price (Вариант 2 "Котируем продажу")')
@@ -1303,6 +1312,20 @@ class App:
                     self.target_iv_label_put.config(text=f"{self.target_iv_put}")
                     self.update_target_labels()  # Вызов функции обновления меток
 
+                # В каждом цикле сравниваем target_price с предыдущими значениями old_target_price и выводим на экран при изменении
+                if old_target_price_sell != target_price_sell or old_target_price_buy != target_price_buy:
+                    current_time = datetime.now().strftime('%H:%M:%S')
+                    opt_type = CALL if options_data[dataname_sell]['optionSide'] == 'Call' else PUT
+                    if opt_type == CALL:
+                        self.add_message(f'                    PUT      CALL')
+                        self.add_message(f'{current_time} Target: BUY {target_price_buy} SELL {target_price_sell}')
+                    else:
+                        self.add_message(f'                    PUT      CALL')
+                        self.add_message(f'{current_time} Target: SELL {target_price_sell} BUY {target_price_buy}')
+                    # Сохраняем новые значения
+                    old_target_price_sell = target_price_sell
+                    old_target_price_buy = target_price_buy
+
                 # Логика выставления лимитной цены для котирования продажи опциона dataname_sell
 
                 # Здесь введём проверку, что первичная заявка на продажу по данному тикеру в order_dict уже существует!
@@ -1313,13 +1336,15 @@ class App:
                     # logger.info(f'Заявка на продажу по данному тикеру {dataname_sell} уже существует: {order_dict[symbol_sell]["order_id"]}')
                     if target_price_sell > ask_sell:  # Цена на продажу вне спреда
                         # logger.info(f'Вне спреда')
+                        get_cancel_order(account_id, order_dict[symbol_sell]['order_id'])
+                        logger.info(
+                            f'Заявка на продажу снята limit_price:{order_dict[symbol_sell]['limit_price']} ask_sell: {ask_sell}')
                         # В начало цикла
                         self.root.after(1000, self.loop_function)
                         return
                     else:  # Цена внутри спреда
                         # Проверка на соответствие лимтной цены в заявке target-цене
-                        if ask_sell < float(
-                                order_dict[symbol_sell]['limit_price']) or old_target_price_sell != target_price_sell:
+                        if ask_sell < float(order_dict[symbol_sell]['limit_price']) or old_target_price_sell != target_price_sell:
                             # Лимитная цена уже не соответствует таргет-цене, снимаем старую заявку
                             get_cancel_order(account_id, order_dict[symbol_sell]['order_id'])
                             logger.info(
@@ -1359,7 +1384,6 @@ class App:
                                 limit_price_buy=limit_price_buy  # Укажите цену
                             )
                             self.add_message(f'Заявка на покупку выставлена: {order_id_buy}, status {status_buy}')
-                            order_id_buy_control = order_id_buy
                             logger.info(f'Заявка на покупку выставлена {order_id_buy} статус {status_buy}')
                             sleep(1)
                             position = trade_dict.get(order_id_buy)
@@ -1390,103 +1414,102 @@ class App:
                                 # В начало цикла
                                 self.root.after(1000, self.loop_function)
                                 return
-                    else:  # Старая заявка снята или исполнена, можно выставлять новую с проверкой исполнения встречной заявки
+                    else:  # Старая заявка снята или исполнена, можно выставлять новую
 
                         # # Временная заглушка перед выставлением новой заявки!!! ДЛЯ ТЕСТОВ!!!
                         # # Планируем следующий вызов через 1000 мс
                         # self.root.after(5000, self.loop_function)
                         # return
 
-                        limit_price_sell = target_price_sell - (step_price * indent)
-                        quantity_sell = basket_size
-                        logger.info(f'Выставляем лимитную заявку на продажу: {dataname_sell}')
-                        logger.info(f'по цене: {limit_price_sell} колич: {quantity_sell}.')
-                        # Вызов функции выставления заявки на продажу
-                        order_id, status = get_order_sell(
-                            account_id=account_id,  # Укажите реальный номер счета
-                            symbol_sell=symbol_sell,  # Укажите реальный тикер
-                            quantity_sell=quantity_sell,  # Укажите количество
-                            limit_price_sell=limit_price_sell  # Укажите цену
-                        )
-                        logger.info(f'Заявка на продажу выставлена: {order_id}, статус: {status} ')
-                        order_id_sell_control = order_id  # Запоминаем номер ордера первичной заявки для последующей проверки исполнения
-                        sleep(timeout)
-
-                        position = trade_dict.get(order_id)
-                        if position:  # Сделка на продажу состоялась
-                            logger.info(f'Сделка на продажу {order_id} состоялась')
-                            self.add_message(f'timestamp - {position['timestamp']}')
-                            self.add_message(f'trade_id - {position['trade_id']}')
-                            self.add_message(f'side - {position['side']}')
-                            self.add_message(f'size - {position['size']}')
-                            self.add_message(f'price - {position['price']}')
-                            # Подбираем количество в зависимости от количества исполненной заявки на покупку
-                            quantity_buy = quantity_sell
-                            # Лимитная цена на мгновенную покупку опциона dataname_buy
-                            limit_price_buy = target_price_buy
-                            # print(f'Выставляем лимитную заявку на покупку опциона {dataname_buy} по цене {limit_price_buy} в количестве {quantity_buy}')
-                            # Вызов функции выставления заявки на покупку
-                            order_id_buy, status_buy = get_order_buy(
-                                account_id=account_id,  # Укажите реальный номер счета
-                                symbol_buy=symbol_buy,  # Укажите реальный тикер
-                                quantity_buy=quantity_buy,  # Укажите количество
-                                limit_price_buy=limit_price_buy  # Укажите цену
-                            )
-                            self.add_message(f'Заявка на покупку выставлена: {order_id_buy}, status {status_buy}')
-                            order_id_buy_control = order_id_buy  # Запоминаем номер ордера встречной заявки для последующей проверки исполнения
-                            logger.info(f'Заявка на покупку выставлена {order_id_buy} статус {status_buy}')
-                            sleep(1)
-                            position = trade_dict.get(order_id_buy)
-                            if position:  # Если сделка на покупку состоялась
-                                logger.info(f'Сделка на покупку {order_id_buy} состоялась')
-                                self.add_message(f'timestamp - {position["timestamp"]}')
-                                self.add_message(f'trade_id - {position["trade_id"]}')
-                                self.add_message(f'side - {position["side"]}')
-                                self.add_message(f'size - {position["size"]}')
-                                self.add_message(f'price - {position["price"]}')
-                                # Увеличиваем счетчик
-                                self.counter += 1
-                                self.add_message(f'Завершение цикла N{self.counter} из {lot_count}')
-                                get_portfolio_positions()  # Обновляем портфель
-                                if self.counter >= lot_count:
-                                    self.add_message(
-                                        f'Заданное количество лотов {self.counter} исполнено. Завершение работы котировщика!')
-                                    sleep(timeout)
-                                    self.running = False
-                                else:
-                                    # В начало цикла
-                                    self.root.after(1000, self.loop_function)
-                                    return
-                            else:
-                                self.add_message(f'Заявка на покупку не исполнена: order_id_buy - {order_id_buy}')
-                                self.root.update()  # Принудительно обновляем интерфейс
+                        if target_price_sell > ask_sell:  # Цена на продажу вне спреда
+                            # logger.info(f'Вне спреда')
+                            # В начало цикла
+                            self.root.after(1000, self.loop_function)
+                            return
+                        else:
+                            # Проверка на соответствие лимитной цены target-цене
+                            if old_target_price_sell != target_price_sell:
                                 # В начало цикла
                                 self.root.after(1000, self.loop_function)
                                 return
-                        else:  # Сделка на продажу не состоялась
-                            # Проверка на изменение target-цен
-                            ticker_buy = options_data[dataname_buy]['ticker']
-                            ticker_sell = options_data[dataname_sell]['ticker']
-                            if symbol_sell in order_dict and new_quotes[ticker_sell]['ask'] != float(
-                                    order_dict[symbol_sell]['limit_price']) or target_price_buy != \
-                                    new_quotes[ticker_buy]['ask'] and order_dict[symbol_sell]['client_order_id'][
-                                :10] == filename:
-                                get_cancel_order(account_id, order_id)
-                                logger.info(f'Заявка на продажу снята:{order_id}')
-                            sleep(1)
-                # В каждом цикле сравниваем target_price с предыдущими значениями old_target_price и выводим на экран при изменении
-                if old_target_price_sell != target_price_sell or old_target_price_buy != target_price_buy:
-                    current_time = datetime.now().strftime('%H:%M:%S')
-                    opt_type = CALL if options_data[dataname_sell]['optionSide'] == 'Call' else PUT
-                    if opt_type == CALL:
-                        self.add_message(f'                    PUT      CALL')
-                        self.add_message(f'{current_time} Target: BUY {target_price_buy} SELL {target_price_sell}')
-                    else:
-                        self.add_message(f'                    PUT      CALL')
-                        self.add_message(f'{current_time} Target: SELL {target_price_sell} BUY {target_price_buy}')
-                    # Сохраняем новые значения
-                    old_target_price_sell = target_price_sell
-                    old_target_price_buy = target_price_buy
+                            else:  # Лимитная цена соответствует таргет-цене
+                                limit_price_sell = target_price_sell - (step_price * indent)
+                                quantity_sell = basket_size
+                                logger.info(f'Выставляем лимитную заявку на продажу: {dataname_sell}')
+                                logger.info(f'по цене: {limit_price_sell} колич: {quantity_sell}.')
+                                # Вызов функции выставления заявки на продажу
+                                order_id, status = get_order_sell(
+                                    account_id=account_id,  # Укажите реальный номер счета
+                                    symbol_sell=symbol_sell,  # Укажите реальный тикер
+                                    quantity_sell=quantity_sell,  # Укажите количество
+                                    limit_price_sell=limit_price_sell  # Укажите цену
+                                )
+                                logger.info(f'Заявка на продажу выставлена: {order_id}, статус: {status} ')
+                                order_id_sell_control = order_id  # Запоминаем номер ордера первичной заявки для последующей проверки исполнения
+                                sleep(timeout)
+
+                                position = trade_dict.get(order_id)
+                                if position:  # Сделка на продажу состоялась
+                                    logger.info(f'Сделка на продажу {order_id} состоялась')
+                                    self.add_message(f'timestamp - {position['timestamp']}')
+                                    self.add_message(f'trade_id - {position['trade_id']}')
+                                    self.add_message(f'side - {position['side']}')
+                                    self.add_message(f'size - {position['size']}')
+                                    self.add_message(f'price - {position['price']}')
+                                    # Подбираем количество в зависимости от количества исполненной заявки на покупку
+                                    quantity_buy = quantity_sell
+                                    # Лимитная цена на мгновенную покупку опциона dataname_buy
+                                    limit_price_buy = target_price_buy
+                                    # print(f'Выставляем лимитную заявку на покупку опциона {dataname_buy} по цене {limit_price_buy} в количестве {quantity_buy}')
+                                    # Вызов функции выставления заявки на покупку
+                                    order_id_buy, status_buy = get_order_buy(
+                                        account_id=account_id,  # Укажите реальный номер счета
+                                        symbol_buy=symbol_buy,  # Укажите реальный тикер
+                                        quantity_buy=quantity_buy,  # Укажите количество
+                                        limit_price_buy=limit_price_buy  # Укажите цену
+                                    )
+                                    self.add_message(f'Заявка на покупку выставлена: {order_id_buy}, status {status_buy}')
+                                    order_id_buy_control = order_id_buy  # Запоминаем номер ордера встречной заявки для последующей проверки исполнения
+                                    logger.info(f'Заявка на покупку выставлена {order_id_buy} статус {status_buy}')
+                                    sleep(1)
+                                    position = trade_dict.get(order_id_buy)
+                                    if position:  # Если сделка на покупку состоялась
+                                        logger.info(f'Сделка на покупку {order_id_buy} состоялась')
+                                        self.add_message(f'timestamp - {position["timestamp"]}')
+                                        self.add_message(f'trade_id - {position["trade_id"]}')
+                                        self.add_message(f'side - {position["side"]}')
+                                        self.add_message(f'size - {position["size"]}')
+                                        self.add_message(f'price - {position["price"]}')
+                                        # Увеличиваем счетчик
+                                        self.counter += 1
+                                        self.add_message(f'Завершение цикла N{self.counter} из {lot_count}')
+                                        get_portfolio_positions()  # Обновляем портфель
+                                        if self.counter >= lot_count:
+                                            self.add_message(
+                                                f'Заданное количество лотов {self.counter} исполнено. Завершение работы котировщика!')
+                                            sleep(timeout)
+                                            self.running = False
+                                        else:
+                                            # В начало цикла
+                                            self.root.after(1000, self.loop_function)
+                                            return
+                                    else:
+                                        self.add_message(f'Заявка на покупку не исполнена: order_id_buy - {order_id_buy}')
+                                        self.root.update()  # Принудительно обновляем интерфейс
+                                        # В начало цикла
+                                        self.root.after(1000, self.loop_function)
+                                        return
+                                else:  # Сделка на продажу не состоялась
+                                    # Проверка на изменение target-цен
+                                    ticker_buy = options_data[dataname_buy]['ticker']
+                                    ticker_sell = options_data[dataname_sell]['ticker']
+                                    if symbol_sell in order_dict and new_quotes[ticker_sell]['ask'] != float(
+                                            order_dict[symbol_sell]['limit_price']) or target_price_buy != \
+                                            new_quotes[ticker_buy]['ask'] and order_dict[symbol_sell]['client_order_id'][
+                                        :10] == filename:
+                                        get_cancel_order(account_id, order_id)
+                                        logger.info(f'Заявка на продажу снята:{order_id}')
+                                    sleep(1)
 
             # Планируем следующий вызов через 100 мс
             self.root.after(100, self.loop_function)
