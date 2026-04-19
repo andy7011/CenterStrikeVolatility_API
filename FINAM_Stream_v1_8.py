@@ -3,7 +3,7 @@ from time import sleep  # Задержка в секундах перед вып
 import signal
 import sys
 from datetime import datetime
-from threading import Thread  # Запускаем поток подписки
+from threading import Thread, Event  # Запускаем поток подписки
 from FinLabPy.Schedule.MOEX import Futures
 from FinamPy import FinamPy
 from FinamPy.grpc.orders_service_pb2 import Order, OrderState, OrderType, CancelOrderRequest
@@ -19,6 +19,9 @@ futures_schedule = Futures()
 account_id = "1218884"
 df_portfolio = pd.DataFrame()  # Глобальный датафрейм для хранения позиций портфеля
 all_rows_order_list = []  # Список для хранения всех заявок
+
+# Событие для остановки потоков
+stop_event = Event()
 
 def is_market_open():
     """Проверяет, открыт ли срочный рынок"""
@@ -45,23 +48,6 @@ def wait_for_market_open():
             f"Рынок закрыт. Ожидание открытия через {str(time_until_open).split('.')[0]}. Следующая сессия {next_session_start.strftime('%d.%m.%Y %H:%M:%S')}")
         time.sleep(60)  # Проверяем каждую минуту
 
-
-portfolio_positions = {}  # Глобальный словарь для хранения позиций
-def get_portfolio_positions():
-    global portfolio_positions  # Используем глобальную переменную
-
-    portfolio_positions = {}  # Очищаем словарь перед заполнением
-
-    for account_id in fp_provider.account_ids:  # Пробегаемся по всем счетам
-        account = fp_provider.call_function(fp_provider.accounts_stub.GetAccount,
-                                            GetAccountRequest(account_id=account_id))  # Получаем счет
-
-        for position in account.positions:  # Пробегаемся по всем позициям
-            symbol = position.symbol
-            quantity = position.quantity.value
-            portfolio_positions[symbol] = quantity
-    print(portfolio_positions)
-    return portfolio_positions
 
 def sync_portfolio_positions():
     """Синхронизация позиций в портфеле"""
@@ -183,9 +169,12 @@ def main_loop():
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    while True:
+    while not stop_event.is_set():
         # Ждем открытия рынка
         wait_for_market_open()
+
+        if stop_event.is_set():
+            break
 
         print("Рынок открыт. Запуск основного кода...")
 
@@ -193,25 +182,35 @@ def main_loop():
         # Ваш код будет выполняться здесь
 
         # Ждем закрытия рынка
-        while is_market_open():
+        while is_market_open() and not stop_event.is_set():
             time.sleep(60)  # Проверяем каждую минуту
 
         print("Рынок закрыт. Ожидание следующего открытия...")
 
+    print("Программа завершена.")
 
+
+# Подключение к провайдерам
 fp_provider = FinamPy()  # Подключаемся ко всем торговым счетам
 ap_provider = AlorPy()  # Подключаемся ко всем торговым счетам
+
 # Подписываемся на события
 ap_provider.on_new_quotes.subscribe(_on_new_quotes)
 # Подписываемся на свои заявки и сделки
 fp_provider.on_order.subscribe(_on_order)  # Подписываемся на заявки
 fp_provider.on_trade.subscribe(_on_trade)  # Подписываемся на сделки
-Thread(target=fp_provider.subscribe_orders_thread,
-       name='SubscriptionOrdersThread').start()  # Создаем и запускаем поток обработки своих заявок
-Thread(target=fp_provider.subscribe_trades_thread,
-       name='SubscriptionTradesThread').start()  # Создаем и запускаем поток обработки своих сделок
-sleep(3)  # Ждем 3 секунды, чтобы подключиться к серверам
 
+# Запуск потоков подписки
+order_thread = Thread(target=fp_provider.subscribe_orders_thread, name='SubscriptionOrdersThread')
+trade_thread = Thread(target=fp_provider.subscribe_trades_thread, name='SubscriptionTradesThread')
+
+order_thread.daemon = True
+trade_thread.daemon = True
+
+order_thread.start()
+trade_thread.start()
+
+sleep(3)  # Ждем 3 секунды, чтобы подключиться к серверам
 
 if __name__ == "__main__":
     main_loop()
