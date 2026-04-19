@@ -15,12 +15,9 @@ from app.supported_base_asset import MAP
 from accfifo import Entry, FIFO
 from collections import deque
 import re
-import sys  # Выход из точки входа
-
-# pd.set_option('future.no_silent_downcasting', True)
 
 # Конфигурация для работы с файлами
-temp_str = 'C:\\Users\\шадрин\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\sftpuser\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 futures_firm_id = 'SPBFUT'  # Код фирмы для фьючерсов
@@ -47,7 +44,7 @@ def wait_for_business_time():
         current_minute = now.minute
 
         # Проверяем выходные дни
-        if now.weekday() >= 5:  # 5 - суббота, 6 - воскресенье
+        if now.weekday() >= 6:  # 5 - суббота, 6 - воскресенье
             if is_working_time:
                 print("Рабочее время закончилось - выходной день")
                 is_working_time = False
@@ -83,14 +80,6 @@ def start_main_functions():
     try:
         # Подключение к QUIK
         qp_provider = QuikPy()
-        # Проверяем соединение с терминалом QUIK
-        is_connected = qp_provider.is_connected()['data']  # Состояние подключения терминала к серверу QUIK
-        if is_connected == 0:  # Если нет подключения терминала QUIK к серверу
-            qp_provider.close_connection_and_thread()  # Перед выходом закрываем соединение для запросов и поток обработки функций обратного вызова
-            print("Нет подключения терминала QUIK к серверу!")
-            sys.exit()  # Выходим, дальше не продолжаем
-        else:
-            print("Подключение к терминалу QUIK успешно")
         # Сразу выполняем синхронизацию инструментов портфеля и активных ордеров
         sync_portfolio_positions()
         sync_active_orders()
@@ -325,12 +314,11 @@ def sync_portfolio_positions():
                 sec_code = active_futures_holding["sec_code"]
                 class_code_result = qp_provider.get_security_class(class_codes, sec_code)
 
-                # Если тикер - опцион, то берем его спецификацию
                 if class_code_result and class_code_result.get('data'):
                     class_code = class_code_result['data']
                     # print(f'class_code {class_code}')
                     if class_code == "SPBOPT":  # Берем только опционы
-                        si = qp_provider.get_symbol_info(class_code, sec_code)  # Спецификация тикера опционов
+                        si = qp_provider.get_symbol_info(class_code, sec_code)  # Спецификация тикера
 
                         # Тип опциона
                         option_type_response = qp_provider.get_param_ex(class_code, sec_code, 'OPTIONTYPE', trans_id=0)
@@ -491,14 +479,12 @@ def sync_portfolio_positions():
                                 opt_volatility_last = 0.0
                         # print(f"Волатильность опциона IMPLIED_VOLATILITY (IV) - через расчет по цене опциона: {opt_volatility_last}")
 
-                        # Implied Volatility Bid, Offer
                         opt_volatility_bid = implied_volatility.get_iv_for_option_price(asset_price, option, bid_price)
                         # print(f'opt_volatility_bid - Implied Volatility Bid: {opt_volatility_bid}, тип: {type(opt_volatility_bid)}')
                         opt_volatility_offer = implied_volatility.get_iv_for_option_price(asset_price, option,
                                                                                           offer_price)
                         # print(f'opt_volatility_offer - Implied Volatility Offer: {opt_volatility_offer}, тип: {type(opt_volatility_offer)}')
 
-                        # Вычисление OpenDateTime, OpenPrice, OpenIV
                         net_pos = active_futures_holding['totalnet']
                         # OpenDateTime, OpenPrice, OpenIV = calculate_open_data_open_price_open_iv(sec_code, net_pos)
                         open_data_result = calculate_open_data_open_price_open_iv(sec_code, net_pos)
@@ -664,8 +650,7 @@ def MyPosHistorySave():
                         total_weight_short = weights_short.sum()
 
                         # Заменяем нулевые значения 'lastIV' на 'QuikVola' (theor)
-                        lastIV_corrected = short_positions['lastIV'].replace(0, pd.NA).fillna(
-                            short_positions['QuikVola']).infer_objects(copy=False)
+                        lastIV_corrected = short_positions['lastIV'].replace(0, pd.NA).fillna(short_positions['QuikVola']).infer_objects()
                         # lastIV_corrected = short_positions['lastIV'].replace(0, pd.NA).fillna(short_positions['QuikVola'])
                         # # lastIV_corrected = short_positions['lastIV'].replace(0, pd.NA).fillna(short_positions['QuikVola'])
                         # lastIV_corrected = short_positions['lastIV'].replace(0, pd.NA).fillna(
@@ -732,10 +717,8 @@ def start_mypos_history_save():
 
 def calculate_open_data_open_price_open_iv(sec_code, net_pos):
     """
-    Вычисляет дату открытия позиции, цену и волатильность для заданного инструмента
-    из архива всех сделок по данным из CSV файла QUIK_Stream_Trades.csv,
+    Вычисляет дату открытия позиции, цену и волатильность для заданного инструмента,
     как средневзвешенные по объёму первых сделок до достижения нужного объёма.
-    Расчет средневзвешенной цены и волатильности открытия методом FIFO
 
     :param sec_code: Код инструмента
     :param net_pos: Текущая позиция (отрицательная для короткой позиции)
@@ -865,7 +848,6 @@ def calculate_open_data_open_price_open_iv(sec_code, net_pos):
         #
         # print('\n')
 
-        # Если нет сделок, то возвращаем None
         if not selected_trades:
             sum_volume_short = instrument_trades_df.loc[instrument_trades_df['operation'] == 'Продажа', 'volume'].sum()
             count_short = (instrument_trades_df['operation'] == 'Продажа').sum()
