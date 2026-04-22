@@ -180,6 +180,7 @@ def main_loop():
 
         # Здесь будет запуск основного кода
         # Ваш код будет выполняться здесь
+        sync_portfolio_positions()
 
         # Ждем закрытия рынка
         while is_market_open() and not stop_event.is_set():

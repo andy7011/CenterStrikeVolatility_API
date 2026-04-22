@@ -17,7 +17,7 @@ from collections import deque
 import re
 
 # Конфигурация для работы с файлами
-temp_str = 'C:\\Users\\sftpuser\\Position\\$name_file'
+temp_str = 'C:\\Users\\шадрин\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 futures_firm_id = 'SPBFUT'  # Код фирмы для фьючерсов

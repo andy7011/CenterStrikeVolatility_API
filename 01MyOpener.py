@@ -9,10 +9,12 @@ from threading import Thread  # Запускаем поток подписки
 from AlorPy import AlorPy  # Работа с Alor OpenAPI V2
 from FinamPy import FinamPy
 from FinamPy.grpc.orders_service_pb2 import Order, OrderState, OrderType, CancelOrderRequest
+from FinamPy.grpc.accounts_service_pb2 import GetAccountRequest, GetAccountResponse  # Счет
 import FinamPy.grpc.side_pb2 as side  # Направление заявки
 from FinLabPy.Schedule.MOEX import Futures  # Расписание торгов срочного рынка
 from zoneinfo import ZoneInfo  # ВременнАя зона
 from moex_api import get_option_board, get_option_expirations
+from QUIK_Stream_v1_7 import calculate_open_data_open_price_open_iv
 import math
 import numpy as np
 from datetime import datetime
@@ -21,6 +23,7 @@ from scipy.stats import norm
 from google.type.decimal_pb2 import Decimal
 
 app_instance = None
+account_id = "1218884"
 # Глобальные переменные для хранения данных
 # global base_asset_list, option_list, expiration_dates, selected_expiration_date, base_asset_ticker, sell_tickers_call, sell_tickers_put
 base_asset_list = []
@@ -30,10 +33,13 @@ sell_tickers_call = []
 sell_tickers_put = []
 old_target_price_sell = None
 old_target_price_buy = None
+order_id_sell_control = None
+order_id_buy_control = None
 
 # Глобальные переменные
 # global filename, dataname_sell, dataname_buy, base_asset_ticker, quoter_side, expected_profit, lot_count, basket_size, timeout
-filename = os.path.splitext(os.path.basename(__file__))[0]  # Получаем имя файла (не более 10 символов исключая служебные) без пути до точки .py
+filename = os.path.splitext(os.path.basename(__file__))[
+    0]  # Получаем имя файла (не более 10 символов исключая служебные) без пути до точки .py
 dataname_sell = ''
 dataname_buy = ''
 base_asset_ticker = ''
@@ -41,7 +47,7 @@ quoter_side = ''
 expected_profit = 2.0  # Значение по умолчанию
 lot_count = 1
 basket_size = 1
-timeout = 5
+timeout = 3
 indent = 0
 
 CALL = 'C'
@@ -72,6 +78,26 @@ def utc_timestamp_to_msk_datetime(seconds) -> datetime:
     """
     dt_utc = datetime.fromtimestamp(seconds)  # Переводим кол-во секунд, прошедших с 01.01.1970 в UTC
     return utc_to_msk_datetime(dt_utc)  # Переводим время из UTC в московское
+
+
+portfolio_positions = {}  # Глобальный словарь для хранения позиций
+
+
+def get_portfolio_positions():
+    global portfolio_positions  # Используем глобальную переменную
+
+    portfolio_positions = {}  # Очищаем словарь перед заполнением
+
+    for account_id in fp_provider.account_ids:  # Пробегаемся по всем счетам
+        account = fp_provider.call_function(fp_provider.accounts_stub.GetAccount,
+                                            GetAccountRequest(account_id=account_id))  # Получаем счет
+
+        for position in account.positions:  # Пробегаемся по всем позициям
+            symbol = position.symbol
+            quantity = position.quantity.value
+            portfolio_positions[symbol] = quantity
+    print(portfolio_positions)
+    return portfolio_positions
 
 
 # Словарь новых котироок
@@ -175,7 +201,7 @@ def on_base_asset_change(event, app_instance):
     dataname_base_asset_ticker = 'SPBFUT.' + base_asset_ticker
     # print(f'dataname_base_asset_ticker {dataname_base_asset_ticker}')
     message = f'Получаем данные по базовому активу {base_asset_ticker}, подписываемся на котировки'
-    app_instance.add_message(message) # Передаём текст в окно сообщений
+    app_instance.add_message(message)  # Передаём текст в окно сообщений
     print(f'Получаем данные по базовому активу {base_asset_ticker}, подписываемся на котировки')
     alor_board, symbol = ap_provider.dataname_to_alor_board_symbol(
         base_asset_ticker)  # Код режима торгов Алора и код и тикер
@@ -210,7 +236,8 @@ def on_expiration_date_change(event, app_instance):
 
     # Получить доску опционов базового актива - два списка 'C' и 'P'
     data = get_option_board(base_asset_ticker, formatted_date)
-    app_instance.add_message(f'Получаем доску опционов базового актива {base_asset_ticker}, дата экспирации: {formatted_date}')
+    app_instance.add_message(
+        f'Получаем доску опционов базового актива {base_asset_ticker}, дата экспирации: {formatted_date}')
     # print(data)
 
     # Извлекаем SECID из списков 'C' и 'P'
@@ -220,16 +247,17 @@ def on_expiration_date_change(event, app_instance):
 
 def get_option_type_sell(app_instance):
     global sell_tickers_call, sell_tickers_put
-    call_option_type_sell = app_instance.option_type_sell.get()  # Получаем текущее значение переменной
+    option_type_sell = app_instance.option_type_sell.get()  # Получаем текущее значение переменной
 
     # Фильтруем по типу опциона (C для Call)
-    if call_option_type_sell == "C":
+    if option_type_sell == "C":
         sell_tickers_type = sell_tickers_call
     else:
         sell_tickers_type = sell_tickers_put
     # Обновляем sell_tickers
     app_instance.combobox_sell['values'] = list(sell_tickers_type)
     app_instance.combobox_sell.set(sell_tickers_type[0])
+    return option_type_sell  # Возвращаем значение
 
 
 def selected_sell(app_instance):
@@ -269,10 +297,43 @@ def get_quoter_side(app_instance):
 
 def selected_profit(app_instance):
     global expected_profit, dataname_sell, dataname_buy
+
+    # Цикл для вычисления open_iv_buy и open_iv_sell для тикеров dataname_buy и dataname_sell
+    for dataname in [dataname_buy, dataname_sell]:
+
+        ticker = options_data[dataname]['ticker']
+        # print(ticker)
+        if dataname == dataname_buy:
+            target_var = 'open_iv_buy'
+        else:
+            target_var = 'open_iv_sell'
+
+        # Установка значения по умолчанию
+        open_iv_value = 0
+
+        # Поиск позиции по символу
+        for symbol, quantity in portfolio_positions.items():
+            # print(symbol, dataname)
+            if ticker in symbol:  # Сравнение если ticker содержится в symbol
+
+                try:
+                    open_iv_value = float(
+                        (calculate_open_data_open_price_open_iv(ticker, float(quantity)))[2])
+                    # print(open_iv_value)
+                except (IndexError, TypeError, ValueError):
+                    open_iv_value = 0
+                break
+
+        # Установка переменной в глобальной области
+        if target_var == 'open_iv_buy':
+            open_iv_buy = open_iv_value
+        else:
+            open_iv_sell = open_iv_value
+
     expected_profit = float(app_instance.spinbox_profit.get())
     decimals = options_data[dataname_sell]['decimals']
     step_price = int(float(options_data[dataname_sell]['minstep']))  # Минимальный шаг цены
-    app_instance.add_message(f"Expected profit: {expected_profit}")
+
     # Получаем ask, bid из потока котировок по подписке из обновляемого словаря new_quotes
     sell_ticker = dataname_sell.split('.')[-1]
     ask_sell = new_quotes[sell_ticker]['ask']
@@ -283,11 +344,14 @@ def selected_profit(app_instance):
         sigma = options_data[dataname_sell]['volatility'] / 100
         ask_iv_sell = newton_vol_call(S, K, T, ask_sell, r, sigma) * 100
         bid_iv_sell = newton_vol_call(S, K, T, bid_sell, r, sigma) * 100
+        diff_pos = open_iv_sell - open_iv_buy
     else:  # opt_type_sell == 'P'
         sigma = options_data[dataname_sell]['volatility'] / 100
         ask_iv_sell = newton_vol_put(S, K, T, ask_sell, r, sigma) * 100
         bid_iv_sell = newton_vol_put(S, K, T, bid_sell, r, sigma) * 100
-    theor_iv_sell = options_data[dataname_sell]['volatility']
+        diff_pos = open_iv_buy - open_iv_sell
+    app_instance.add_message(f'\n')
+    app_instance.add_message(f"Expected profit: {expected_profit} Difference pos: {round(diff_pos, 2)}")
     # print(f'ask_iv_sell: {round(ask_iv_sell, 2)}, bid_iv_sell: {round(bid_iv_sell, 2)}, last_iv_sell: {round(last_iv_sell, 2)}')
 
     # Получаем ask, bid из потока котировок по подписке из обновляемого словаря new_quotes
@@ -308,61 +372,73 @@ def selected_profit(app_instance):
     # print(f'ask_iv_buy: {round(ask_iv_buy, 2)}, bid_iv_buy: {round(bid_iv_buy, 2)}, last_iv_buy: {round(last_iv_buy, 2)}')
 
     if quoter_side == 'SELL':
-        target_iv_sell = ask_iv_buy + expected_profit  # Целевая прибыль для котирования продажи
-        S, K, T, opt_type = get_option_data_for_calc_price(dataname_sell)  # Получаем данные опциона dataname_sell
-        limit_price_sell_ = option_price(S, target_iv_sell / 100, K, T, r,
-                                         opt_type=opt_type)  # Целевая цена для котирования продажи
-        limit_price_sell = int(round((limit_price_sell_ // step_price) * step_price, decimals))
+
+        S, K, T, opt_type_sell = get_option_data_for_calc_price(dataname_sell)  # Получаем данные опциона dataname_sell
+
         # PUT - слева CALL - справа
-        opt_type = CALL if options_data[dataname_sell]['optionSide'] == 'Call' else PUT
-        if opt_type == CALL:
-            app_instance.add_message(f'\n')
-            app_instance.add_message(f'{"PUT BUY:":<30}{"CALL SELL:":<30}')
-            app_instance.add_message(f'{dataname_buy:<30}{dataname_sell:<30}')
+        opt_type_sell = CALL if options_data[dataname_sell]['optionSide'] == 'Call' else PUT
+        if opt_type_sell == CALL:
+            target_iv_sell = ask_iv_buy + expected_profit  # Целевая прибыль для котирования продажи
+            limit_price_sell_ = option_price(S, target_iv_sell / 100, K, T, r,
+                                             opt_type=opt_type_sell)  # Целевая цена для котирования продажи
+            limit_price_sell = int(round((limit_price_sell_ // step_price) * step_price, decimals))
+
+            app_instance.add_message(f'{"PUT BUY:":<21}{"CALL SELL:":<21}')
+            app_instance.add_message(f'{dataname_buy:<21}{dataname_sell:<21}')
             app_instance.add_message(
-                f'{"ask:":<10}{round(ask_buy, decimals):<10}{round(ask_iv_buy, 2):<10}{"ask:":<10}{round(ask_sell, decimals):<10}{round(ask_iv_sell, 2):<10}')
+                f'{"ask:":<7}{round(ask_buy, decimals):<7}{round(ask_iv_buy, 2):<7}{"ask:":<7}{round(ask_sell, decimals):<7}{round(ask_iv_sell, 2):<7}')
             app_instance.add_message(
-                f'{"bid:":<10}{round(bid_buy, decimals):<10}{round(bid_iv_buy, 2):<10}{"bid:":<10}{round(bid_sell, decimals):<10}{round(bid_iv_sell, 2):<10}')
+                f'{"bid:":<7}{round(bid_buy, decimals):<7}{round(bid_iv_buy, 2):<7}{"bid:":<7}{round(bid_sell, decimals):<7}{round(bid_iv_sell, 2):<7}')
             app_instance.add_message(
-                f'{"target:":<10}{round(ask_buy, decimals):<10}{round(ask_iv_buy, 2):<10}{"target:":<10}{round(limit_price_sell, decimals):<10}{round(target_iv_sell, 2):<10}')
-        else:  # opt_type == PUT
-            app_instance.add_message(f'\n')
-            app_instance.add_message(f'{"PUT SELL:":<30}{"CALL BUY:":<30}')
-            app_instance.add_message(f'{dataname_sell:<30}{dataname_buy:<30}')
+                f'{"target:":<7}{round(ask_buy, decimals):<7}{round(ask_iv_buy, 2):<7}{"target:":<7}{round(limit_price_sell, decimals):<7}{round(target_iv_sell, 2):<7}')
+        else:  # opt_type_sell == PUT
+            target_iv_sell = ask_iv_buy - expected_profit  # Целевая прибыль для котирования продажи
+            limit_price_sell_ = option_price(S, target_iv_sell / 100, K, T, r,
+                                             opt_type=opt_type_sell)  # Целевая цена для котирования продажи
+            limit_price_sell = int(round((limit_price_sell_ // step_price) * step_price, decimals))
+
+            app_instance.add_message(f'{"PUT SELL:":<21}{"CALL BUY:":<21}')
+            app_instance.add_message(f'{dataname_sell:<21}{dataname_buy:<21}')
             app_instance.add_message(
-                f'{"ask:":<10}{round(ask_sell, decimals):<10}{round(ask_iv_sell, 2):<10}{"ask:":<10}{round(ask_buy, decimals):<10}{round(ask_iv_buy, 2):<10}')
+                f'{"ask:":<7}{round(ask_sell, decimals):<7}{round(ask_iv_sell, 2):<7}{"ask:":<7}{round(ask_buy, decimals):<7}{round(ask_iv_buy, 2):<7}')
             app_instance.add_message(
-                f'{"bid:":<10}{round(bid_sell, decimals):<10}{round(bid_iv_sell, 2):<10}{"bid:":<10}{round(bid_buy, decimals):<10}{round(bid_iv_buy, 2):<10}')
+                f'{"bid:":<7}{round(bid_sell, decimals):<7}{round(bid_iv_sell, 2):<7}{"bid:":<7}{round(bid_buy, decimals):<7}{round(bid_iv_buy, 2):<7}')
             app_instance.add_message(
-                f'{"target:":<10}{round(limit_price_sell, decimals):<10}{round(target_iv_sell, 2):<10}{"target:":<10}{round(ask_buy, decimals):<10}{round(ask_iv_buy, 2):<10}')
+                f'{"target:":<7}{round(limit_price_sell, decimals):<7}{round(target_iv_sell, 2):<7}{"target:":<7}{round(ask_buy, decimals):<7}{round(ask_iv_buy, 2):<7}')
     else:  # quoter_side == 'BUY'
-        target_iv_buy = bid_iv_sell - expected_profit  # Целевая прибыль для котирования покупки
-        S, K, T, opt_type = get_option_data_for_calc_price(dataname_buy)  # Получаем данные опциона dataname_sell
-        limit_price_buy_ = option_price(S, target_iv_buy / 100, K, T, r,
-                                        opt_type=opt_type)  # Целевая цена для котирования покупки
-        limit_price_buy = int(round((limit_price_buy_ // step_price) * step_price, decimals))
+
+        S, K, T, opt_type_buy = get_option_data_for_calc_price(dataname_buy)  # Получаем данные опциона dataname_sell
+
         # PUT - слева CALL - справа
-        opt_type = CALL if options_data[dataname_buy]['optionSide'] == 'Call' else PUT
-        if opt_type == CALL:
+        opt_type_buy = CALL if options_data[dataname_buy]['optionSide'] == 'Call' else PUT
+        if opt_type_buy == CALL:
+            target_iv_buy = bid_iv_sell + expected_profit  # Целевая прибыль для котирования покупки
+            limit_price_buy_ = option_price(S, target_iv_buy / 100, K, T, r,
+                                            opt_type=opt_type_buy)  # Целевая цена для котирования покупки
+            limit_price_buy = int(round((limit_price_buy_ // step_price) * step_price, decimals))
             app_instance.add_message(f'\n')
-            app_instance.add_message(f'{"PUT SELL:":<30}{"CALL BUY:":<30}')
-            app_instance.add_message(f'{dataname_sell:<30}{dataname_buy:<30}')
+            app_instance.add_message(f'{"PUT SELL:":<21}{"CALL BUY:":<21}')
+            app_instance.add_message(f'{dataname_sell:<21}{dataname_buy:<21}')
             app_instance.add_message(
-                f'{"ask:":<10}{round(ask_sell, decimals):<10}{round(ask_iv_sell, 2):<10}{"ask:":<10}{round(ask_buy, decimals):<10}{round(ask_iv_buy, 2):<10}')
+                f'{"ask:":<7}{round(ask_sell, decimals):<7}{round(ask_iv_sell, 2):<7}{"ask:":<7}{round(ask_buy, decimals):<7}{round(ask_iv_buy, 2):<7}')
             app_instance.add_message(
-                f'{"bid:":<10}{round(bid_sell, decimals):<10}{round(bid_iv_sell, 2):<10}{"bid:":<10}{round(bid_buy, decimals):<10}{round(bid_iv_buy, 2):<10}')
+                f'{"bid:":<7}{round(bid_sell, decimals):<7}{round(bid_iv_sell, 2):<7}{"bid:":<7}{round(bid_buy, decimals):<7}{round(bid_iv_buy, 2):<7}')
             app_instance.add_message(
-                f'{"target:":<10}{round(bid_sell, decimals):<10}{round(bid_iv_sell, 2):<10}{"target:":<10}{round(limit_price_buy, decimals):<10}{round(target_iv_buy, 2):<10}')
+                f'{"target:":<7}{round(bid_sell, decimals):<7}{round(bid_iv_sell, 2):<7}{"target:":<7}{round(limit_price_buy, decimals):<7}{round(target_iv_buy, 2):<7}')
         else:
+            target_iv_buy = bid_iv_sell - expected_profit  # Целевая прибыль для котирования покупки
+            limit_price_buy_ = option_price(S, target_iv_buy / 100, K, T, r,
+                                            opt_type=opt_type_buy)  # Целевая цена для котирования покупки
+            limit_price_buy = int(round((limit_price_buy_ // step_price) * step_price, decimals))
             app_instance.add_message(f'\n')
-            app_instance.add_message(f'{"PUT BUY:":<30}{"CALL SELL:":<30}')
-            app_instance.add_message(f'{dataname_buy:<30}{dataname_sell:<30}')
+            app_instance.add_message(f'{"PUT BUY:":<21}{"CALL SELL:":<21}')
+            app_instance.add_message(f'{dataname_buy:<21}{dataname_sell:<21}')
             app_instance.add_message(
-                f'{"ask:":<10}{round(ask_buy, decimals):<10}{round(ask_iv_buy, 2):<10}{"ask:":<10}{round(ask_sell, decimals):<10}{round(ask_iv_sell, 2):<10}')
+                f'{"ask:":<7}{round(ask_buy, decimals):<7}{round(ask_iv_buy, 2):<7}{"ask:":<7}{round(ask_sell, decimals):<7}{round(ask_iv_sell, 2):<7}')
             app_instance.add_message(
-                f'{"bid:":<10}{round(bid_buy, decimals):<10}{round(bid_iv_buy, 2):<10}{"bid:":<10}{round(bid_sell, decimals):<10}{round(bid_iv_sell, 2):<10}')
+                f'{"bid:":<7}{round(bid_buy, decimals):<7}{round(bid_iv_buy, 2):<7}{"bid:":<7}{round(bid_sell, decimals):<7}{round(bid_iv_sell, 2):<7}')
             app_instance.add_message(
-                f'{"target:":<10}{round(limit_price_buy, decimals):<10}{round(target_iv_buy, 2):<10}{"target:":<10}{round(bid_sell, decimals):<10}{round(bid_iv_sell, 2):<10}')
+                f'{"target:":<7}{round(limit_price_buy, decimals):<7}{round(target_iv_buy, 2):<7}{"target:":<7}{round(bid_sell, decimals):<7}{round(bid_iv_sell, 2):<7}')
 
 
 def selected_lot_count(app_instance):
@@ -635,15 +711,17 @@ class App:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title(filename)
-        self.root.geometry("800x720")
+        self.root.geometry("550x720")
 
         self.running = False
         self.counter = 0
+        self.target_opt_type = None
         self.target_price_put = 0
         self.target_price_call = 0
         self.target_iv_put = 0
         self.target_iv_call = 0
         self.trade_count = 0  # Счётчик циклов попыток исполнения встречной заявки
+        self.difference_pos = 0
 
         # Создаем фрейм для основных элементов
         main_frame = tk.Frame(self.root)
@@ -741,12 +819,12 @@ class App:
         self.SELL_radio.pack(side=tk.LEFT, padx=10)
         self.BUY_radio.pack(side=tk.LEFT, padx=10)
 
-        # Label Expected profit, %:
-        self.expected_profit_label = tk.Label(self.root, text="Expected profit, % : ")
+        # Label Difference pos, %:
+        self.expected_profit_label = tk.Label(main_frame, text=f"Difference position, % : {self.difference_pos:.2f}")
         self.expected_profit_label.pack(pady=1)
 
-        # Спинбокс spinbox_profit Expected profit
-        self.spinbox_profit_var = tk.DoubleVar(value=2.00)
+        # Спинбокс spinbox_profit profit/difference
+        self.spinbox_profit_var = tk.DoubleVar(value=-2.00)
         self.spinbox_profit = tk.Spinbox(main_frame, from_=-10, to=10, increment=0.01, format="%.2f", width=8,
                                          textvariable=self.spinbox_profit_var, command=lambda: selected_profit(self))
         self.spinbox_profit.pack(pady=1)
@@ -762,25 +840,6 @@ class App:
         self.target_price_label_call = tk.Label(radio_frame, text="", fg="gray")
         self.target_iv_label_put = tk.Label(radio_frame, text="", fg="gray")
         self.target_iv_label_call = tk.Label(radio_frame, text="", fg="gray")
-        # if self.option_type_sell.get() == "P":
-        # print(get_option_type_sell(self))
-        print(self.option_type_sell.get())
-        if self.option_type_sell == "P":
-            self.target_price_label_put = tk.Label(radio_frame, text="", fg="#8B0000")  # Тёмно-красный
-            self.target_iv_label_put = tk.Label(radio_frame, text="", fg="#8B0000")  # Тёмно-красный
-            self.target_price_label_call = tk.Label(radio_frame, text="", fg="#006400")  # Тёмно-зелёный
-            self.target_iv_label_call = tk.Label(radio_frame, text="", fg="#006400")  # Тёмно-зелёный
-        else:
-            self.target_price_label_put = tk.Label(radio_frame, text="", fg="#006400")  # Тёмно-зелёный
-            self.target_iv_label_put = tk.Label(radio_frame, text="", fg="#006400")  # Тёмно-зелёный
-            self.target_price_label_call = tk.Label(radio_frame, text="", fg="#8B0000")  # Тёмно-красный
-            self.target_iv_label_call = tk.Label(radio_frame, text="", fg="#8B0000")  # Тёмно-красный
-        # if self.option_type_buy.get() == "P":
-        #     self.target_price_label_put = tk.Label(radio_frame, text="", fg="#006400")  # Тёмно-зелёный
-        #     self.target_iv_label_put = tk.Label(radio_frame, text="", fg="#006400")  # Тёмно-зелёный
-        # else:
-        #     self.target_price_label_call = tk.Label(radio_frame, text="", fg="#006400")  # Тёмно-зелёный
-        #     self.target_iv_label_call = tk.Label(radio_frame, text="", fg="#006400")  # Тёмно-зелёный
         self.target_iv_label_put.pack(side=tk.LEFT, pady=1)
         self.target_price_label_put.pack(side=tk.LEFT, pady=1)
         self.target_price_label_call.pack(side=tk.LEFT, pady=1)
@@ -850,6 +909,18 @@ class App:
         self.counter_label = tk.Label(main_frame, text="Счётчик сделок: 0")
         self.counter_label.pack(pady=1)
 
+    def update_target_labels(self):
+        # print(self.target_opt_type)
+        if self.target_opt_type == "P":
+            self.target_price_label_put.config(fg="#8B0000")
+            self.target_iv_label_put.config(fg="#8B0000")
+            self.target_price_label_call.config(fg="#006400")
+            self.target_iv_label_call.config(fg="#006400")
+        else:
+            self.target_price_label_put.config(fg="#006400")
+            self.target_iv_label_put.config(fg="#006400")
+            self.target_price_label_call.config(fg="#8B0000")
+            self.target_iv_label_call.config(fg="#8B0000")
 
     def add_message(self, message):
         """Добавление сообщения в окно"""
@@ -857,7 +928,9 @@ class App:
         self.message_text.see(tk.END)  # Прокрутка к последнему сообщению
 
     def loop_function(self):
-        global options_data, old_target_price_sell, old_target_price_buy, indent
+        global options_data, old_target_price_sell, old_target_price_buy, indent, order_id_sell_control, order_id_buy_control
+        open_iv_sell = 0.0
+        open_iv_buy = 0.0
 
         """Функция, которая будет выполняться в цикле"""
         if self.running:
@@ -865,25 +938,33 @@ class App:
             self.counter_label.config(text=f"Счётчик сделок: {self.counter}")
             self.status_label.config(text="Status: Running")
 
-            lot_count_step = 0
-            finam_board, ticker = fp_provider.dataname_to_finam_board_ticker(
-                dataname_sell)  # Код режима торгов Финама и тикер
-            mic = fp_provider.get_mic(finam_board, ticker)  # Биржа тикера
-            symbol = f'{ticker}@{mic}'  # Тикер Финама
-            symbol_sell = symbol
-            account_id = fp_provider.account_ids[0]  # Торговый счет, где будут выставляться заявки
-            quantity_sell = options_data[dataname_sell]['lot_size']  # Количество в шт
+            ticker = options_data[dataname_sell]['ticker']
+            symbol_sell = f'{ticker}@RTSX'  # Тикер Финама
+            # Поиск позиции по символу
+            for symbol, quantity in portfolio_positions.items():
+                # print(symbol, dataname)
+                if ticker in symbol:  # Сравнение если ticker содержится в symbol
+                    try:
+                        open_iv_sell = float(
+                            (calculate_open_data_open_price_open_iv(ticker, float(quantity)))[2])
+                        # print(open_iv_value)
+                    except (IndexError, TypeError, ValueError):
+                        open_iv_sell = 0
+                    break
+            # print(f'open_iv_sell: {open_iv_sell}')
+            quantity_sell = options_data[dataname_sell]['lot_size']  # Размер лота
             step_price = int(float(options_data[dataname_sell]['minstep']))  # Минимальный шаг цены
             theoretical_price_sell_ = options_data[dataname_sell]['theorPrice']
             theor_iv_sell = options_data[dataname_sell]['volatility']
             decimals = options_data[dataname_sell]['decimals']
-            profit_iv_sell = theor_iv_sell + expected_profit
-            # Далее вычисляем profit_price_sell из profit_iv_sell по формуле Блэка-Шоулза
-            S, K, T, opt_type = get_option_data_for_calc_price(dataname_sell)  # Получаем данные опциона dataname_sell
-            # print(f'S: {S}, K: {K}, T: {T}, opt_type: {opt_type}')
-            profit_price_sell = option_price(S, profit_iv_sell / 100, K, T, r, opt_type=opt_type)
-            limit_price_sell = int(round((profit_price_sell // step_price) * step_price, decimals))
-            theoretical_price_sell = int(round((theoretical_price_sell_ // step_price) * step_price, decimals))
+            # profit_iv_sell = theor_iv_sell + expected_profit
+            # # Далее вычисляем profit_price_sell из profit_iv_sell по формуле Блэка-Шоулза
+            S, K, T, opt_type_sell = get_option_data_for_calc_price(
+                dataname_sell)  # Получаем данные опциона dataname_sell
+            # # print(f'S: {S}, K: {K}, T: {T}, opt_type: {opt_type}')
+            # profit_price_sell = option_price(S, profit_iv_sell / 100, K, T, r, opt_type=opt_type)
+            # limit_price_sell = int(round((profit_price_sell // step_price) * step_price, decimals))
+            # theoretical_price_sell = int(round((theoretical_price_sell_ // step_price) * step_price, decimals))
             # Получаем ask, bid из потока котировок по подписке из обновляемого словаря new_quotes
             ticker = options_data[dataname_sell]['ticker']
             ask_sell = int(round(new_quotes[ticker]['ask'], decimals))
@@ -891,7 +972,7 @@ class App:
             bid_sell = int(round(new_quotes[ticker]['bid'], decimals))
             bid_sell_vol = int(round(new_quotes[ticker]['bid_vol'], decimals))
             # print(f'ask_sell: {ask_sell}, bid_sell: {bid_sell} ask_sell_vol: {ask_sell_vol}, bid_sell_vol: {bid_sell_vol}')
-            if opt_type == 'C':
+            if opt_type_sell == CALL:
                 sigma = options_data[dataname_sell]['volatility'] / 100
                 ask_iv_sell = newton_vol_call(S, K, T, ask_sell, r, sigma) * 100
                 bid_iv_sell = newton_vol_call(S, K, T, bid_sell, r, sigma) * 100
@@ -900,14 +981,24 @@ class App:
                 ask_iv_sell = newton_vol_put(S, K, T, ask_sell, r, sigma) * 100
                 bid_iv_sell = newton_vol_put(S, K, T, bid_sell, r, sigma) * 100
 
-            finam_board, ticker = fp_provider.dataname_to_finam_board_ticker(
-                dataname_buy)  # Код режима торгов Финама и тикер
-            mic = fp_provider.get_mic(finam_board, ticker)  # Биржа тикера
-            symbol = f'{ticker}@{mic}'  # Тикер Финама
-            symbol_buy = symbol
-            account_id = fp_provider.account_ids[0]  # Торговый счет, где будут выставляться заявки
-            quantity_buy = options_data[dataname_buy]['lot_size']  # Количество в шт
-            S, K, T, opt_type = get_option_data_for_calc_price(dataname_buy)  # Получаем данные опциона dataname_sell
+            # Для тикера на покупку
+            ticker = options_data[dataname_buy]['ticker']
+            symbol_buy = f'{ticker}@RTSX'  # Тикер Финама
+            # Поиск позиции по символу
+            for symbol, quantity in portfolio_positions.items():
+                # print(symbol, dataname)
+                if ticker in symbol:  # Сравнение если ticker содержится в symbol
+                    try:
+                        open_iv_buy = float(
+                            (calculate_open_data_open_price_open_iv(ticker, float(quantity)))[2])
+                        # print(open_iv_value)
+                    except (IndexError, TypeError, ValueError):
+                        open_iv_buy = 0
+                    break
+            # print(f'open_iv_buy: {open_iv_buy}')
+            quantity_buy = options_data[dataname_buy]['lot_size']  # Размер лота
+            S, K, T, opt_type_buy = get_option_data_for_calc_price(
+                dataname_buy)  # Получаем данные опциона dataname_sell
             # Получаем ask, bid из потока котировок по подписке из обновляемого словаря new_quotes
             ticker = options_data[dataname_buy]['ticker']
             ask_buy = int(round(new_quotes[ticker]['ask'], decimals))
@@ -915,15 +1006,20 @@ class App:
             bid_buy = int(round(new_quotes[ticker]['bid'], decimals))
             bid_buy_vol = int(round(new_quotes[ticker]['bid_vol'], decimals))
             # print(f'opt_type {opt_type} Котировки ask_buy: {ask_buy} ask_buy_vol: {ask_buy_vol} bid_buy: {bid_buy} bid_buy_vol: {bid_buy_vol}')
-            if opt_type == 'C':
+            if opt_type_buy == 'C':
                 sigma = options_data[dataname_buy]['volatility'] / 100
                 ask_iv_buy = newton_vol_call(S, K, T, ask_buy, r, sigma) * 100
                 bid_iv_buy = newton_vol_call(S, K, T, bid_buy, r, sigma) * 100
+                difference_pos = round(open_iv_buy - open_iv_sell, 2)
             else:
                 sigma = options_data[dataname_buy]['volatility'] / 100
                 ask_iv_buy = newton_vol_put(S, K, T, ask_buy, r, sigma) * 100
                 bid_iv_buy = newton_vol_put(S, K, T, bid_buy, r, sigma) * 100
+                difference_pos = round(open_iv_sell - open_iv_buy, 2)
             # print(f'Волатильность ask_iv_buy: {round(ask_iv_buy, 2)} bid_iv_buy: {round(bid_iv_buy, 2)}')
+            self.difference_pos = difference_pos
+            self.expected_profit_label.config(text=f"Difference pos, % : {self.difference_pos:.2f}")
+            # print(f'self.difference_pos: {self.difference_pos}')
 
             # Вариант 1 "Котируем покупку"
             if quoter_side == 'BUY':
@@ -935,40 +1031,55 @@ class App:
                 # При свершении покупки сразу продаём опцион dataname_sell по цене target_price_sell
                 # Для случая, когда опцион на продажу dataname_sell (купленный ранее) имеет профит больше, чем опцион на покупку dataname_buy
                 target_iv_sell = bid_iv_sell  # Целевая IV для мгновенной продажи
-                # print(f'1. Целевая IV для мгновенной продажи: {round(target_iv_sell, 2)}')
                 target_price_sell = bid_sell  # Целевая ЦЕНА для мгновенной продажи
                 opt_type_sell = CALL if options_data[dataname_sell]['optionSide'] == 'Call' else PUT
+                # Таргет-цены на панель управления
                 if opt_type_sell == CALL:
+                    self.target_opt_type = 'C'
                     self.target_price_call = target_price_sell
                     self.target_price_label_call.config(text=f"{self.target_price_call}")
                     self.target_iv_call = round(target_iv_sell, 2)
                     self.target_iv_label_call.config(text=f"{self.target_iv_call}")
+                    self.update_target_labels()  # Вызов функции обновления меток
+                    target_profit_buy = bid_iv_sell - expected_profit  # Целевая прибыль для котирования покупки
                 else:
+                    self.target_opt_type = 'P'
                     self.target_price_put = target_price_sell
                     self.target_price_label_put.config(text=f"{self.target_price_put}")
                     self.target_iv_put = round(target_iv_sell, 2)
                     self.target_iv_label_put.config(text=f"{self.target_iv_put}")
-                # print(f'2. Целевая ЦЕНА для мгновенной продажи: {round(target_price_sell, 2)}')
-                # target_profit_sell = bid_iv_sell - open_iv_sell  # Целевая прибыль для мгновенной продажи
-                # print(f'3. Целевая прибыль для мгновенной продажи: {round(target_profit_sell, 2)}')
-                target_profit_buy = bid_iv_sell - expected_profit  # Целевая прибыль для котирования покупки
-                # print(f'4. Целевая прибыль для котирования покупки: {round(target_profit_buy, 2)}')
-                target_iv_buy = target_profit_buy  # IV для котирования покупки
-                # print(f'5. Целевая IV для котирования покупки: {round(target_iv_buy, 2)}')
-                S, K, T, opt_type = get_option_data_for_calc_price(dataname_buy)  # Получаем данные опциона dataname_buy
-                target_price_buy_ = option_price(S, target_iv_buy / 100, K, T, r,
-                                                 opt_type=opt_type)  # Целевая цена для котирования покупки
+                    self.update_target_labels()  # Вызов функции обновления меток
+                    target_profit_buy = bid_iv_sell + expected_profit  # Целевая прибыль для котирования покупки
+                S, K, T, opt_type_buy = get_option_data_for_calc_price(
+                    dataname_buy)  # Получаем данные опциона dataname_buy
+                target_price_buy_ = option_price(S, target_profit_buy / 100, K, T, r,
+                                                 opt_type=opt_type_buy)  # Целевая цена для котирования покупки
                 target_price_buy = int(round((target_price_buy_ // step_price) * step_price, decimals))
-                if opt_type == 'C':
+                # Таргет-цены на панель управления
+                if opt_type_buy == CALL:
                     self.target_price_call = target_price_buy
                     self.target_price_label_call.config(text=f"{self.target_price_call}")
-                    self.target_iv_call = round(target_iv_buy, 2)
+                    self.target_iv_call = round(target_profit_buy, 2)
                     self.target_iv_label_call.config(text=f"{self.target_iv_call}")
                 else:
                     self.target_price_put = target_price_buy
                     self.target_price_label_put.config(text=f"{self.target_price_put}")
-                    self.target_iv_put = round(target_iv_buy, 2)
+                    self.target_iv_put = round(target_profit_buy, 2)
                     self.target_iv_label_put.config(text=f"{self.target_iv_put}")
+
+                # В каждом цикле сравниваем target_price с предыдущими значениями old_target_price и выводим на экран при изменении
+                if old_target_price_buy != target_price_buy or old_target_price_sell != target_price_sell:
+                    current_time = datetime.now().strftime('%H:%M:%S')
+                    opt_type = CALL if options_data[dataname_buy]['optionSide'] == 'Call' else PUT
+                    if opt_type == CALL:
+                        self.add_message(f'                    PUT      CALL')
+                        self.add_message(f'{current_time} Target: BUY {target_price_sell} SELL {target_price_buy}')
+                    else:
+                        self.add_message(f'                    PUT      CALL')
+                        self.add_message(f'{current_time} Target: BUY {target_price_buy} SELL {target_price_sell}')
+                    # Сохраняем новые значения
+                    old_target_price_sell = target_price_sell
+                    old_target_price_buy = target_price_buy
 
                 # Логика выставления лимитной цены на покупку опциона dataname_buy
 
@@ -977,139 +1088,189 @@ class App:
                 if symbol_buy in order_dict and order_dict[symbol_buy]['status'] == 1 and order_dict[symbol_buy][
                     'side'] == 1 and float(order_dict[symbol_buy]['quantity']) == quantity_buy and order_dict[
                     symbol_buy]['client_order_id'][:10] == filename:
-                    # print(f'Заявка на покупку по данному тикеру {dataname_buy} уже существует: {order_dict[symbol_buy]["order_id"]}')
-
-                    # Проверка на соответствие лимитной цены в заявке target-цене
-                    if bid_buy > float(
-                            order_dict[symbol_buy]['limit_price']) or old_target_price_buy != target_price_buy:
-                        # Снимаем старую заявку
-                        get_cancel_order(account_id, order_dict[symbol_buy]['order_id'])
-                        # print(f'Заявка на покупку снята:{order_dict[symbol_buy]['order_id']}')
-                        # Планируем следующий вызов через 1000 мс
-                        self.root.after(1000, self.loop_function)
-                        return
-                    else:
-                        # print(f'Цена на покупку опциона {dataname_buy} и таргет не изменилась')
-                        # Планируем следующий вызов через 1000 мс
-                        self.root.after(1000, self.loop_function)
-                        return
-                else:
-                    # print(f'Заявка на покупку по данному тикеру {dataname_buy} не существует')
+                    # logger.info(f'Заявка на покупку по данному тикеру {dataname_buy} уже существует: {order_dict[symbol_buy]["order_id"]}')
                     if target_price_buy < bid_buy:  # Цена на покупку вне спреда
-                        # print(f'Вне спреда')
-
-                        # В каждом цикле сравниваем target_price с предыдущими значениями old_target_price и выводим на экран при изменении
-                        if old_target_price_buy != target_price_buy or old_target_price_sell != target_price_sell:
-                            current_time = datetime.now().strftime('%H:%M:%S')
-                            opt_type = CALL if options_data[dataname_buy]['optionSide'] == 'Call' else PUT
-                            if opt_type == CALL:
-                                self.add_message(f'                    PUT      CALL')
-                                self.add_message(f'{current_time} Target: BUY {target_price_buy} SELL {target_price_sell}')
-                            else:
-                                self.add_message(f'                    PUT      CALL')
-                                self.add_message(f'{current_time} Target: BUY {target_price_buy} SELL {target_price_sell}')
-                            # Сохраняем новые значения
-                            old_target_price_sell = target_price_sell
-                            old_target_price_buy = target_price_buy
-
-                        # print('Заявка не выставляется!')
-                        # Планируем следующий вызов через 1000 мс
+                        # logger.info(f'Вне спреда')
+                        get_cancel_order(account_id, order_dict[symbol_buy]['order_id_buy_control'])
+                        logger.info(f'Заявка на покупку снята:{order_dict[symbol_buy]['order_id_buy_control']}')
+                        # В начало цикла
                         self.root.after(1000, self.loop_function)
                         return
-                    else:
-                        limit_price_buy = target_price_buy + (step_price * indent)
-                        # Подбираем количество в зависимости от имеющегося количества в противоположной котировке (есть риск частичного исполнения заявки) и Basket_size
-                        quantity_buy = basket_size
-                        # print(f'Выставляем лимитную заявку на покупку опциона {dataname_buy} по цене {limit_price_buy} и количеством {quantity_buy}')
-                        # Вызов функции выставления заявки на покупку
-                        order_id_buy, status_buy = get_order_buy(
-                            account_id=account_id,  # Укажите реальный номер счета
-                            symbol_buy=symbol_buy,  # Укажите реальный тикер
-                            quantity_buy=quantity_buy,  # Укажите количество
-                            limit_price_buy=limit_price_buy  # Укажите цену
-                        )
-                        # print(f'Заявка на покупку выставлена: order_id_buy {order_id_buy}, status {status_buy}')
-                        sleep(1)
-
-                        position = trade_dict.get(order_id_buy)
-                        if position:  # Сделка на покупку состоялась
-                            self.add_message(f'timestamp - {position['timestamp']}')
-                            self.add_message(f'trade_id - {position['trade_id']}')
-                            self.add_message(f'side - {position['side']}')
-                            self.add_message(f'size - {position['size']}')
-                            self.add_message(f'price - {position['price']}')
-                            # Подбираем количество в зависимости от количества исполненной заявки на покупку
-                            quantity_sell = quantity_buy
+                    else:  # Цена внутри спреда
+                        # Проверка на соответствие лимитной цены в заявке target-цене
+                        if float(order_dict[symbol_buy]['limit_price']) != target_price_buy:
+                            # Лимитная цена уже не соответствует таргет-цене, снимаем старую заявку
+                            get_cancel_order(account_id, order_dict[symbol_buy]['order_id'])
+                            logger.info(f'Заявка на покупку снята:{order_dict[symbol_buy]['order_id_buy_control']}')
+                            # В начало цикла
+                            self.root.after(1000, self.loop_function)
+                            return
+                        else:  # Лимитная цена соответствует таргет-цене
+                            # logger.info(f'Цена на покупку опциона {dataname_buy} и таргет не изменилась')
+                            # В начало цикла
+                            self.root.after(1000, self.loop_function)
+                            return
+                else:  # Заявка на покупку по данному тикеру не существует
+                    # print(f'Заявка на покупку по данному тикеру {dataname_buy} не существует')
+                    # Прежде чем выставлять новую заявку нужно вставить проверку исполнилась ли старая заявка на продажу за время цикла
+                    position_control = trade_dict.get(order_id_buy_control)
+                    if position_control:  # Старая заявка исполнилась за время цикла
+                        logger.info(f'Старая заявка на покупку исполнилась за время цикла: {order_id_buy_control}')
+                        order_id_buy_control = None
+                        # Далее проверяем исполнилась ли встречная заявка за время цикла
+                        position_control = trade_dict.get(order_id_sell_control)
+                        if position_control:  # Встречная заявка исполнилась за время цикла
+                            logger.info(f'Встречная заявка исполнилась за время цикла: {order_id_sell_control}')
+                            order_id_sell_control = None
+                            # Здесь переходим к выставлению новой заявки на покупку, т.е. ничего не делаем
+                        else:  # Встречная заявка не исполнилась за время цикла
+                            # Здесь дублируем код исполнения встречной заявки
+                            quantity_sell = basket_size
                             # Лимитная цена на мгновенную продажу опциона dataname_sell
                             limit_price_sell = target_price_sell
-                            # print(f'Выставляем лимитную заявку по цене {limit_price_sell}: {dataname_sell} колич.: {quantity_sell}')
+                            old_target_price_sell = target_price_sell
+                            # print(f'Выставляем лимитную заявку на продажу опциона {dataname_sell} по цене {limit_price_sell} в количестве {quantity_sell}')
                             # Вызов функции выставления заявки на продажу
-                            order_id, status = get_order_sell(
+                            order_id_sell, status_sell = get_order_sell(
                                 account_id=account_id,  # Укажите реальный номер счета
                                 symbol_sell=symbol_sell,  # Укажите реальный тикер
                                 quantity_sell=quantity_sell,  # Укажите количество
                                 limit_price_sell=limit_price_sell  # Укажите цену
                             )
-                            self.add_message(f'Заявка на продажу выставлена: {order_id}, статус: {status} ')
+                            self.add_message(f'Заявка на продажу выставлена: {order_id_sell}, status {status_sell}')
+                            logger.info(f'Заявка на продажу выставлена {order_id_sell} статус {status_sell}')
                             sleep(1)
-                            while self.running:
-                                self.trade_count += 1  # Увеличиваем счётчик
-                                if self.trade_count > 30:  # Проверяем ограничение
+                            position = trade_dict.get(order_id_sell)
+                            if position:  # Если сделка на продажу состоялась
+                                logger.info(f'Сделка на продажу {order_id_sell} состоялась')
+                                self.add_message(f'timestamp - {position["timestamp"]}')
+                                self.add_message(f'trade_id - {position["trade_id"]}')
+                                self.add_message(f'side - {position["side"]}')
+                                self.add_message(f'size - {position["size"]}')
+                                self.add_message(f'price - {position["price"]}')
+                                # Увеличиваем счетчик
+                                self.counter += 1
+                                self.add_message(f'Завершение цикла N{self.counter} из {lot_count}')
+                                get_portfolio_positions()  # Обновляем портфель
+                                if self.counter >= lot_count:
                                     self.add_message(
-                                        "Достигнуто максимальное количество попыток (30). Завершение работы.")
+                                        f'Заданное количество лотов {self.counter} исполнено. Завершение работы котировщика!')
+                                    sleep(timeout)
                                     self.running = False
-                                    break
+                                else:
+                                    # В начало цикла
+                                    self.root.after(1000, self.loop_function)
+                                    return
+                            else:
+                                self.add_message(f'Заявка на продажу не исполнена: order_id_sell - {order_id_sell}')
+                                self.root.update()  # Принудительно обновляем интерфейс
+                                sleep(1)
+                                # В начало цикла
+                                self.root.after(1000, self.loop_function)
+                                return
+                    else:  # Старая заявка снята или исполнена, можно выставлять новую с проверкой исполнения встречной заявки
 
-                                position = trade_dict.get(order_id)
-                                if position:  # Если сделка на продажу состоялась
+                        # # Временная заглушка перед выставлением новой заявки!!! ДЛЯ ТЕСТОВ!!!
+                        # # Планируем следующий вызов через 1000 мс
+                        # self.root.after(5000, self.loop_function)
+                        # return
+
+                        if target_price_buy < bid_buy:  # Цена на покупку вне спреда
+                            # logger.info(f'Вне спреда')
+                            # В начало цикла
+                            self.root.after(1000, self.loop_function)
+                            return
+                        else:  # Цена внутри спреда
+                            # Проверка на соответствие лимитной цены в заявке target-цене
+                            if old_target_price_buy != target_price_buy:
+                                # В начало цикла
+                                self.root.after(1000, self.loop_function)
+                                return
+                            else:  # Лимитная цена соответствует таргет-цене
+                                limit_price_buy = target_price_buy + (step_price * indent)
+                                old_target_price_buy = target_price_buy
+                                quantity_buy = basket_size
+                                logger.info(
+                                    f'Выставляем лимитную заявку на покупку опциона {dataname_buy} по цене {limit_price_buy} и количеством {quantity_buy}')
+                                # Вызов функции выставления заявки на покупку
+                                order_id_buy, status_buy = get_order_buy(
+                                    account_id=account_id,  # Укажите реальный номер счета
+                                    symbol_buy=symbol_buy,  # Укажите реальный тикер
+                                    quantity_buy=quantity_buy,  # Укажите количество
+                                    limit_price_buy=limit_price_buy  # Укажите цену
+                                )
+                                logger.info(
+                                    f'Заявка на покупку выставлена: order_id_buy {order_id_buy}, status {status_buy}')
+                                order_id_buy_control = order_id_buy  # Запоминаем номер ордера первичной заявки для последующей проверки исполнения
+                                sleep(timeout)
+
+                                position = trade_dict.get(order_id_buy)
+                                if position:  # Сделка на покупку состоялась
+                                    logger.info(f'Сделка на покупку {order_id_buy} состоялась')
                                     self.add_message(f'timestamp - {position['timestamp']}')
                                     self.add_message(f'trade_id - {position['trade_id']}')
                                     self.add_message(f'side - {position['side']}')
                                     self.add_message(f'size - {position['size']}')
                                     self.add_message(f'price - {position['price']}')
-                                    # Увеличиваем счетчик
-                                    self.counter += int(float(position['size']))
-                                    self.add_message(f'Завершение цикла N{self.counter} из {lot_count}')
-                                    if self.counter >= lot_count:
-                                        self.add_message(
-                                            f'Заданное количество лотов {self.counter} исполнено. Завершение работы котировщика!')
-                                        sleep(timeout)
-                                        self.running = False
+                                    # Подбираем количество в зависимости от количества исполненной заявки на покупку
+                                    quantity_sell = quantity_buy
+                                    # Лимитная цена на мгновенную продажу опциона dataname_sell
+                                    limit_price_sell = target_price_sell
+                                    old_target_price_sell = target_price_sell
+                                    # print(f'Выставляем лимитную заявку по цене {limit_price_sell}: {dataname_sell} колич.: {quantity_sell}')
+                                    # Вызов функции выставления заявки на продажу
+                                    order_id, status = get_order_sell(
+                                        account_id=account_id,  # Укажите реальный номер счета
+                                        symbol_sell=symbol_sell,  # Укажите реальный тикер
+                                        quantity_sell=quantity_sell,  # Укажите количество
+                                        limit_price_sell=limit_price_sell  # Укажите цену
+                                    )
+                                    self.add_message(f'Заявка на продажу выставлена: {order_id}, статус: {status} ')
+                                    order_id_sell_control = order_id  # Запоминаем номер ордера встречной заявки для последующей проверки исполнения
+                                    logger.info(f'Заявка на продажу выставлена {order_id} статус {status}')
+                                    sleep(1)
+                                    position = trade_dict.get(order_id)
+                                    if position:  # Если сделка на продажу состоялась
+                                        logger.info(f'Сделка на продажу {order_id} состоялась')
+                                        self.add_message(f'timestamp - {position['timestamp']}')
+                                        self.add_message(f'trade_id - {position['trade_id']}')
+                                        self.add_message(f'side - {position['side']}')
+                                        self.add_message(f'size - {position['size']}')
+                                        self.add_message(f'price - {position['price']}')
+                                        # Увеличиваем счетчик
+                                        self.counter += 1
+                                        self.add_message(f'Завершение цикла N{self.counter} из {lot_count}')
+                                        get_portfolio_positions()  # Обновляем портфель
+                                        if self.counter >= lot_count:
+                                            self.add_message(
+                                                f'Заданное количество лотов {self.counter} исполнено. Завершение работы котировщика!')
+                                            sleep(timeout)
+                                            self.running = False
+                                        else:
+                                            # Начинаем новый цикл через 1000 мс
+                                            self.root.after(1000, self.loop_function)
+                                            return
                                     else:
-                                        # Начинаем новый цикл через 1000 мс
+                                        self.add_message(f'Заявка на продажу не состоялась.')
+                                        self.root.update()  # Принудительно обновляем интерфейс
+                                        # В начало цикла
                                         self.root.after(1000, self.loop_function)
                                         return
-                                else:
-                                    self.add_message(f'Заявка на продажу не состоялась.')
-                                    self.root.update()  # Принудительно обновляем интерфейс
-                                    sleep(1)  # Пауза перед следующей проверкой
-                        else:  # Сделка на покупку не состоялась
-                            # Проверка на изменение target-цен
-                            ticker_buy = options_data[dataname_buy]['ticker']
-                            ticker_sell = options_data[dataname_sell]['ticker']
-                            if symbol_buy in order_dict and new_quotes[ticker_buy]['bid'] != float(
-                                    order_dict[symbol_buy]['limit_price']) or target_price_sell != int(
-                                round(new_quotes[ticker_sell]['bid'], decimals)) and order_dict[symbol_buy]['client_order_id'][:10] == filename:
-                                get_cancel_order(account_id, order_id_buy)
-                                self.add_message(f'Заявка на покупку снята:{order_id_buy}')
-                            sleep(1)
-                # В каждом цикле сравниваем target_price с предыдущими значениями old_target_price и выводим на экран при изменении
-                if old_target_price_buy != target_price_buy or old_target_price_sell != target_price_sell:
-                    current_time = datetime.now().strftime('%H:%M:%S')
-                    opt_type = CALL if options_data[dataname_buy]['optionSide'] == 'Call' else PUT
-                    if opt_type == CALL:
-                        self.add_message(f'                    PUT      CALL')
-                        self.add_message(f'{current_time} Target: BUY {target_price_buy} SELL {target_price_sell}')
-                    else:
-                        self.add_message(f'                    PUT      CALL')
-                        self.add_message(f'{current_time} Target: BUY {target_price_buy} SELL {target_price_sell}')
-                    # Сохраняем новые значения
-                    old_target_price_sell = target_price_sell
-                    old_target_price_buy = target_price_buy
-
+                                else:  # Сделка на покупку не состоялась
+                                    # Проверка на изменение target-цен
+                                    ticker_buy = options_data[dataname_buy]['ticker']
+                                    ticker_sell = options_data[dataname_sell]['ticker']
+                                    if symbol_buy in order_dict and new_quotes[ticker_buy]['bid'] != float(
+                                            order_dict[symbol_buy]['limit_price']) or target_price_sell != int(
+                                        round(new_quotes[ticker_sell]['bid'], decimals)) and order_dict[symbol_buy][
+                                        'client_order_id'][:10] == filename:
+                                        get_cancel_order(account_id, order_id_buy)
+                                        self.add_message(f'Заявка на покупку снята:{order_id_buy}')
+                                    sleep(1)
 
             # Вариант 2 "Котируем продажу"
             else:  # 'SELL'
+
                 # print(f'{quoter_side} Котируем продажу, покупка - по рынку!')
                 # print(f'Вариант 2 "Котируем продажу"')
                 # print(f'Расчёт целевой цены продажи/купли target_price (Вариант 2 "Котируем продажу")')
@@ -1119,162 +1280,40 @@ class App:
                 target_iv_buy = ask_iv_buy  # Целевая IV для мгновенной покупки
                 target_price_buy = ask_buy  # Целевая цена для мгновенной покупки
                 opt_type_buy = CALL if options_data[dataname_buy]['optionSide'] == 'Call' else PUT
+                # Таргет-цены на панель управления
                 if opt_type_buy == CALL:
                     self.target_price_call = target_price_buy
                     self.target_price_label_call.config(text=f"{self.target_price_call}")
                     self.target_iv_call = round(target_iv_buy, 2)
                     self.target_iv_label_call.config(text=f"{self.target_iv_call}")
+                    target_profit_sell = ask_iv_buy - expected_profit  # Целевая прибыль для котирования продажи
                 else:
                     self.target_price_put = target_price_buy
                     self.target_price_label_put.config(text=f"{self.target_price_put}")
                     self.target_iv_put = round(target_iv_buy, 2)
                     self.target_iv_label_put.config(text=f"{self.target_iv_put}")
-                # target_profit_sell = open_iv_buy - ask_iv_buy  # Целевая прибыль для мгновенной покупки
-                # print(f'3. Целевая прибыль для мгновенной покупки: {round(target_profit_sell, 2)}')
-                target_profit_sell = ask_iv_buy + expected_profit  # Целевая прибыль для котирования продажи
-                # print(f'4. Целевая прибыль для котирования продажи: {round(target_profit_buy, 2)}')
-                target_iv_sell = target_profit_sell  # Целевая IV для котирования продажи
-                # print(f'5. Целевая IV для котирования продажи: {round(target_iv_sell, 2)}')
-                S, K, T, opt_type = get_option_data_for_calc_price(
+                    target_profit_sell = ask_iv_buy + expected_profit  # Целевая прибыль для котирования продажи
+                S, K, T, opt_type_sell = get_option_data_for_calc_price(
                     dataname_sell)  # Получаем данные опциона dataname_sell
-                target_price_sell_ = option_price(S, target_iv_sell / 100, K, T, r,
-                                                  opt_type=opt_type)  # Целевая цена для котирования продажи
+                target_price_sell_ = option_price(S, target_profit_sell / 100, K, T, r,
+                                                  opt_type=opt_type_sell)  # Целевая цена для котирования продажи
                 target_price_sell = int(round((target_price_sell_ // step_price) * step_price, decimals))
-                if opt_type == 'C':
+                # Таргет-цены на панель управления
+                if opt_type_sell == CALL:
+                    self.target_opt_type = 'C'  # Устанавливаем атрибут класса
                     self.target_price_call = target_price_sell
                     self.target_price_label_call.config(text=f"{self.target_price_call}")
-                    self.target_iv_call = round(target_iv_sell, 2)
+                    self.target_iv_call = round(target_profit_sell, 2)
                     self.target_iv_label_call.config(text=f"{self.target_iv_call}")
+                    self.update_target_labels()  # Вызов функции обновления меток
                 else:
+                    self.target_opt_type = 'P'  # Устанавливаем атрибут класса
                     self.target_price_put = target_price_sell
                     self.target_price_label_put.config(text=f"{self.target_price_put}")
-                    self.target_iv_put = round(target_iv_sell, 2)
+                    self.target_iv_put = round(target_profit_sell, 2)
                     self.target_iv_label_put.config(text=f"{self.target_iv_put}")
+                    self.update_target_labels()  # Вызов функции обновления меток
 
-                # Логика выставления лимитной цены для котирования продажи опциона dataname_sell
-
-                # Здесь введём проверку, что заявка на продажу по данному тикеру в order_dict уже существует!
-                # print(f'order_dict {order_dict}')
-                # print(f'symbol_sell: {symbol_sell}, status: {order_dict[symbol_sell]['status']}, side: {order_dict[symbol_sell]['side']}, quantity: {order_dict[symbol_sell]['quantity']}')
-                if symbol_sell in order_dict and order_dict[symbol_sell]['status'] == 1 and order_dict[symbol_sell][
-                    'side'] == 2 and float(order_dict[symbol_sell]['quantity']) == quantity_sell and order_dict[
-                    symbol_sell]['client_order_id'][:10] == filename:
-                    # print(f'Заявка на продажу по данному тикеру {dataname_sell} уже существует: {order_dict[symbol_sell]["order_id"]}')
-
-                    # Проверка на соответствие лимтной цены в заявке target-цене
-                    if ask_sell < float(
-                            order_dict[symbol_sell]['limit_price']) or old_target_price_sell != target_price_sell:
-                        # Снимаем старую заявку
-                        get_cancel_order(account_id, order_dict[symbol_sell]['order_id'])
-                        # print(f'Заявка на продажу снята limit_price:{order_dict[symbol_sell]['limit_price']} ask_sell: {ask_sell}')
-                        # Планируем следующий вызов через 1000 мс
-                        self.root.after(1000, self.loop_function)
-                        return
-                    else:
-                        # print(f'Цена на продажу опциона {dataname_sell} и таргет не изменилась')
-                        # Планируем следующий вызов через 1000 мс
-                        self.root.after(1000, self.loop_function)
-                        return
-                else:
-                    # print(f'Заявка на продажу по данному тикеру {dataname_sell} не существует')
-                    if target_price_sell > ask_sell:  # Цена на продажу вне спреда
-                        # print(f'Вне спреда')
-
-                        # В каждом цикле сравниваем target_price с предыдущими значениями old_target_price и выводим на экран при изменении
-                        if old_target_price_sell != target_price_sell or old_target_price_buy != target_price_buy:
-                            current_time = datetime.now().strftime('%H:%M:%S')
-                            opt_type = CALL if options_data[dataname_sell]['optionSide'] == 'Call' else PUT
-                            if opt_type == CALL:
-                                self.add_message(f'                    PUT      CALL')
-                                self.add_message(f'{current_time} Target: BUY {target_price_buy} SELL {target_price_sell}')
-                            else:
-                                self.add_message(f'                    PUT      CALL')
-                                self.add_message(f'{current_time} Target: SELL {target_price_sell} BUY {target_price_buy}')
-                            # Сохраняем новые значения
-                            old_target_price_sell = target_price_sell
-                            old_target_price_buy = target_price_buy
-                        # Планируем следующий вызов через 1000 мс
-                        self.root.after(1000, self.loop_function)
-                        return
-                    else:
-                        limit_price_sell = target_price_sell - (step_price * indent)
-                        # Подбираем количество в зависимости от количества в противоположной котировке
-                        quantity_sell = basket_size
-                        # print(f'Выставляем лимитную заявку на продажу: {dataname_sell} ')
-                        # print(f'                              по цене: {limit_price_sell} колич: {quantity_sell}.')
-                        # Вызов функции выставления заявки на продажу
-                        order_id, status = get_order_sell(
-                            account_id=account_id,  # Укажите реальный номер счета
-                            symbol_sell=symbol_sell,  # Укажите реальный тикер
-                            quantity_sell=quantity_sell,  # Укажите количество
-                            limit_price_sell=limit_price_sell  # Укажите цену
-                        )
-                        # print(f'Заявка на продажу выставлена: {order_id}, статус: {status} ')
-                        sleep(1)
-
-                        position = trade_dict.get(order_id)
-                        if position:  # Сделка на продажу состоялась
-                            self.add_message(f'timestamp - {position['timestamp']}')
-                            self.add_message(f'trade_id - {position['trade_id']}')
-                            self.add_message(f'side - {position['side']}')
-                            self.add_message(f'size - {position['size']}')
-                            self.add_message(f'price - {position['price']}')
-
-                            # Подбираем количество в зависимости от количества исполненной заявки на покупку
-                            quantity_buy = quantity_sell
-                            # Лимитная цена на мгновенную покупку опциона dataname_buy
-                            limit_price_buy = target_price_buy
-                            # print(f'Выставляем лимитную заявку на покупку опциона {dataname_buy} по цене {limit_price_buy} в количестве {quantity_buy}')
-                            # Вызов функции выставления заявки на покупку
-                            order_id_buy, status_buy = get_order_buy(
-                                account_id=account_id,  # Укажите реальный номер счета
-                                symbol_buy=symbol_buy,  # Укажите реальный тикер
-                                quantity_buy=quantity_buy,  # Укажите количество
-                                limit_price_buy=limit_price_buy  # Укажите цену
-                            )
-                            self.add_message(f'Заявка на покупку выставлена: {order_id_buy}, status {status_buy}')
-                            sleep(1)
-
-                            while self.running:
-                                self.trade_count += 1  # Увеличиваем счётчик
-                                if self.trade_count > 30:  # Проверяем ограничение
-                                    self.add_message(
-                                        "Достигнуто максимальное количество попыток (30). Завершение работы.")
-                                    self.running = False
-                                    break
-                                position = trade_dict.get(order_id_buy)
-                                if position:  # Если сделка на покупку состоялась
-                                    self.add_message(f'timestamp - {position["timestamp"]}')
-                                    self.add_message(f'trade_id - {position["trade_id"]}')
-                                    self.add_message(f'side - {position["side"]}')
-                                    self.add_message(f'size - {position["size"]}')
-                                    self.add_message(f'price - {position["price"]}')
-                                    # Увеличиваем счетчик
-                                    self.counter += int(float(position['size']))
-                                    self.add_message(f'Завершение цикла N{self.counter} из {lot_count}')
-                                    if self.counter >= lot_count:
-                                        self.add_message(
-                                            f'Заданное количество лотов {self.counter} исполнено. Завершение работы котировщика!')
-                                        sleep(timeout)
-                                        self.running = False
-                                    else:
-                                        # Начинаем новый цикл через 1000 мс
-                                        self.root.after(1000, self.loop_function)
-                                        return
-                                else:
-                                    self.add_message(f'Заявка на покупку не исполнена: order_id_buy - {order_id_buy}')
-                                    self.root.update()  # Принудительно обновляем интерфейс
-                                    sleep(1)  # Пауза перед следующей проверкой
-                        else:  # Сделка на продажу не состоялась
-                            # Проверка на изменение target-цен
-                            ticker_buy = options_data[dataname_buy]['ticker']
-                            ticker_sell = options_data[dataname_sell]['ticker']
-                            if symbol_sell in order_dict and new_quotes[ticker_sell]['ask'] != float(
-                                    order_dict[symbol_sell]['limit_price']) or target_price_buy != \
-                                    new_quotes[ticker_buy]['ask'] and order_dict[symbol_sell]['client_order_id'][:10] == filename:
-                                get_cancel_order(account_id, order_id)
-                                self.add_message(f'Заявка на продажу снята:{order_id}')
-                            sleep(1)
                 # В каждом цикле сравниваем target_price с предыдущими значениями old_target_price и выводим на экран при изменении
                 if old_target_price_sell != target_price_sell or old_target_price_buy != target_price_buy:
                     current_time = datetime.now().strftime('%H:%M:%S')
@@ -1289,8 +1328,197 @@ class App:
                     old_target_price_sell = target_price_sell
                     old_target_price_buy = target_price_buy
 
-            # Планируем следующий вызов через 1000 мс
-            self.root.after(1000, self.loop_function)
+                # Логика выставления лимитной цены для котирования продажи опциона dataname_sell
+
+                # Здесь введём проверку, что первичная заявка на продажу по данному тикеру в order_dict уже существует!
+                # logger.info(f'symbol_sell: {symbol_sell}, status: {order_dict[symbol_sell]['status']}, side: {order_dict[symbol_sell]['side']}, quantity: {order_dict[symbol_sell]['quantity']}')
+                if symbol_sell in order_dict and order_dict[symbol_sell]['status'] == 1 and order_dict[symbol_sell][
+                    'side'] == 2 and float(order_dict[symbol_sell]['quantity']) == quantity_sell and order_dict[
+                    symbol_sell]['client_order_id'][:10] == filename:
+                    # logger.info(f'Заявка на продажу по данному тикеру {dataname_sell} уже существует: {order_dict[symbol_sell]["order_id"]}')
+                    if target_price_sell > ask_sell:  # Цена на продажу вне спреда
+                        # logger.info(f'Вне спреда')
+                        get_cancel_order(account_id, order_dict[symbol_sell]['order_id'])
+                        logger.info(
+                            f'Заявка на продажу снята limit_price:{order_dict[symbol_sell]['limit_price']} ask_sell: {ask_sell}')
+                        # В начало цикла
+                        self.root.after(1000, self.loop_function)
+                        return
+                    else:  # Цена внутри спреда
+                        # Проверка на соответствие лимтной цены в заявке target-цене
+                        print(f'old_target_price_sell {old_target_price_sell} target_price_sell {target_price_sell}')
+                        if float(order_dict[symbol_sell]['limit_price']) != target_price_sell:
+                            # Лимитная цена уже не соответствует таргет-цене, снимаем старую заявку
+                            get_cancel_order(account_id, order_dict[symbol_sell]['order_id'])
+                            logger.info(
+                                f'Заявка на продажу снята limit_price:{order_dict[symbol_sell]['limit_price']} ask_sell: {ask_sell}')
+                            # В начало цикла
+                            self.root.after(1000, self.loop_function)
+                            return
+                        else:  # Лимитная цена соответствует таргет-цене
+                            # logger.info(f'Цена на продажу опциона {dataname_sell} и таргет не изменилась')
+                            # В начало цикла
+                            self.root.after(1000, self.loop_function)
+                            return
+                else:  # Заявка на продажу по данному тикеру не существует
+                    # print(f'Заявка на продажу по данному тикеру {dataname_sell} не существует')
+                    # Прежде чем выставлять новую заявку нужно вставить проверку исполнилась ли старая заявка на продажу за время цикла
+                    position_control = trade_dict.get(order_id_sell_control)
+                    if position_control:  # Старая заявка исполнилась за время цикла
+                        logger.info(f'Старая заявка на продажу исполнилась за время цикла: {order_id_sell_control}')
+                        order_id_sell_control = None
+                        # Далее проверяем исполнилась ли встречная заявка за время цикла
+                        position_control = trade_dict.get(order_id_buy_control)
+                        if position_control:  # Встречная заявка исполнилась за время цикла
+                            logger.info(f'Встречная заявка исполнилась за время цикла: {order_id_buy_control}')
+                            order_id_buy_control = None
+                            # Здесь переходим к выставлению новой заявки на продажу, т.е. ничего не делаем
+                        else:  # Встречная заявка не исполнилась за время цикла
+                            # Здесь дублируем код исполнения встречной заявки
+                            quantity_buy = basket_size
+                            # Лимитная цена на мгновенную покупку опциона dataname_buy
+                            limit_price_buy = target_price_buy
+                            old_target_price_buy = target_price_buy
+                            # print(f'Выставляем лимитную заявку на покупку опциона {dataname_buy} по цене {limit_price_buy} в количестве {quantity_buy}')
+                            # Вызов функции выставления заявки на покупку
+                            order_id_buy, status_buy = get_order_buy(
+                                account_id=account_id,  # Укажите реальный номер счета
+                                symbol_buy=symbol_buy,  # Укажите реальный тикер
+                                quantity_buy=quantity_buy,  # Укажите количество
+                                limit_price_buy=limit_price_buy  # Укажите цену
+                            )
+                            self.add_message(f'Заявка на покупку выставлена: {order_id_buy}, status {status_buy}')
+                            logger.info(f'Заявка на покупку выставлена {order_id_buy} статус {status_buy}')
+                            sleep(1)
+                            position = trade_dict.get(order_id_buy)
+                            if position:  # Если сделка на покупку состоялась
+                                logger.info(f'Сделка на покупку {order_id_buy} состоялась')
+                                self.add_message(f'timestamp - {position["timestamp"]}')
+                                self.add_message(f'trade_id - {position["trade_id"]}')
+                                self.add_message(f'side - {position["side"]}')
+                                self.add_message(f'size - {position["size"]}')
+                                self.add_message(f'price - {position["price"]}')
+                                # Увеличиваем счетчик
+                                self.counter += 1
+                                self.add_message(f'Завершение цикла N{self.counter} из {lot_count}')
+                                get_portfolio_positions()  # Обновляем портфель
+                                if self.counter >= lot_count:
+                                    self.add_message(
+                                        f'Заданное количество лотов {self.counter} исполнено. Завершение работы котировщика!')
+                                    sleep(timeout)
+                                    self.running = False
+                                else:
+                                    # В начало цикла
+                                    self.root.after(1000, self.loop_function)
+                                    return
+                            else:
+                                self.add_message(f'Заявка на покупку не исполнена: order_id_buy - {order_id_buy}')
+                                self.root.update()  # Принудительно обновляем интерфейс
+                                sleep(1)
+                                # В начало цикла
+                                self.root.after(1000, self.loop_function)
+                                return
+                    else:  # Старая заявка снята или исполнена, можно выставлять новую
+
+                        # # Временная заглушка перед выставлением новой заявки!!! ДЛЯ ТЕСТОВ!!!
+                        # # Планируем следующий вызов через 1000 мс
+                        # self.root.after(5000, self.loop_function)
+                        # return
+
+                        if target_price_sell > ask_sell:  # Цена на продажу вне спреда
+                            # logger.info(f'Вне спреда')
+                            # В начало цикла
+                            self.root.after(1000, self.loop_function)
+                            return
+                        else:
+                            # Проверка на соответствие лимитной цены target-цене
+                            if old_target_price_sell != target_price_sell:
+                                # В начало цикла
+                                self.root.after(1000, self.loop_function)
+                                return
+                            else:  # Лимитная цена соответствует таргет-цене
+                                limit_price_sell = target_price_sell - (step_price * indent)
+                                old_target_price_sell = target_price_sell
+                                quantity_sell = basket_size
+                                logger.info(f'Выставляем лимитную заявку на продажу: {dataname_sell}')
+                                logger.info(f'по цене: {limit_price_sell} колич: {quantity_sell}.')
+                                # Вызов функции выставления заявки на продажу
+                                order_id, status = get_order_sell(
+                                    account_id=account_id,  # Укажите реальный номер счета
+                                    symbol_sell=symbol_sell,  # Укажите реальный тикер
+                                    quantity_sell=quantity_sell,  # Укажите количество
+                                    limit_price_sell=limit_price_sell  # Укажите цену
+                                )
+                                logger.info(f'Заявка на продажу выставлена: {order_id}, статус: {status} ')
+                                order_id_sell_control = order_id  # Запоминаем номер ордера первичной заявки для последующей проверки исполнения
+                                sleep(timeout)
+
+                                position = trade_dict.get(order_id)
+                                if position:  # Сделка на продажу состоялась
+                                    logger.info(f'Сделка на продажу {order_id} состоялась')
+                                    self.add_message(f'timestamp - {position['timestamp']}')
+                                    self.add_message(f'trade_id - {position['trade_id']}')
+                                    self.add_message(f'side - {position['side']}')
+                                    self.add_message(f'size - {position['size']}')
+                                    self.add_message(f'price - {position['price']}')
+                                    # Подбираем количество в зависимости от количества исполненной заявки на покупку
+                                    quantity_buy = quantity_sell
+                                    # Лимитная цена на мгновенную покупку опциона dataname_buy
+                                    limit_price_buy = target_price_buy
+                                    old_target_price_buy = target_price_buy
+                                    # print(f'Выставляем лимитную заявку на покупку опциона {dataname_buy} по цене {limit_price_buy} в количестве {quantity_buy}')
+                                    # Вызов функции выставления заявки на покупку
+                                    order_id_buy, status_buy = get_order_buy(
+                                        account_id=account_id,  # Укажите реальный номер счета
+                                        symbol_buy=symbol_buy,  # Укажите реальный тикер
+                                        quantity_buy=quantity_buy,  # Укажите количество
+                                        limit_price_buy=limit_price_buy  # Укажите цену
+                                    )
+                                    self.add_message(f'Заявка на покупку выставлена: {order_id_buy}, status {status_buy}')
+                                    order_id_buy_control = order_id_buy  # Запоминаем номер ордера встречной заявки для последующей проверки исполнения
+                                    logger.info(f'Заявка на покупку выставлена {order_id_buy} статус {status_buy}')
+                                    sleep(1)
+                                    position = trade_dict.get(order_id_buy)
+                                    if position:  # Если сделка на покупку состоялась
+                                        logger.info(f'Сделка на покупку {order_id_buy} состоялась')
+                                        self.add_message(f'timestamp - {position["timestamp"]}')
+                                        self.add_message(f'trade_id - {position["trade_id"]}')
+                                        self.add_message(f'side - {position["side"]}')
+                                        self.add_message(f'size - {position["size"]}')
+                                        self.add_message(f'price - {position["price"]}')
+                                        # Увеличиваем счетчик
+                                        self.counter += 1
+                                        self.add_message(f'Завершение цикла N{self.counter} из {lot_count}')
+                                        get_portfolio_positions()  # Обновляем портфель
+                                        if self.counter >= lot_count:
+                                            self.add_message(
+                                                f'Заданное количество лотов {self.counter} исполнено. Завершение работы котировщика!')
+                                            sleep(timeout)
+                                            self.running = False
+                                        else:
+                                            # В начало цикла
+                                            self.root.after(1000, self.loop_function)
+                                            return
+                                    else:
+                                        self.add_message(f'Заявка на покупку не исполнена: order_id_buy - {order_id_buy}')
+                                        self.root.update()  # Принудительно обновляем интерфейс
+                                        # В начало цикла
+                                        self.root.after(1000, self.loop_function)
+                                        return
+                                else:  # Сделка на продажу не состоялась
+                                    # Проверка на изменение target-цен
+                                    ticker_buy = options_data[dataname_buy]['ticker']
+                                    ticker_sell = options_data[dataname_sell]['ticker']
+                                    if symbol_sell in order_dict and new_quotes[ticker_sell]['ask'] != float(
+                                            order_dict[symbol_sell]['limit_price']) or target_price_buy != \
+                                            new_quotes[ticker_buy]['ask'] and order_dict[symbol_sell]['client_order_id'][
+                                        :10] == filename:
+                                        get_cancel_order(account_id, order_id)
+                                        logger.info(f'Заявка на продажу снята:{order_id}')
+                                    sleep(1)
+
+            # Планируем следующий вызов через 100 мс
+            self.root.after(100, self.loop_function)
 
     def start_loop(self):
         """Запуск цикла"""
@@ -1338,7 +1566,8 @@ class App:
 
         # Снимаем все активные заявки
         for symbol, order_data in order_dict.items():
-            if order_data['status'] == 1 and order_data['client_order_id'][:10] == filename:  # Активная заявка для данного файла
+            if order_data['status'] == 1 and order_data['client_order_id'][
+                :10] == filename:  # Активная заявка для данного файла
                 # Отменяем заявку через API
                 try:
                     get_cancel_order(order_data['account_id'], order_data['order_id'])
@@ -1389,14 +1618,16 @@ class App:
 
 lot_count_step = 0
 
+log_filename = filename + ".log"
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',  # Формат сообщения
                     datefmt='%d.%m.%Y %H:%M:%S',  # Формат даты
                     level=logging.INFO,  # Уровень логируемых событий NOTSET/DEBUG/INFO/WARNING/ERROR/CRITICAL
-                    handlers=[logging.FileHandler('01MyOpener.log', encoding='utf-8'),
+                    handlers=[logging.FileHandler(log_filename, encoding='utf-8'),
                               logging.StreamHandler()])  # Лог записываем в файл и выводим на консоль
-# logging.Formatter.converter = lambda *args: datetime.now(tz=fp_provider.tz_msk).timetuple()  # В логе время указываем по МСК
+logging.Formatter.converter = lambda *args: datetime.now(
+    tz=fp_provider.tz_msk).timetuple()  # В логе время указываем по МСК
 
-logger = logging.getLogger('MyControlPanel')  # Будем вести лог
+logger = logging.getLogger(filename)  # Будем вести лог
 schedule = Futures()
 fp_provider = FinamPy()  # Подключаемся ко всем торговым счетам
 ap_provider = AlorPy()  # Подключаемся ко всем торговым счетам
@@ -1413,5 +1644,6 @@ sleep(5)  # Ждем 1 секунду
 
 # Запуск приложения
 if __name__ == "__main__":
+    get_portfolio_positions()
     app = App()
     app.root.mainloop()

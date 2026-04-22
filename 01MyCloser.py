@@ -1098,8 +1098,7 @@ class App:
                         return
                     else:  # Цена внутри спреда
                         # Проверка на соответствие лимитной цены в заявке target-цене
-                        if bid_buy > float(
-                                order_dict[symbol_buy]['limit_price']) or old_target_price_buy != target_price_buy:
+                        if old_target_price_buy != target_price_buy:
                             # Лимитная цена уже не соответствует таргет-цене, снимаем старую заявку
                             get_cancel_order(account_id, order_dict[symbol_buy]['order_id'])
                             logger.info(f'Заявка на покупку снята:{order_dict[symbol_buy]['order_id_buy_control']}')
@@ -1129,6 +1128,7 @@ class App:
                             quantity_sell = basket_size
                             # Лимитная цена на мгновенную продажу опциона dataname_sell
                             limit_price_sell = target_price_sell
+                            old_target_price_sell = target_price_sell
                             # print(f'Выставляем лимитную заявку на продажу опциона {dataname_sell} по цене {limit_price_sell} в количестве {quantity_sell}')
                             # Вызов функции выставления заявки на продажу
                             order_id_sell, status_sell = get_order_sell(
@@ -1188,6 +1188,7 @@ class App:
                                 return
                             else:  # Лимитная цена соответствует таргет-цене
                                 limit_price_buy = target_price_buy + (step_price * indent)
+                                old_target_price_buy = target_price_buy
                                 quantity_buy = basket_size
                                 logger.info(
                                     f'Выставляем лимитную заявку на покупку опциона {dataname_buy} по цене {limit_price_buy} и количеством {quantity_buy}')
@@ -1215,6 +1216,7 @@ class App:
                                     quantity_sell = quantity_buy
                                     # Лимитная цена на мгновенную продажу опциона dataname_sell
                                     limit_price_sell = target_price_sell
+                                    old_target_price_sell = target_price_sell
                                     # print(f'Выставляем лимитную заявку по цене {limit_price_sell}: {dataname_sell} колич.: {quantity_sell}')
                                     # Вызов функции выставления заявки на продажу
                                     order_id, status = get_order_sell(
@@ -1344,7 +1346,7 @@ class App:
                         return
                     else:  # Цена внутри спреда
                         # Проверка на соответствие лимтной цены в заявке target-цене
-                        if ask_sell < float(order_dict[symbol_sell]['limit_price']) or old_target_price_sell != target_price_sell:
+                        if old_target_price_sell != target_price_sell:
                             # Лимитная цена уже не соответствует таргет-цене, снимаем старую заявку
                             get_cancel_order(account_id, order_dict[symbol_sell]['order_id'])
                             logger.info(
@@ -1375,6 +1377,7 @@ class App:
                             quantity_buy = basket_size
                             # Лимитная цена на мгновенную покупку опциона dataname_buy
                             limit_price_buy = target_price_buy
+                            old_target_price_buy = target_price_buy
                             # print(f'Выставляем лимитную заявку на покупку опциона {dataname_buy} по цене {limit_price_buy} в количестве {quantity_buy}')
                             # Вызов функции выставления заявки на покупку
                             order_id_buy, status_buy = get_order_buy(
@@ -1434,6 +1437,7 @@ class App:
                                 return
                             else:  # Лимитная цена соответствует таргет-цене
                                 limit_price_sell = target_price_sell - (step_price * indent)
+                                old_target_price_sell = target_price_sell
                                 quantity_sell = basket_size
                                 logger.info(f'Выставляем лимитную заявку на продажу: {dataname_sell}')
                                 logger.info(f'по цене: {limit_price_sell} колич: {quantity_sell}.')
@@ -1460,6 +1464,7 @@ class App:
                                     quantity_buy = quantity_sell
                                     # Лимитная цена на мгновенную покупку опциона dataname_buy
                                     limit_price_buy = target_price_buy
+                                    old_target_price_buy = target_price_buy
                                     # print(f'Выставляем лимитную заявку на покупку опциона {dataname_buy} по цене {limit_price_buy} в количестве {quantity_buy}')
                                     # Вызов функции выставления заявки на покупку
                                     order_id_buy, status_buy = get_order_buy(
