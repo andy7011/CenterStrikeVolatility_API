@@ -64,7 +64,7 @@ def utc_timestamp_to_msk_datetime(seconds) -> datetime:
 def fetch_api_data():
     """Функция для получения данных с API"""
     global model_from_api, base_asset_list, option_list
-    model_from_api = get_object_from_json_endpoint_with_retry('https://option-volatility-dashboard.tech/dump_model')
+    model_from_api = get_object_from_json_endpoint_with_retry('https://option-volatility-dashboard.ru/dump_model')
 
     # Список базовых активов
     base_asset_list = model_from_api[0]

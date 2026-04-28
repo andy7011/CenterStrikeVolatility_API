@@ -2,6 +2,7 @@ import time
 from time import sleep  # Задержка в секундах перед выполнением операций
 import signal
 import sys
+from string import Template
 from datetime import datetime
 from threading import Thread, Event  # Запускаем поток подписки
 from FinLabPy.Schedule.MOEX import Futures
@@ -15,10 +16,17 @@ import pandas as pd
 # Инициализация расписания срочного рынка
 futures_schedule = Futures()
 
+# Конфигурация для работы с файлами
+temp_str = 'C:\\Users\\шадрин\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_obj = Template(temp_str)
+
 # Глобальные переменные
 account_id = "1218884"
 df_portfolio = pd.DataFrame()  # Глобальный датафрейм для хранения позиций портфеля
 all_rows_order_list = []  # Список для хранения всех заявок
+order_handler = None
+trade_handler = None
+class_code = 'SPBOPT'  # Глобальная переменная для класса опционов
 
 # Событие для остановки потоков
 stop_event = Event()
@@ -54,16 +62,28 @@ def sync_portfolio_positions():
     global df_portfolio, portfolio_positions
 
     try:
+        # Список показателей состояния портфеля
+        portfolio_info = []
+
+
+
         portfolio_positions = {}  # Очищаем словарь перед заполнением
         for account_id in fp_provider.account_ids:  # Пробегаемся по всем счетам
             account = fp_provider.call_function(fp_provider.accounts_stub.GetAccount,
                                                 GetAccountRequest(account_id=account_id))  # Получаем счет
+            account: GetAccountResponse = fp_provider.call_function(fp_provider.accounts_stub.GetAccount,
+                                                                    GetAccountRequest(
+                                                                        account_id=account_id))  # Получаем счет
+            print(account)
+            print("Equity:", account.equity.value)
+            print("unrealized_profit:", account.unrealized_profit.value)
+            print("Cash:", account.cash)
 
             for position in account.positions:  # Пробегаемся по всем позициям
                 symbol = position.symbol
                 quantity = position.quantity.value
                 portfolio_positions[symbol] = quantity
-        print(portfolio_positions)
+        # print(portfolio_positions)
 
         # for position in portfolio_positions:
         #     portfolio_info.append(position)
@@ -190,18 +210,17 @@ def main_loop():
 
     print("Программа завершена.")
 
+print('Подключение к провайдерам')
+fp_provider = FinamPy()
+ap_provider = AlorPy()
 
-# Подключение к провайдерам
-fp_provider = FinamPy()  # Подключаемся ко всем торговым счетам
-ap_provider = AlorPy()  # Подключаемся ко всем торговым счетам
-
-# Подписываемся на события
+print('Подписываемся на события')
 ap_provider.on_new_quotes.subscribe(_on_new_quotes)
 # Подписываемся на свои заявки и сделки
 fp_provider.on_order.subscribe(_on_order)  # Подписываемся на заявки
 fp_provider.on_trade.subscribe(_on_trade)  # Подписываемся на сделки
 
-# Запуск потоков подписки
+print('Запуск потоков подписки')
 order_thread = Thread(target=fp_provider.subscribe_orders_thread, name='SubscriptionOrdersThread')
 trade_thread = Thread(target=fp_provider.subscribe_trades_thread, name='SubscriptionTradesThread')
 
@@ -211,6 +230,7 @@ trade_thread.daemon = True
 order_thread.start()
 trade_thread.start()
 
+print('Ждем 3 секунды, чтобы подключиться к серверам')
 sleep(3)  # Ждем 3 секунды, чтобы подключиться к серверам
 
 if __name__ == "__main__":
