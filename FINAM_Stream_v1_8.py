@@ -21,7 +21,7 @@ temp_str = 'C:\\Users\\шадрин\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 # Глобальные переменные
-account_id = "1218884"
+account_id = None  # Инициализируем переменную
 df_portfolio = pd.DataFrame()  # Глобальный датафрейм для хранения позиций портфеля
 all_rows_order_list = []  # Список для хранения всех заявок
 order_handler = None
@@ -199,7 +199,7 @@ def main_loop():
         print("Рынок открыт. Запуск основного кода...")
 
         # Здесь будет запуск основного кода
-        # Ваш код будет выполняться здесь
+
         sync_portfolio_positions()
 
         # Ждем закрытия рынка
@@ -219,6 +219,21 @@ ap_provider.on_new_quotes.subscribe(_on_new_quotes)
 # Подписываемся на свои заявки и сделки
 fp_provider.on_order.subscribe(_on_order)  # Подписываемся на заявки
 fp_provider.on_trade.subscribe(_on_trade)  # Подписываемся на сделки
+
+# Определяем номер счета брокера
+for account_id in fp_provider.account_ids:  # Пробегаемся по всем счетам
+    logger.info(f'Номер счета {account_id}')
+    try:
+        account: GetAccountResponse = fp_provider.call_function(fp_provider.accounts_stub.GetAccount,
+                                                                GetAccountRequest(
+                                                                    account_id=account_id))  # Получаем счет
+    except Exception as e:
+        logger.error(f'Ошибка при получении счета {account_id}: {e}')
+        continue
+
+    if account is None:  # Если счет не поддерживается в Finam Trade API
+        logger.warning('Счет не поддерживается в Finam Trade API')
+        continue  # то переходим к следующему счету, дальше не продолжаем
 
 print('Запуск потоков подписки')
 order_thread = Thread(target=fp_provider.subscribe_orders_thread, name='SubscriptionOrdersThread')
