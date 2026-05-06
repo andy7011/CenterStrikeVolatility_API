@@ -296,7 +296,7 @@ def get_quoter_side(app_instance):
 
 
 def selected_profit(app_instance):
-    global expected_profit, dataname_sell, dataname_buy
+    global expected_profit, dataname_sell, dataname_buy, quantity_buy, quantity_sell
 
     # Цикл для вычисления open_iv_buy и open_iv_sell для тикеров dataname_buy и dataname_sell
     for dataname in [dataname_buy, dataname_sell]:
@@ -310,25 +310,30 @@ def selected_profit(app_instance):
 
         # Установка значения по умолчанию
         open_iv_value = 0
+        quantity_value = 0
 
         # Поиск позиции по символу
         for symbol, quantity in portfolio_positions.items():
-            # print(symbol, dataname)
+            # print(symbol, dataname, ticker, quantity)
             if ticker in symbol:  # Сравнение если ticker содержится в symbol
 
                 try:
                     open_iv_value = float(
                         (calculate_open_data_open_price_open_iv(ticker, float(quantity)))[2])
-                    # print(open_iv_value)
+                    quantity_value = float(quantity)
+                    # print(open_iv_value, quantity_value)
                 except (IndexError, TypeError, ValueError):
                     open_iv_value = 0
+                    quantity_value = 0
                 break
 
         # Установка переменной в глобальной области
         if target_var == 'open_iv_buy':
             open_iv_buy = open_iv_value
+            quantity_buy = quantity_value
         else:
             open_iv_sell = open_iv_value
+            quantity_sell = quantity_value
 
     expected_profit = float(app_instance.spinbox_profit.get())
     decimals = options_data[dataname_sell]['decimals']
@@ -383,7 +388,7 @@ def selected_profit(app_instance):
                                              opt_type=opt_type_sell)  # Целевая цена для котирования продажи
             limit_price_sell = int(round((limit_price_sell_ // step_price) * step_price, decimals))
 
-            app_instance.add_message(f'{"PUT BUY:":<21}{"CALL SELL:":<21}')
+            app_instance.add_message(f'{"PUT BUY POS:":<14}{int(quantity_buy):<7}{"CALL SELL POS:":<14}{int(quantity_sell):<7}')
             app_instance.add_message(f'{dataname_buy:<21}{dataname_sell:<21}')
             app_instance.add_message(
                 f'{"ask:":<7}{round(ask_buy, decimals):<7}{round(ask_iv_buy, 2):<7}{"ask:":<7}{round(ask_sell, decimals):<7}{round(ask_iv_sell, 2):<7}')
@@ -397,7 +402,7 @@ def selected_profit(app_instance):
                                              opt_type=opt_type_sell)  # Целевая цена для котирования продажи
             limit_price_sell = int(round((limit_price_sell_ // step_price) * step_price, decimals))
 
-            app_instance.add_message(f'{"PUT SELL:":<21}{"CALL BUY:":<21}')
+            app_instance.add_message(f'{"PUT SELL POS:":<14}{int(quantity_sell):<7}{"CALL BUY POS:":<14}{int(quantity_buy):<7}')
             app_instance.add_message(f'{dataname_sell:<21}{dataname_buy:<21}')
             app_instance.add_message(
                 f'{"ask:":<7}{round(ask_sell, decimals):<7}{round(ask_iv_sell, 2):<7}{"ask:":<7}{round(ask_buy, decimals):<7}{round(ask_iv_buy, 2):<7}')
@@ -417,7 +422,7 @@ def selected_profit(app_instance):
                                             opt_type=opt_type_buy)  # Целевая цена для котирования покупки
             limit_price_buy = int(round((limit_price_buy_ // step_price) * step_price, decimals))
             app_instance.add_message(f'\n')
-            app_instance.add_message(f'{"PUT SELL:":<21}{"CALL BUY:":<21}')
+            app_instance.add_message(f'{"PUT SELL POS:":<14}{int(quantity_sell):<7}{"CALL BUY POS:":<14}{int(quantity_buy):<7}')
             app_instance.add_message(f'{dataname_sell:<21}{dataname_buy:<21}')
             app_instance.add_message(
                 f'{"ask:":<7}{round(ask_sell, decimals):<7}{round(ask_iv_sell, 2):<7}{"ask:":<7}{round(ask_buy, decimals):<7}{round(ask_iv_buy, 2):<7}')
@@ -431,7 +436,7 @@ def selected_profit(app_instance):
                                             opt_type=opt_type_buy)  # Целевая цена для котирования покупки
             limit_price_buy = int(round((limit_price_buy_ // step_price) * step_price, decimals))
             app_instance.add_message(f'\n')
-            app_instance.add_message(f'{"PUT BUY:":<21}{"CALL SELL:":<21}')
+            app_instance.add_message(f'{"PUT BUY POS:":<14}{int(quantity_buy):<7}{"CALL SELL POS:":<14}{int(quantity_sell):<7}')
             app_instance.add_message(f'{dataname_buy:<21}{dataname_sell:<21}')
             app_instance.add_message(
                 f'{"ask:":<7}{round(ask_buy, decimals):<7}{round(ask_iv_buy, 2):<7}{"ask:":<7}{round(ask_sell, decimals):<7}{round(ask_iv_sell, 2):<7}')
@@ -825,7 +830,7 @@ class App:
 
         # Спинбокс spinbox_profit profit/difference
         self.spinbox_profit_var = tk.DoubleVar(value=-2.00)
-        self.spinbox_profit = tk.Spinbox(main_frame, from_=-10, to=10, increment=0.01, format="%.2f", width=8,
+        self.spinbox_profit = tk.Spinbox(main_frame, from_=-50, to=50, increment=0.01, format="%.2f", width=8,
                                          textvariable=self.spinbox_profit_var, command=lambda: selected_profit(self))
         self.spinbox_profit.pack(pady=1)
 
@@ -1085,9 +1090,11 @@ class App:
 
                 # Здесь введём проверку, что заявка на покупку по данному тикеру в order_dict уже существует!
                 # print(f'symbol_buy: {symbol_buy}, status: {order_dict[symbol_buy]['status']}, side: {order_dict[symbol_buy]['side']}, quantity: {order_dict[symbol_buy]['quantity']} client_order_id {order_dict[symbol_buy]['client_order_id']}')
+                # if symbol_buy in order_dict and order_dict[symbol_buy]['status'] == 1 and order_dict[symbol_buy][
+                    # 'side'] == 1 and float(order_dict[symbol_buy]['quantity']) == quantity_buy and order_dict[
+                    # symbol_buy]['client_order_id'][:10] == filename:
                 if symbol_buy in order_dict and order_dict[symbol_buy]['status'] == 1 and order_dict[symbol_buy][
-                    'side'] == 1 and float(order_dict[symbol_buy]['quantity']) == quantity_buy and order_dict[
-                    symbol_buy]['client_order_id'][:10] == filename:
+                    'side'] == 1 and float(order_dict[symbol_buy]['quantity']) == quantity_buy:
                     # logger.info(f'Заявка на покупку по данному тикеру {dataname_buy} уже существует: {order_dict[symbol_buy]["order_id"]}')
                     if target_price_buy < bid_buy:  # Цена на покупку вне спреда
                         # logger.info(f'Вне спреда')
@@ -1098,7 +1105,7 @@ class App:
                         return
                     else:  # Цена внутри спреда
                         # Проверка на соответствие лимитной цены в заявке target-цене
-                        if old_target_price_buy != target_price_buy:
+                        if float(order_dict[symbol_buy]['limit_price']) != target_price_buy:
                             # Лимитная цена уже не соответствует таргет-цене, снимаем старую заявку
                             get_cancel_order(account_id, order_dict[symbol_buy]['order_id'])
                             logger.info(f'Заявка на покупку снята:{order_dict[symbol_buy]['order_id_buy_control']}')
@@ -1244,7 +1251,7 @@ class App:
                                         if self.counter >= lot_count:
                                             self.add_message(
                                                 f'Заданное количество лотов {self.counter} исполнено. Завершение работы котировщика!')
-                                            sleep(timeout)
+                                            sleep(1)
                                             self.running = False
                                         else:
                                             # Начинаем новый цикл через 1000 мс
@@ -1262,8 +1269,7 @@ class App:
                                     ticker_sell = options_data[dataname_sell]['ticker']
                                     if symbol_buy in order_dict and new_quotes[ticker_buy]['bid'] != float(
                                             order_dict[symbol_buy]['limit_price']) or target_price_sell != int(
-                                        round(new_quotes[ticker_sell]['bid'], decimals)) and order_dict[symbol_buy][
-                                        'client_order_id'][:10] == filename:
+                                        round(new_quotes[ticker_sell]['bid'], decimals)):
                                         get_cancel_order(account_id, order_id_buy)
                                         self.add_message(f'Заявка на покупку снята:{order_id_buy}')
                                     sleep(1)
@@ -1332,9 +1338,11 @@ class App:
 
                 # Здесь введём проверку, что первичная заявка на продажу по данному тикеру в order_dict уже существует!
                 # logger.info(f'symbol_sell: {symbol_sell}, status: {order_dict[symbol_sell]['status']}, side: {order_dict[symbol_sell]['side']}, quantity: {order_dict[symbol_sell]['quantity']}')
+                # if symbol_sell in order_dict and order_dict[symbol_sell]['status'] == 1 and order_dict[symbol_sell][
+                    # 'side'] == 2 and float(order_dict[symbol_sell]['quantity']) == quantity_sell and order_dict[
+                    # symbol_sell]['client_order_id'][:10] == filename:
                 if symbol_sell in order_dict and order_dict[symbol_sell]['status'] == 1 and order_dict[symbol_sell][
-                    'side'] == 2 and float(order_dict[symbol_sell]['quantity']) == quantity_sell and order_dict[
-                    symbol_sell]['client_order_id'][:10] == filename:
+                    'side'] == 2 and float(order_dict[symbol_sell]['quantity']) == quantity_sell:
                     # logger.info(f'Заявка на продажу по данному тикеру {dataname_sell} уже существует: {order_dict[symbol_sell]["order_id"]}')
                     if target_price_sell > ask_sell:  # Цена на продажу вне спреда
                         # logger.info(f'Вне спреда')
@@ -1346,7 +1354,8 @@ class App:
                         return
                     else:  # Цена внутри спреда
                         # Проверка на соответствие лимтной цены в заявке target-цене
-                        if old_target_price_sell != target_price_sell:
+                        # print(f'old_target_price_sell {old_target_price_sell} target_price_sell {target_price_sell}')
+                        if float(order_dict[symbol_sell]['limit_price']) != target_price_sell:
                             # Лимитная цена уже не соответствует таргет-цене, снимаем старую заявку
                             get_cancel_order(account_id, order_dict[symbol_sell]['order_id'])
                             logger.info(
@@ -1450,7 +1459,7 @@ class App:
                                 )
                                 logger.info(f'Заявка на продажу выставлена: {order_id}, статус: {status} ')
                                 order_id_sell_control = order_id  # Запоминаем номер ордера первичной заявки для последующей проверки исполнения
-                                sleep(timeout)
+                                sleep(1)
 
                                 position = trade_dict.get(order_id)
                                 if position:  # Сделка на продажу состоялась

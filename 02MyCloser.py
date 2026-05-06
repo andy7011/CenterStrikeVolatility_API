@@ -1090,14 +1090,16 @@ class App:
 
                 # Здесь введём проверку, что заявка на покупку по данному тикеру в order_dict уже существует!
                 # print(f'symbol_buy: {symbol_buy}, status: {order_dict[symbol_buy]['status']}, side: {order_dict[symbol_buy]['side']}, quantity: {order_dict[symbol_buy]['quantity']} client_order_id {order_dict[symbol_buy]['client_order_id']}')
+                # if symbol_buy in order_dict and order_dict[symbol_buy]['status'] == 1 and order_dict[symbol_buy][
+                    # 'side'] == 1 and float(order_dict[symbol_buy]['quantity']) == quantity_buy and order_dict[
+                    # symbol_buy]['client_order_id'][:10] == filename:
                 if symbol_buy in order_dict and order_dict[symbol_buy]['status'] == 1 and order_dict[symbol_buy][
-                    'side'] == 1 and float(order_dict[symbol_buy]['quantity']) == quantity_buy and order_dict[
-                    symbol_buy]['client_order_id'][:10] == filename:
+                    'side'] == 1 and float(order_dict[symbol_buy]['quantity']) == quantity_buy:
                     # logger.info(f'Заявка на покупку по данному тикеру {dataname_buy} уже существует: {order_dict[symbol_buy]["order_id"]}')
                     if target_price_buy < bid_buy:  # Цена на покупку вне спреда
                         # logger.info(f'Вне спреда')
-                        get_cancel_order(account_id, order_dict[symbol_buy]['order_id_buy_control'])
-                        logger.info(f'Заявка на покупку снята:{order_dict[symbol_buy]['order_id_buy_control']}')
+                        get_cancel_order(account_id, order_dict[symbol_buy]['order_id'])
+                        logger.info(f'Заявка на покупку снята:{order_dict[symbol_buy]['order_id']}')
                         # В начало цикла
                         self.root.after(1000, self.loop_function)
                         return
@@ -1106,7 +1108,7 @@ class App:
                         if float(order_dict[symbol_buy]['limit_price']) != target_price_buy:
                             # Лимитная цена уже не соответствует таргет-цене, снимаем старую заявку
                             get_cancel_order(account_id, order_dict[symbol_buy]['order_id'])
-                            logger.info(f'Заявка на покупку снята:{order_dict[symbol_buy]['order_id_buy_control']}')
+                            logger.info(f'Заявка на покупку снята:{order_dict[symbol_buy]['order_id']}')
                             # В начало цикла
                             self.root.after(1000, self.loop_function)
                             return
@@ -1249,7 +1251,7 @@ class App:
                                         if self.counter >= lot_count:
                                             self.add_message(
                                                 f'Заданное количество лотов {self.counter} исполнено. Завершение работы котировщика!')
-                                            sleep(timeout)
+                                            sleep(1)
                                             self.running = False
                                         else:
                                             # Начинаем новый цикл через 1000 мс
@@ -1267,8 +1269,7 @@ class App:
                                     ticker_sell = options_data[dataname_sell]['ticker']
                                     if symbol_buy in order_dict and new_quotes[ticker_buy]['bid'] != float(
                                             order_dict[symbol_buy]['limit_price']) or target_price_sell != int(
-                                        round(new_quotes[ticker_sell]['bid'], decimals)) and order_dict[symbol_buy][
-                                        'client_order_id'][:10] == filename:
+                                        round(new_quotes[ticker_sell]['bid'], decimals)):
                                         get_cancel_order(account_id, order_id_buy)
                                         self.add_message(f'Заявка на покупку снята:{order_id_buy}')
                                     sleep(1)
@@ -1337,9 +1338,11 @@ class App:
 
                 # Здесь введём проверку, что первичная заявка на продажу по данному тикеру в order_dict уже существует!
                 # logger.info(f'symbol_sell: {symbol_sell}, status: {order_dict[symbol_sell]['status']}, side: {order_dict[symbol_sell]['side']}, quantity: {order_dict[symbol_sell]['quantity']}')
+                # if symbol_sell in order_dict and order_dict[symbol_sell]['status'] == 1 and order_dict[symbol_sell][
+                    # 'side'] == 2 and float(order_dict[symbol_sell]['quantity']) == quantity_sell and order_dict[
+                    # symbol_sell]['client_order_id'][:10] == filename:
                 if symbol_sell in order_dict and order_dict[symbol_sell]['status'] == 1 and order_dict[symbol_sell][
-                    'side'] == 2 and float(order_dict[symbol_sell]['quantity']) == quantity_sell and order_dict[
-                    symbol_sell]['client_order_id'][:10] == filename:
+                    'side'] == 2 and float(order_dict[symbol_sell]['quantity']) == quantity_sell:
                     # logger.info(f'Заявка на продажу по данному тикеру {dataname_sell} уже существует: {order_dict[symbol_sell]["order_id"]}')
                     if target_price_sell > ask_sell:  # Цена на продажу вне спреда
                         # logger.info(f'Вне спреда')
@@ -1351,12 +1354,11 @@ class App:
                         return
                     else:  # Цена внутри спреда
                         # Проверка на соответствие лимтной цены в заявке target-цене
-                        print(f'old_target_price_sell {old_target_price_sell} target_price_sell {target_price_sell}')
+                        # print(f'old_target_price_sell {old_target_price_sell} target_price_sell {target_price_sell}')
                         if float(order_dict[symbol_sell]['limit_price']) != target_price_sell:
                             # Лимитная цена уже не соответствует таргет-цене, снимаем старую заявку
                             get_cancel_order(account_id, order_dict[symbol_sell]['order_id'])
-                            logger.info(
-                                f'Заявка на продажу снята limit_price:{order_dict[symbol_sell]['limit_price']} ask_sell: {ask_sell}')
+                            logger.info(f'Заявка на продажу снята limit_price:{order_dict[symbol_sell]['limit_price']} ask_sell: {ask_sell}')
                             # В начало цикла
                             self.root.after(1000, self.loop_function)
                             return
@@ -1456,7 +1458,7 @@ class App:
                                 )
                                 logger.info(f'Заявка на продажу выставлена: {order_id}, статус: {status} ')
                                 order_id_sell_control = order_id  # Запоминаем номер ордера первичной заявки для последующей проверки исполнения
-                                sleep(timeout)
+                                sleep(1)
 
                                 position = trade_dict.get(order_id)
                                 if position:  # Сделка на продажу состоялась
