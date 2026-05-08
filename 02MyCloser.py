@@ -264,7 +264,7 @@ def selected_sell(app_instance):
     global dataname_sell
     selected_sell_ticker = app_instance.combobox_sell.get()
     dataname_sell = "SPBOPT." + selected_sell_ticker
-    option_data_sell = get_opion_data_alor(dataname_sell)
+    option_data_sell = get_option_data_alor(dataname_sell)
     app_instance.add_message(f'Подписка на котировки опциона {selected_sell_ticker}')
 
 
@@ -285,7 +285,7 @@ def selected_buy(app_instance):
     global dataname_buy
     selected_buy_ticker = app_instance.combobox_buy.get()
     dataname_buy = "SPBOPT." + selected_buy_ticker
-    option_data_buy = get_opion_data_alor(dataname_buy)
+    option_data_buy = get_option_data_alor(dataname_buy)
     app_instance.add_message(f'Подписка на котировки опциона {selected_buy_ticker}')
 
 
@@ -474,7 +474,7 @@ def selected_indent(app_instance):
 options_data = {}
 
 
-def get_opion_data_alor(dataname):
+def get_option_data_alor(dataname):
     alor_board, symbol = ap_provider.dataname_to_alor_board_symbol(dataname)  # Код режима торгов Алора и код и тикер
     exchange = ap_provider.get_exchange(alor_board, symbol)  # Код биржи
     si = ap_provider.get_symbol_info(exchange, symbol)  # Получаем информацию о тикере

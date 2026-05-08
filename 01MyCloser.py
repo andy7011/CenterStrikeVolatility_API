@@ -25,7 +25,6 @@ from google.type.decimal_pb2 import Decimal
 app_instance = None
 account_id = "1218884"
 # Глобальные переменные для хранения данных
-# global base_asset_list, option_list, expiration_dates, selected_expiration_date, base_asset_ticker, sell_tickers_call, sell_tickers_put
 base_asset_list = []
 option_list = []
 expiration_dates = []
@@ -35,6 +34,11 @@ old_target_price_sell = None
 old_target_price_buy = None
 order_id_sell_control = None
 order_id_buy_control = None
+dataname_base_asset_ticker_old = ''
+dataname_guid_sell_old = ''
+dataname_guid_buy_old = ''
+# Словарь для хранения GUID подписок
+guids_dict = {}
 
 # Глобальные переменные
 # global filename, dataname_sell, dataname_buy, base_asset_ticker, quoter_side, expected_profit, lot_count, basket_size, timeout
@@ -53,9 +57,6 @@ indent = 0
 CALL = 'C'
 PUT = 'P'
 r = 0  # Безрисковая ставка
-# Список GUID для отписки
-guids = []
-
 
 def utc_to_msk_datetime(dt, tzinfo=False):
     """Перевод времени из UTC в московское
@@ -196,18 +197,27 @@ def _on_trade(trade):
 
 # Получаем данные по базовому активу, подписываемся на котировки
 def on_base_asset_change(event, app_instance):
-    global base_asset_ticker
-    base_asset_ticker = app_instance.combobox_base_asset.get()
+    global base_asset_ticker, dataname_base_asset_ticker_old
     dataname_base_asset_ticker = 'SPBFUT.' + base_asset_ticker
+    # Проверяем и удаляем существующую подписку на этот инструмент
+    if dataname_base_asset_ticker_old in guids_dict:
+        try:
+            guid_to_unsubscribe = guids_dict[dataname_base_asset_ticker_old]  # Получаем GUID из словаря
+            ap_provider.unsubscribe(guid_to_unsubscribe)
+            guids_dict.pop(dataname_base_asset_ticker_old, None)
+            logger.info(f'Удаление подписки {dataname_base_asset_ticker_old}')
+        except Exception as e:
+            logger.error(f'Ошибка отписки от {dataname_base_asset_ticker_old}: {e}')
+
+    base_asset_ticker = app_instance.combobox_base_asset.get()
     # print(f'dataname_base_asset_ticker {dataname_base_asset_ticker}')
     message = f'Получаем данные по базовому активу {base_asset_ticker}, подписываемся на котировки'
     app_instance.add_message(message)  # Передаём текст в окно сообщений
     print(f'Получаем данные по базовому активу {base_asset_ticker}, подписываемся на котировки')
-    alor_board, symbol = ap_provider.dataname_to_alor_board_symbol(
-        base_asset_ticker)  # Код режима торгов Алора и код и тикер
+    alor_board, symbol = ap_provider.dataname_to_alor_board_symbol(base_asset_ticker)  # Код режима торгов Алора и код и тикер
     exchange = ap_provider.get_exchange(alor_board, symbol)  # Код биржи
     guid = ap_provider.quotes_subscribe(exchange, symbol)  # Получаем код подписки
-    guids.append(guid)
+    guids_dict[dataname_base_asset_ticker] = guid
     logger.info(f'Подписка на котировки {guid} тикера {base_asset_ticker} создана')
     app_instance.add_message(f'Подписка на котировки {guid} тикера {base_asset_ticker} создана')
     sleep(1)
@@ -224,6 +234,7 @@ def on_base_asset_change(event, app_instance):
     app_instance.combobox_expire['values'] = list(expiration_dates)
     app_instance.combobox_expire.set(expiration_dates[0])
 
+    dataname_base_asset_ticker_old = dataname_base_asset_ticker
     return expiration_dates
 
 
@@ -264,7 +275,7 @@ def selected_sell(app_instance):
     global dataname_sell
     selected_sell_ticker = app_instance.combobox_sell.get()
     dataname_sell = "SPBOPT." + selected_sell_ticker
-    option_data_sell = get_opion_data_alor(dataname_sell)
+    option_data_sell = get_option_data_alor_sell(dataname_sell)
     app_instance.add_message(f'Подписка на котировки опциона {selected_sell_ticker}')
 
 
@@ -285,7 +296,7 @@ def selected_buy(app_instance):
     global dataname_buy
     selected_buy_ticker = app_instance.combobox_buy.get()
     dataname_buy = "SPBOPT." + selected_buy_ticker
-    option_data_buy = get_opion_data_alor(dataname_buy)
+    option_data_buy = get_option_data_alor_buy(dataname_buy)
     app_instance.add_message(f'Подписка на котировки опциона {selected_buy_ticker}')
 
 
@@ -473,14 +484,26 @@ def selected_indent(app_instance):
 # Получаем данные по опционам, сохраняем в словарь
 options_data = {}
 
+def get_option_data_alor_sell(dataname_sell):
+    global guids_dict, dataname_guid_sell_old
+    # Проверяем и удаляем существующую подписку на этот инструмент
+    if dataname_guid_sell_old in guids_dict:
+        try:
+            guid_to_unsubscribe = guids_dict[dataname_guid_sell_old]  # Получаем GUID из словаря
+            ap_provider.unsubscribe(guid_to_unsubscribe)
+            # guids.remove(dataname_guid_sell_old)
+            guids_dict.pop(dataname_guid_sell_old, None)
+            logger.info(f'Удаление подписки {dataname_guid_sell_old}')
+        except Exception as e:
+            logger.error(f'Ошибка отписки от {dataname_guid_sell_old}: {e}')
 
-def get_opion_data_alor(dataname):
-    alor_board, symbol = ap_provider.dataname_to_alor_board_symbol(dataname)  # Код режима торгов Алора и код и тикер
-    exchange = ap_provider.get_exchange(alor_board, symbol)  # Код биржи
-    si = ap_provider.get_symbol_info(exchange, symbol)  # Получаем информацию о тикере
-    # print(si)
+    # Получаем информацию о тикере
+    alor_board, symbol = ap_provider.dataname_to_alor_board_symbol(dataname_sell)
+    exchange = ap_provider.get_exchange(alor_board, symbol)
+    si = ap_provider.get_symbol_info(exchange, symbol)
+
     # Создаем словарь для опциона
-    options_data[dataname] = {
+    options_data[dataname_sell] = {
         'ticker': si['shortname'],
         'theorPrice': si['theorPrice'],
         'volatility': float(si['volatility']),
@@ -492,11 +515,61 @@ def get_opion_data_alor(dataname):
         'minstep': si['minstep'],
         'decimals': si['decimals']
     }
-    # print(f'options_data {options_data}')
-    guid = ap_provider.quotes_subscribe(exchange, symbol)  # Получаем код подписки
-    guids.append(guid)
-    logger.info(f'Подписка на котировки {guid} тикера {dataname} создана')
+
+    # Создаем новую подписку
+    try:
+        guid = ap_provider.quotes_subscribe(exchange, symbol)
+        guids_dict[dataname_sell] = guid
+        logger.info(f'Подписка на котировки {guid} тикера {dataname_sell} создана')
+        dataname_guid_sell_old = dataname_sell
+    except Exception as e:
+        logger.error(f'Ошибка подписки на {dataname_sell}: {e}')
+
     return options_data
+
+def get_option_data_alor_buy(dataname_buy):
+    global guids_dict, dataname_guid_buy_old
+    # Проверяем и удаляем существующую подписку на этот инструмент
+    if dataname_guid_buy_old in guids_dict:
+        try:
+            guid_to_unsubscribe = guids_dict[dataname_guid_buy_old]  # Получаем GUID из словаря
+            ap_provider.unsubscribe(guid_to_unsubscribe)
+            # guids.remove(dataname_guid_buy_old)
+            guids_dict.pop(dataname_guid_buy_old, None)
+            logger.info(f'Удаление подписки {dataname_guid_buy_old}')
+        except Exception as e:
+            logger.error(f'Ошибка отписки от {dataname_guid_buy_old}: {e}')
+
+    # Получаем информацию о тикере
+    alor_board, symbol = ap_provider.dataname_to_alor_board_symbol(dataname_buy)
+    exchange = ap_provider.get_exchange(alor_board, symbol)
+    si = ap_provider.get_symbol_info(exchange, symbol)
+
+    # Создаем словарь для опциона
+    options_data[dataname_buy] = {
+        'ticker': si['shortname'],
+        'theorPrice': si['theorPrice'],
+        'volatility': float(si['volatility']),
+        'strikePrice': float(si['strikePrice']),
+        'endExpiration': si['endExpiration'],
+        'base_asset_ticker': si['underlyingSymbol'],
+        'optionSide': si['optionSide'],
+        'lot_size': si['lotsize'],
+        'minstep': si['minstep'],
+        'decimals': si['decimals']
+    }
+
+    # Создаем новую подписку
+    try:
+        guid = ap_provider.quotes_subscribe(exchange, symbol)
+        guids_dict[dataname_buy] = guid
+        logger.info(f'Подписка на котировки {guid} тикера {dataname_buy} создана')
+        dataname_guid_buy_old = dataname_buy
+    except Exception as e:
+        logger.error(f'Ошибка подписки на {dataname_buy}: {e}')
+
+    return options_data
+
 
 
 # Выставление лимитной заявки на продажу инструмента symbol_sell (типа 'RI127500BD6@RTSX') в количестве quantity_sell
@@ -1098,8 +1171,8 @@ class App:
                     # logger.info(f'Заявка на покупку по данному тикеру {dataname_buy} уже существует: {order_dict[symbol_buy]["order_id"]}')
                     if target_price_buy < bid_buy:  # Цена на покупку вне спреда
                         # logger.info(f'Вне спреда')
-                        get_cancel_order(account_id, order_dict[symbol_buy]['order_id_buy_control'])
-                        logger.info(f'Заявка на покупку снята:{order_dict[symbol_buy]['order_id_buy_control']}')
+                        get_cancel_order(account_id, order_dict[symbol_buy]['order_id'])
+                        logger.info(f'Заявка на покупку снята:{order_dict[symbol_buy]['order_id']}')
                         # В начало цикла
                         self.root.after(1000, self.loop_function)
                         return
@@ -1108,7 +1181,7 @@ class App:
                         if float(order_dict[symbol_buy]['limit_price']) != target_price_buy:
                             # Лимитная цена уже не соответствует таргет-цене, снимаем старую заявку
                             get_cancel_order(account_id, order_dict[symbol_buy]['order_id'])
-                            logger.info(f'Заявка на покупку снята:{order_dict[symbol_buy]['order_id_buy_control']}')
+                            logger.info(f'Заявка на покупку снята:{order_dict[symbol_buy]['order_id']}')
                             # В начало цикла
                             self.root.after(1000, self.loop_function)
                             return
@@ -1358,8 +1431,7 @@ class App:
                         if float(order_dict[symbol_sell]['limit_price']) != target_price_sell:
                             # Лимитная цена уже не соответствует таргет-цене, снимаем старую заявку
                             get_cancel_order(account_id, order_dict[symbol_sell]['order_id'])
-                            logger.info(
-                                f'Заявка на продажу снята limit_price:{order_dict[symbol_sell]['limit_price']} ask_sell: {ask_sell}')
+                            logger.info(f'Заявка на продажу снята limit_price:{order_dict[symbol_sell]['limit_price']} ask_sell: {ask_sell}')
                             # В начало цикла
                             self.root.after(1000, self.loop_function)
                             return
@@ -1592,21 +1664,20 @@ class App:
         # Здесь будет ваш код сброса параметров
 
     def exit(self):
-        global guids
+        global guids_dict
         """Выход из приложения"""
         self.add_message('Отмена подписок')
-        # Отписываемся от всех каналов
-        if guids:  # Проверяем, есть ли подписки
-            for guid in guids:
+        if guids_dict:  # Проверяем, есть ли подписки в словаре
+            # Отписка от всех GUID из словаря
+            for key, guid_value in guids_dict.items():
                 try:
-                    ap_provider.unsubscribe(guid)
-                    logger.info(f'Отписка от котировок {guid} выполнена')
-                    self.add_message(f'Отписка от котировок {guid} выполнена')
-                    print(f'Отписка от котировок {guid} выполнена')
+                    ap_provider.unsubscribe(guid_value)
+                    print(f"Отписка от {key}: {guid_value}")
                 except Exception as e:
-                    logger.error(f'Ошибка при отписке от {guid}: {e}')
+                    print(f"Ошибка отписки от {key}: {e}")
         else:
             logger.info('Нет активных подписок для отписки')
+
         # Отмена подписок
         self.add_message(f'\n')
         self.add_message('Отмена подписок')
