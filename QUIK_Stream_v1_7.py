@@ -716,6 +716,7 @@ def start_mypos_history_save():
 
 
 def calculate_open_data_open_price_open_iv(sec_code, net_pos):
+    print(f"Вычисление данных для инструмента {sec_code} с позицией {net_pos}")
     """
     Вычисляет дату открытия позиции, цену и волатильность для заданного инструмента,
     как средневзвешенные по объёму первых сделок до достижения нужного объёма.
@@ -731,6 +732,7 @@ def calculate_open_data_open_price_open_iv(sec_code, net_pos):
 
         # Фильтрация по инструменту (все сделки по инструменту)
         instrument_trades_df = df[df['ticker'] == sec_code].copy()
+        print(instrument_trades_df)
 
         if instrument_trades_df.empty:
             print(f"Предупреждение: Нет данных для инструмента {sec_code}")
@@ -796,7 +798,7 @@ def calculate_open_data_open_price_open_iv(sec_code, net_pos):
         if selected_trades:  # Проверяем, что список не пуст
             # Создаем новый список без противоположных сделок
             filtered_trades = []
-            # print(f"\nСписок до фильтрации {sec_code} net_pos {net_pos}: {len(selected_trades)}")
+            print(f"\nСписок до фильтрации {sec_code} net_pos {net_pos}: {len(selected_trades)}")
 
             # Проходим по всем сделкам
             for trade in selected_trades:
@@ -806,14 +808,14 @@ def calculate_open_data_open_price_open_iv(sec_code, net_pos):
                 if net_pos > 0:
                     if volume > 0:  # Оставляем только сделки с положительным объемом
                         filtered_trades.append(trade)
-                        # print(f"Сделка LONG после фильтрации: {trade['datetime']}, {volume}, {trade['price']}, {trade['volatility']}")
+                        print(f"Сделка LONG после фильтрации: {trade['datetime']}, {volume}, {trade['price']}, {trade['volatility']}")
                 # Если required_volume отрицательный - удаляем сделки с положительным объемом
                 else:
                     if volume < 0:  # Оставляем только сделки с отрицательным объемом
                         filtered_trades.append(trade)
-                        # print(f"Сделка SHORT после фильтрации: {trade['datetime']}, {volume}, {trade['price']}, {trade['volatility']}")
+                        print(f"Сделка SHORT после фильтрации: {trade['datetime']}, {volume}, {trade['price']}, {trade['volatility']}")
 
-            # print(f"Список после фильтрации {sec_code} net_pos {net_pos}: {len(filtered_trades)}")
+            print(f"Список после фильтрации {sec_code} net_pos {net_pos}: {len(filtered_trades)}")
 
             # Заменяем исходный список отфильтрованными сделками
             selected_trades = filtered_trades

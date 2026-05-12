@@ -198,10 +198,15 @@ def _on_trade(trade):
 # Получаем данные по базовому активу, подписываемся на котировки
 def on_base_asset_change(event, app_instance):
     global base_asset_ticker, dataname_base_asset_ticker_old
-    dataname_base_asset_ticker = 'SPBFUT.' + base_asset_ticker
-    # Проверяем и удаляем существующую подписку на этот инструмент
+    selected_base_asset_ticker = app_instance.combobox_base_asset.get()
+    base_asset_ticker = selected_base_asset_ticker
+    # print(f'selected_base_asset_ticker {selected_base_asset_ticker}')
+    dataname_base_asset_ticker = 'SPBFUT.' + selected_base_asset_ticker
+
+    # Проверяем и удаляем существующую подписку на предыдущий инструмент
     if dataname_base_asset_ticker_old in guids_dict:
         try:
+            # print(f'guids_dict {guids_dict}')
             guid_to_unsubscribe = guids_dict[dataname_base_asset_ticker_old]  # Получаем GUID из словаря
             ap_provider.unsubscribe(guid_to_unsubscribe)
             guids_dict.pop(dataname_base_asset_ticker_old, None)
@@ -209,26 +214,26 @@ def on_base_asset_change(event, app_instance):
         except Exception as e:
             logger.error(f'Ошибка отписки от {dataname_base_asset_ticker_old}: {e}')
 
-    base_asset_ticker = app_instance.combobox_base_asset.get()
-    # print(f'dataname_base_asset_ticker {dataname_base_asset_ticker}')
-    message = f'Получаем данные по базовому активу {base_asset_ticker}, подписываемся на котировки'
+    message = f'Получаем данные по базовому активу {selected_base_asset_ticker}, подписываемся на котировки'
     app_instance.add_message(message)  # Передаём текст в окно сообщений
-    print(f'Получаем данные по базовому активу {base_asset_ticker}, подписываемся на котировки')
-    alor_board, symbol = ap_provider.dataname_to_alor_board_symbol(base_asset_ticker)  # Код режима торгов Алора и код и тикер
+    print(f'Получаем данные по базовому активу {selected_base_asset_ticker}, подписываемся на котировки')
+    alor_board, symbol = ap_provider.dataname_to_alor_board_symbol(selected_base_asset_ticker)  # Код режима торгов Алора и код и тикер
     exchange = ap_provider.get_exchange(alor_board, symbol)  # Код биржи
     guid = ap_provider.quotes_subscribe(exchange, symbol)  # Получаем код подписки
     guids_dict[dataname_base_asset_ticker] = guid
+    dataname_base_asset_ticker_old = dataname_base_asset_ticker
     logger.info(f'Подписка на котировки {guid} тикера {base_asset_ticker} создана')
     app_instance.add_message(f'Подписка на котировки {guid} тикера {base_asset_ticker} создана')
+
     sleep(1)
 
     # Список дат экспирации по тикеру БА
-    expirations = get_option_expirations(base_asset_ticker)
+    expirations = get_option_expirations(selected_base_asset_ticker)
     expiration_dates_ = list(set(exp['expiration_date'] for exp in expirations))
     # Сортируем и форматируем даты
     expiration_dates = [date.split('-')[2] + '.' + date.split('-')[1] + '.' + date.split('-')[0]
                         for date in sorted(expiration_dates_, key=lambda x: datetime.strptime(x, '%Y-%m-%d'))]
-    app_instance.add_message(f'Даты экспирации опционов базового актива {base_asset_ticker}: {expiration_dates}')
+    app_instance.add_message(f'Даты экспирации опционов базового актива {selected_base_asset_ticker}: {expiration_dates}')
 
     # Обновляем значения в combobox_expire
     app_instance.combobox_expire['values'] = list(expiration_dates)
@@ -325,8 +330,8 @@ def selected_profit(app_instance):
 
         # Поиск позиции по символу
         for symbol, quantity in portfolio_positions.items():
-            # print(symbol, dataname, ticker, quantity)
-            if ticker in symbol:  # Сравнение если ticker содержится в symbol
+            print(symbol, dataname, ticker, quantity)
+            if ticker == symbol.split('@')[0]:  # Сравнение если ticker содержится в symbol
 
                 try:
                     open_iv_value = float(
