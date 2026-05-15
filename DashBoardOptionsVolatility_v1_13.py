@@ -216,7 +216,7 @@ def get_candles_request(dataname, time_frame, dt_from):
         dt_from: начальная дата
     """
     global df_candles
-    broker = brokers['АС']  # Брокер по ключу из Config.py словаря brokers
+    broker = brokers['Ф']  # Брокер по ключу из Config.py словаря brokers
     symbol = broker.get_symbol_by_dataname(dataname)  # Тикер по названию
     bars = broker.get_history(symbol, time_frame, dt_from=dt_from)  # Получаем историю тикера за 140 дней
 
@@ -679,6 +679,7 @@ def update_output_smile(value, n):
 
         dff = df[(df._base_asset_ticker == value)]  # оставим только опционы базового актива
 
+        print(base_asset_list)
         for asset in base_asset_list:
             if asset['_ticker'] == value:
                 base_asset_last_price = asset['_last_price']  # получаем последнюю цену базового актива
@@ -718,12 +719,6 @@ def update_output_smile(value, n):
         # Create figure with secondary y-axis
         fig = make_subplots(specs=[[{"secondary_y": True}]])
 
-        # # Рисуем график улыбки
-        # for exp_day in dff_call['expiration_date'].unique():
-        #     dff_smile = dff_call[dff_call.expiration_date == exp_day]
-        #     fig.add_trace(go.Scatter(x=dff_smile['_strike'], y=dff_smile['_volatility'], mode='lines+text',
-        #                              name=exp_day), secondary_y=False, )
-
         # Рисуем график улыбки с уникальными цветами
         for exp_day in exp_dates:
             dff_smile = dff_call[dff_call.expiration_date == exp_day]
@@ -734,42 +729,6 @@ def update_output_smile(value, n):
                 name=exp_day,
                 line=dict(color=expdate_colors[exp_day])
             ), secondary_y=False)
-
-        # # Мои позиции BUY
-        # fig.add_trace(go.Scatter(x=df_table_buy['strike'], y=df_table_buy['OpenIV'],
-        #                          mode='markers+text', text=df_table_buy['OpenIV'], textposition='middle left',
-        #                          marker=dict(size=11, symbol="star-triangle-up-open", color='lightgreen'),
-        #                          name='My Pos Buy',
-        #                          customdata=df_table_buy[['option_type', 'net_pos', 'expdate', 'ticker']],
-        #                          hovertemplate="<b>%{customdata}</b>"
-        #                          ))
-        #
-        # # Мои позиции SELL
-        # fig.add_trace(go.Scatter(x=df_table_sell['strike'], y=df_table_sell['OpenIV'],
-        #                          mode='markers+text', text=df_table_sell['OpenIV'], textposition='middle left',
-        #                          marker=dict(size=11, symbol="star-triangle-down-open", color='magenta'),
-        #                          name='My Pos Sell',
-        #                          customdata=df_table_sell[['option_type', 'net_pos', 'expdate', 'ticker']],
-        #                          hovertemplate="<b>%{customdata}</b><br>"
-        #                          ))
-        #
-        # # Мои ордерра BUY
-        # fig.add_trace(go.Scatter(x=df_orders_buy['strike'], y=df_orders_buy['volatility'],
-        #                          mode='markers+text', text=df_orders_buy['volatility'], textposition='middle left',
-        #                          marker=dict(size=8, symbol="cross-thin", line=dict(width=1, color="lightgreen")),
-        #                          name='My Orders BUY',
-        #                          customdata=df_orders_buy[['operation', 'option_type', 'expdate', 'price', 'ticker']],
-        #                          hovertemplate="<b>%{customdata}</b><br>"
-        #                          ))
-        #
-        # # Мои ордерра SELL
-        # fig.add_trace(go.Scatter(x=df_orders_sell['strike'], y=df_orders_sell['volatility'],
-        #                          mode='markers+text', text=df_orders_sell['volatility'], textposition='middle left',
-        #                          marker=dict(size=8, symbol="cross-thin", line=dict(width=1, color="magenta")),
-        #                          name='My Orders SELL',
-        #                          customdata=df_orders_sell[['operation', 'option_type', 'expdate', 'price', 'ticker']],
-        #                          hovertemplate="<b>%{customdata}</b><br>"
-        #                          ))
 
         # Мои позиции BUY
         for exp_day in df_table_buy['expdate'].unique():
@@ -1505,7 +1464,7 @@ def update_equity_history(dropdown_value, slider_value, n):
     time_frame = 'D1'
     dataname = f'SPBFUT.{dropdown_value}'
 
-    broker = brokers['АС']  # Брокер по ключу из Config.py словаря brokers
+    broker = brokers['Ф']  # Брокер по ключу из Config.py словаря brokers
     symbol = broker.get_symbol_by_dataname(dataname)  # Тикер по названию
     bars = broker.get_history(symbol, time_frame, dt_from=dt_from)  # Получаем историю тикера за 140 дней
     print(f"Запрос свечей: {dataname} {time_frame} начиная с даты {dt_from}")
