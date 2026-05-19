@@ -330,7 +330,7 @@ def selected_profit(app_instance):
 
         # Поиск позиции по символу
         for symbol, quantity in portfolio_positions.items():
-            print(symbol, dataname, ticker, quantity)
+            # print(symbol, dataname, ticker, quantity)
             if ticker == symbol.split('@')[0]:  # Сравнение если ticker содержится в symbol
 
                 try:
@@ -1252,6 +1252,7 @@ class App:
                                 if self.counter >= lot_count:
                                     self.add_message(
                                         f'Заданное количество лотов {self.counter} исполнено. Завершение работы котировщика!')
+                                    self.set_led_color('lightgray')  # Смена цвета светодиода
                                     sleep(timeout)
                                     self.running = False
                                 else:
@@ -1342,6 +1343,7 @@ class App:
                                         if self.counter >= lot_count:
                                             self.add_message(
                                                 f'Заданное количество лотов {self.counter} исполнено. Завершение работы котировщика!')
+                                            self.set_led_color('lightgray')  # Смена цвета светодиода
                                             sleep(1)
                                             self.running = False
                                         else:
@@ -1507,6 +1509,7 @@ class App:
                                 if self.counter >= lot_count:
                                     self.add_message(
                                         f'Заданное количество лотов {self.counter} исполнено. Завершение работы котировщика!')
+                                    self.set_led_color('lightgray')  # Смена цвета светодиода
                                     sleep(timeout)
                                     self.running = False
                                 else:
@@ -1596,6 +1599,7 @@ class App:
                                         if self.counter >= lot_count:
                                             self.add_message(
                                                 f'Заданное количество лотов {self.counter} исполнено. Завершение работы котировщика!')
+                                            self.set_led_color('lightgray')  # Смена цвета светодиода
                                             sleep(timeout)
                                             self.running = False
                                         else:
