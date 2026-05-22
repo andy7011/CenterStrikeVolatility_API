@@ -109,6 +109,7 @@ def _on_new_quotes(response):
     # logger.info(f'Котировка - {response["data"]}')
     # Извлекаем данные
     description = response["data"]['description']
+    # print(response["data"])
     ask = float(response["data"]['ask']) if response["data"]['ask'] else 0.0
     ask_vol = float(response["data"]['ask_vol']) if response["data"]['ask_vol'] else 0.0
     bid = float(response["data"]['bid']) if response["data"]['bid'] else 0.0
@@ -371,6 +372,7 @@ def selected_profit(app_instance):
         ask_iv_sell = newton_vol_put(S, K, T, ask_sell, r, sigma) * 100
         bid_iv_sell = newton_vol_put(S, K, T, bid_sell, r, sigma) * 100
         diff_pos = open_iv_buy - open_iv_sell
+    theor_iv_sell = options_data[dataname_sell]['volatility']
     app_instance.add_message(f'\n')
     app_instance.add_message(f"Expected profit: {expected_profit} Difference pos: {round(diff_pos, 2)}")
     # print(f'ask_iv_sell: {round(ask_iv_sell, 2)}, bid_iv_sell: {round(bid_iv_sell, 2)}, last_iv_sell: {round(last_iv_sell, 2)}')
@@ -392,12 +394,16 @@ def selected_profit(app_instance):
     theor_iv_buy = options_data[dataname_buy]['volatility']
     # print(f'ask_iv_buy: {round(ask_iv_buy, 2)}, bid_iv_buy: {round(bid_iv_buy, 2)}, last_iv_buy: {round(last_iv_buy, 2)}')
 
+    theor_iv_sell = options_data[dataname_sell]['volatility']
+    theor_iv_buy = options_data[dataname_buy]['volatility']
+
     if quoter_side == 'SELL':
 
         S, K, T, opt_type_sell = get_option_data_for_calc_price(dataname_sell)  # Получаем данные опциона dataname_sell
 
         # PUT - слева CALL - справа
         opt_type_sell = CALL if options_data[dataname_sell]['optionSide'] == 'Call' else PUT
+
         if opt_type_sell == CALL:
             target_iv_sell = ask_iv_buy + expected_profit  # Целевая прибыль для котирования продажи
             limit_price_sell_ = option_price(S, target_iv_sell / 100, K, T, r,
@@ -412,6 +418,7 @@ def selected_profit(app_instance):
                 f'{"bid:":<7}{round(bid_buy, decimals):<7}{round(bid_iv_buy, 2):<7}{"bid:":<7}{round(bid_sell, decimals):<7}{round(bid_iv_sell, 2):<7}')
             app_instance.add_message(
                 f'{"target:":<7}{round(ask_buy, decimals):<7}{round(ask_iv_buy, 2):<7}{"target:":<7}{round(limit_price_sell, decimals):<7}{round(target_iv_sell, 2):<7}')
+            app_instance.add_message(f'{"Diff. theor:":<7}{round((theor_iv_buy - target_iv_sell), 2):<7}')
         else:  # opt_type_sell == PUT
             target_iv_sell = ask_iv_buy - expected_profit  # Целевая прибыль для котирования продажи
             limit_price_sell_ = option_price(S, target_iv_sell / 100, K, T, r,
@@ -426,6 +433,7 @@ def selected_profit(app_instance):
                 f'{"bid:":<7}{round(bid_sell, decimals):<7}{round(bid_iv_sell, 2):<7}{"bid:":<7}{round(bid_buy, decimals):<7}{round(bid_iv_buy, 2):<7}')
             app_instance.add_message(
                 f'{"target:":<7}{round(limit_price_sell, decimals):<7}{round(target_iv_sell, 2):<7}{"target:":<7}{round(ask_buy, decimals):<7}{round(ask_iv_buy, 2):<7}')
+            app_instance.add_message(f'{"Diff. theor:":<7}{round((theor_iv_buy - theor_iv_sell), 2):<7}')
     else:  # quoter_side == 'BUY'
 
         S, K, T, opt_type_buy = get_option_data_for_calc_price(dataname_buy)  # Получаем данные опциона dataname_sell
@@ -446,6 +454,7 @@ def selected_profit(app_instance):
                 f'{"bid:":<7}{round(bid_sell, decimals):<7}{round(bid_iv_sell, 2):<7}{"bid:":<7}{round(bid_buy, decimals):<7}{round(bid_iv_buy, 2):<7}')
             app_instance.add_message(
                 f'{"target:":<7}{round(bid_sell, decimals):<7}{round(bid_iv_sell, 2):<7}{"target:":<7}{round(limit_price_buy, decimals):<7}{round(target_iv_buy, 2):<7}')
+            app_instance.add_message(f'{"Diff. theor:":<7}{round((theor_iv_buy - theor_iv_sell), 2):<7}')
         else:
             target_iv_buy = bid_iv_sell - expected_profit  # Целевая прибыль для котирования покупки
             limit_price_buy_ = option_price(S, target_iv_buy / 100, K, T, r,
@@ -460,6 +469,7 @@ def selected_profit(app_instance):
                 f'{"bid:":<7}{round(bid_buy, decimals):<7}{round(bid_iv_buy, 2):<7}{"bid:":<7}{round(bid_sell, decimals):<7}{round(bid_iv_sell, 2):<7}')
             app_instance.add_message(
                 f'{"target:":<7}{round(limit_price_buy, decimals):<7}{round(target_iv_buy, 2):<7}{"target:":<7}{round(bid_sell, decimals):<7}{round(bid_iv_sell, 2):<7}')
+            app_instance.add_message(f'{"Diff. theor:":<7}{round((theor_iv_buy - theor_iv_sell), 2):<7}')
 
 
 def selected_lot_count(app_instance):
@@ -1035,7 +1045,8 @@ class App:
             # Поиск позиции по символу
             for symbol, quantity in portfolio_positions.items():
                 # print(symbol, dataname)
-                if ticker in symbol:  # Сравнение если ticker содержится в symbol
+                # if ticker in symbol:  # Сравнение если ticker содержится в symbol
+                if ticker == symbol.split('@')[0]:  # Сравнение если ticker содержится в symbol
                     try:
                         open_iv_sell = float(
                             (calculate_open_data_open_price_open_iv(ticker, float(quantity)))[2])
@@ -1079,7 +1090,8 @@ class App:
             # Поиск позиции по символу
             for symbol, quantity in portfolio_positions.items():
                 # print(symbol, dataname)
-                if ticker in symbol:  # Сравнение если ticker содержится в symbol
+                # if ticker in symbol:  # Сравнение если ticker содержится в symbol
+                if ticker == symbol.split('@')[0]:  # Сравнение если ticker содержится в symbol
                     try:
                         open_iv_buy = float(
                             (calculate_open_data_open_price_open_iv(ticker, float(quantity)))[2])

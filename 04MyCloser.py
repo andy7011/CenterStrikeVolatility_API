@@ -330,7 +330,7 @@ def selected_profit(app_instance):
 
         # Поиск позиции по символу
         for symbol, quantity in portfolio_positions.items():
-            print(symbol, dataname, ticker, quantity)
+            # print(symbol, dataname, ticker, quantity)
             if ticker == symbol.split('@')[0]:  # Сравнение если ticker содержится в symbol
 
                 try:
@@ -1035,7 +1035,8 @@ class App:
             # Поиск позиции по символу
             for symbol, quantity in portfolio_positions.items():
                 # print(symbol, dataname)
-                if ticker in symbol:  # Сравнение если ticker содержится в symbol
+                # if ticker in symbol:  # Сравнение если ticker содержится в symbol
+                if ticker == symbol.split('@')[0]:  # Сравнение если ticker содержится в symbol
                     try:
                         open_iv_sell = float(
                             (calculate_open_data_open_price_open_iv(ticker, float(quantity)))[2])
@@ -1079,7 +1080,8 @@ class App:
             # Поиск позиции по символу
             for symbol, quantity in portfolio_positions.items():
                 # print(symbol, dataname)
-                if ticker in symbol:  # Сравнение если ticker содержится в symbol
+                # if ticker in symbol:  # Сравнение если ticker содержится в symbol
+                if ticker == symbol.split('@')[0]:  # Сравнение если ticker содержится в symbol
                     try:
                         open_iv_buy = float(
                             (calculate_open_data_open_price_open_iv(ticker, float(quantity)))[2])
@@ -1180,8 +1182,9 @@ class App:
                 # if symbol_buy in order_dict and order_dict[symbol_buy]['status'] == 1 and order_dict[symbol_buy][
                     # 'side'] == 1 and float(order_dict[symbol_buy]['quantity']) == quantity_buy and order_dict[
                     # symbol_buy]['client_order_id'][:10] == filename:
-                if symbol_buy in order_dict and order_dict[symbol_buy]['status'] == 1 and order_dict[symbol_buy][
-                    'side'] == 1 and float(order_dict[symbol_buy]['quantity']) == quantity_buy:
+                # if symbol_buy in order_dict and order_dict[symbol_buy]['status'] == 1 and order_dict[symbol_buy][
+                    # 'side'] == 1 and float(order_dict[symbol_buy]['quantity']) == quantity_buy:
+                if symbol_buy in order_dict and order_dict[symbol_buy]['status'] == 1:
                     # logger.info(f'Заявка на покупку по данному тикеру {dataname_buy} уже существует: {order_dict[symbol_buy]["order_id"]}')
                     if target_price_buy < bid_buy:  # Цена на покупку вне спреда
                         # logger.info(f'Вне спреда')
@@ -1252,6 +1255,7 @@ class App:
                                 if self.counter >= lot_count:
                                     self.add_message(
                                         f'Заданное количество лотов {self.counter} исполнено. Завершение работы котировщика!')
+                                    self.set_led_color('lightgray')  # Смена цвета светодиода
                                     sleep(timeout)
                                     self.running = False
                                 else:
@@ -1342,6 +1346,7 @@ class App:
                                         if self.counter >= lot_count:
                                             self.add_message(
                                                 f'Заданное количество лотов {self.counter} исполнено. Завершение работы котировщика!')
+                                            self.set_led_color('lightgray')  # Смена цвета светодиода
                                             sleep(1)
                                             self.running = False
                                         else:
@@ -1433,8 +1438,9 @@ class App:
                 # if symbol_sell in order_dict and order_dict[symbol_sell]['status'] == 1 and order_dict[symbol_sell][
                     # 'side'] == 2 and float(order_dict[symbol_sell]['quantity']) == quantity_sell and order_dict[
                     # symbol_sell]['client_order_id'][:10] == filename:
-                if symbol_sell in order_dict and order_dict[symbol_sell]['status'] == 1 and order_dict[symbol_sell][
-                    'side'] == 2 and float(order_dict[symbol_sell]['quantity']) == quantity_sell:
+                # if symbol_sell in order_dict and order_dict[symbol_sell]['status'] == 1 and order_dict[symbol_sell][
+                    # 'side'] == 2 and float(order_dict[symbol_sell]['quantity']) == quantity_sell:
+                if symbol_sell in order_dict and order_dict[symbol_sell]['status'] == 1:
                     # logger.info(f'Заявка на продажу по данному тикеру {dataname_sell} уже существует: {order_dict[symbol_sell]["order_id"]}')
                     if target_price_sell > ask_sell:  # Цена на продажу вне спреда
                         # logger.info(f'Вне спреда')
@@ -1507,6 +1513,7 @@ class App:
                                 if self.counter >= lot_count:
                                     self.add_message(
                                         f'Заданное количество лотов {self.counter} исполнено. Завершение работы котировщика!')
+                                    self.set_led_color('lightgray')  # Смена цвета светодиода
                                     sleep(timeout)
                                     self.running = False
                                 else:
@@ -1596,6 +1603,7 @@ class App:
                                         if self.counter >= lot_count:
                                             self.add_message(
                                                 f'Заданное количество лотов {self.counter} исполнено. Завершение работы котировщика!')
+                                            self.set_led_color('lightgray')  # Смена цвета светодиода
                                             sleep(timeout)
                                             self.running = False
                                         else:

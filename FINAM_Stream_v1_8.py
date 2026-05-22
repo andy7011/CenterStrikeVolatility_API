@@ -1,3 +1,5 @@
+import logging  # Выводим лог на консоль и в файл
+import os.path
 import time
 from time import sleep  # Задержка в секундах перед выполнением операций
 import signal
@@ -19,6 +21,18 @@ futures_schedule = Futures()
 # Конфигурация для работы с файлами
 temp_str = 'C:\\Users\\шадрин\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
+
+filename = os.path.os.path.basename(__file__)  # Получаем имя файла
+log_filename = filename + ".log"
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',  # Формат сообщения
+                    datefmt='%d.%m.%Y %H:%M:%S',  # Формат даты
+                    level=logging.INFO,  # Уровень логируемых событий NOTSET/DEBUG/INFO/WARNING/ERROR/CRITICAL
+                    handlers=[logging.FileHandler(log_filename, encoding='utf-8'),
+                              logging.StreamHandler()])  # Лог записываем в файл и выводим на консоль
+logging.Formatter.converter = lambda *args: datetime.now(
+    tz=fp_provider.tz_msk).timetuple()  # В логе время указываем по МСК
+
+logger = logging.getLogger(filename)  # Будем вести лог
 
 # Глобальные переменные
 account_id = None  # Инициализируем переменную

@@ -24,9 +24,10 @@ import inspect
 from FinLabPy.Config import brokers, default_broker  # Все брокеры и брокер по умолчанию
 from FinLabPy.Core import bars_to_df  # Перевод бар в pandas DataFrame
 from AlorPy import AlorPy  # Работа с Alor OpenAPI V2
+
 ap_provider = AlorPy()  # Подключаемся ко всем торговым счетам
 
-temp_str = 'C:\\Users\\шадрин\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\sftpuser\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 # Глобальные переменные для хранения данных
@@ -38,6 +39,7 @@ global df_candles
 
 # Первый фьючерс в списке MAP
 first_key = next(iter(MAP))
+
 
 def utc_to_msk_datetime(dt, tzinfo=False):
     """Перевод времени из UTC в московское
@@ -60,6 +62,7 @@ def utc_timestamp_to_msk_datetime(seconds) -> datetime:
     """
     dt_utc = datetime.fromtimestamp(seconds)  # Переводим кол-во секунд, прошедших с 01.01.1970 в UTC
     return utc_to_msk_datetime(dt_utc)  # Переводим время из UTC в московское
+
 
 # Функция для получения данных с API при первом запуске приложения, далее каждые 10 секунд по запуску функции обратного вызова update_time(n)
 def fetch_api_data():
@@ -85,6 +88,7 @@ def fetch_api_data():
         })
 
     return model_from_api
+
 
 def get_object_from_json_endpoint_with_retry(url, method='GET', params={}, max_delay=180, timeout=10):
     """
@@ -127,6 +131,7 @@ def get_object_from_json_endpoint_with_retry(url, method='GET', params={}, max_d
         except requests.exceptions.Timeout:
             print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} Timeout при запросе к {url}")
             raise
+
 
 # Выполняем запрос при запуске
 fetch_api_data()
@@ -206,6 +211,7 @@ dt_from = datetime.now() - timedelta(days=140)
 dataname = f'SPBFUT.{first_key}'
 time_frame = 'M15'
 
+
 # Получаем историю баров для указанного инструмента и временного интервала
 def get_candles_request(dataname, time_frame, dt_from):
     """
@@ -216,7 +222,7 @@ def get_candles_request(dataname, time_frame, dt_from):
         dt_from: начальная дата
     """
     global df_candles
-    broker = brokers['АС']  # Брокер по ключу из Config.py словаря brokers
+    broker = brokers['Ф']  # Брокер по ключу из Config.py словаря brokers
     symbol = broker.get_symbol_by_dataname(dataname)  # Тикер по названию
     bars = broker.get_history(symbol, time_frame, dt_from=dt_from)  # Получаем историю тикера за 140 дней
 
@@ -235,6 +241,7 @@ def get_candles_request(dataname, time_frame, dt_from):
     ap_provider.close_web_socket()  # Перед выходом закрываем соединение с WebSocket
 
     return df_candles
+
 
 # Вызов функции после её определения
 df_candles = get_candles_request(dataname, time_frame, dt_from)
@@ -260,9 +267,11 @@ df_combined = df_combined.sort_values('Date').reset_index(drop=True)
 # Сохранить df_combined в файл MyEquity.CSV с разделителем запятая
 df_combined.to_csv(temp_obj.substitute(name_file='MyEquity.CSV'), sep=',', index=False)
 
+
 def zero_to_nan(values):
     """Replace every 0 with 'nan' and return a copy."""
     return [float('nan') if x == 0 else x for x in values]
+
 
 # Список базовых активов, вычисление и добавление в словарь центрального страйка
 for asset in base_asset_list:
@@ -290,7 +299,6 @@ df['_expiration_datetime'] = pd.to_datetime(df['_expiration_datetime'], format='
 df['_expiration_datetime'].dt.date
 df['expiration_date'] = df['_expiration_datetime'].dt.strftime('%d.%m.%Y')
 
-
 # ОФОРМЛЕНИЕ ВКЛАДОК TAB
 # Tabs content
 tab1_content = [dcc.Graph(id='MyPosTiltHistory', style={'margin-top': 10})]
@@ -303,20 +311,20 @@ tab3_content = [  # IV ATM history
                    style=dict(display='flex', justifyContent='right'),
                    id='my-radio-buttons-final'),
 ]
-tab4_content = [ # MyPosTable
+tab4_content = [  # MyPosTable
     html.Div([
         # Левая колонка
         html.Div([
             html.Label("Закрыть позицию", style={'color': 'white', 'textAlign': 'center', 'display': 'block'}),
-            html.Label("SELL", style={'color': 'white', 'textAlign': 'center', 'display': 'block'}) ,
+            html.Label("SELL", style={'color': 'white', 'textAlign': 'center', 'display': 'block'}),
             dcc.Dropdown(
                 id='dropdown_sell',
                 options=[{'label': 'Option sell', 'value': '1'}, {'label': 'Option 2', 'value': '2'}],
                 value='1',
                 style={'backgroundColor': '#2d2d2d',
-                    'color': 'white',
-                    'border': '1px solid #444',
-                    'borderRadius': '4px', 'textAlign': 'center'},
+                       'color': 'white',
+                       'border': '1px solid #444',
+                       'borderRadius': '4px', 'textAlign': 'center'},
                 className='dark-dropdown'
             ),
             html.Label("BUY", style={'color': 'white', 'textAlign': 'center', 'display': 'block'}),
@@ -325,9 +333,9 @@ tab4_content = [ # MyPosTable
                 options=[{'label': 'Option buy', 'value': 'A'}, {'label': 'Option B', 'value': 'B'}],
                 value='A',
                 style={'backgroundColor': '#2d2d2d',
-                    'color': 'white',
-                    'border': '1px solid #444',
-                    'borderRadius': '4px', 'textAlign': 'center'},
+                       'color': 'white',
+                       'border': '1px solid #444',
+                       'borderRadius': '4px', 'textAlign': 'center'},
                 className='dark-dropdown'
             ),
             html.Label("Expected profit", style={'color': 'white', 'textAlign': 'center', 'display': 'block'}),
@@ -346,10 +354,17 @@ tab4_content = [ # MyPosTable
                 value=0,
                 style={'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'textAlign': 'center'}
             ),
-            html.Button("SAVE", id="button1", style={'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block', 'margin': '0 auto'}),
-            html.Button("START", id="button2", style={'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block', 'margin': '0 auto'}),
-            html.Button("STOP", id="button3", style={'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block', 'margin': '0 auto'})
-        ], style={'width': '12%', 'display': 'inline-block', 'verticalAlign': 'top', 'marginLeft': '1%', 'backgroundColor': 'rgb(30, 30, 30)', 'textAlign': 'center'}),
+            html.Button("SAVE", id="button1",
+                        style={'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block',
+                               'margin': '0 auto'}),
+            html.Button("START", id="button2",
+                        style={'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block',
+                               'margin': '0 auto'}),
+            html.Button("STOP", id="button3",
+                        style={'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block',
+                               'margin': '0 auto'})
+        ], style={'width': '12%', 'display': 'inline-block', 'verticalAlign': 'top', 'marginLeft': '1%',
+                  'backgroundColor': 'rgb(30, 30, 30)', 'textAlign': 'center'}),
 
         # Правая колонка
         html.Div([
@@ -466,7 +481,7 @@ tab6_content = [  # Таблица моих ордеров
 
 tab7_content = [dcc.Graph(id='MyEquityHistory', style={'margin-top': 10})]
 
-tab8_content = [ # MyQuoteRobot котировщик
+tab8_content = [  # MyQuoteRobot котировщик
     dbc.Row([
         dbc.Col([
             dcc.Dropdown(
@@ -501,7 +516,6 @@ tab8_content = [ # MyQuoteRobot котировщик
     ])
 ]
 
-
 # Создаем приложение Dash в тёмной теме
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.DARKLY])
 
@@ -510,16 +524,16 @@ go.Figure(layout=go.Layout(template="plotly_dark"))
 
 app.layout = html.Div(children=[
 
-    html.Div(children=[# График улыбки волатильности
+    html.Div(children=[  # График улыбки волатильности
         html.Div(children=[
             # График улыбки волатильности
             dcc.Graph(id='plot_smile'),
         ], style={'width': '87%', 'display': 'inline-block'}),
 
-        html.Div(children=[# Текущее время обновления данных
+        html.Div(children=[  # Текущее время обновления данных
             # Текущее время обновления данных
             html.H6(id='last_update_time'),
-            dcc.Dropdown(# Селектор выбора базового актива
+            dcc.Dropdown(  # Селектор выбора базового актива
                 df._base_asset_ticker.unique(),
                 value=first_key,
                 id='dropdown-selection',
@@ -532,33 +546,34 @@ app.layout = html.Div(children=[
                 className='dark-dropdown'
             )
             ,
-            daq.Gauge( # Спидометр TrueVega # https://stackoverflow.com/questions/69275527/python-dash-gauge-how-can-i-use-strings-as-values-instead-of-numbers
-                        id="graph-gauge",
-                      units="TrueVega",
-                      label='TrueVega',
-                      labelPosition='bottom',
-                      color={
-                          "ranges": {
-                              "red": [0, 2],
-                              "pink": [2, 4],
-                              "#ADD8E6": [4, 6],
-                              "#4169E1": [6, 8],
-                              "blue": [8, 10],
-                          },
-                      },
-                      scale={
-                          "custom": {
-                              1: {"label": "Strong Sell"},
-                              3: {"label": "Sell"},
-                              5: {"label": "Neutral"},
-                              7: {"label": "Buy"},
-                              9: {"label": "Strong Buy"},
-                          }
-                      },
-                      value=0,
-                      max=10,
-                      min=0,
-                      ),
+            daq.Gauge(
+                # Спидометр TrueVega # https://stackoverflow.com/questions/69275527/python-dash-gauge-how-can-i-use-strings-as-values-instead-of-numbers
+                id="graph-gauge",
+                units="TrueVega",
+                label='TrueVega',
+                labelPosition='bottom',
+                color={
+                    "ranges": {
+                        "red": [0, 2],
+                        "pink": [2, 4],
+                        "#ADD8E6": [4, 6],
+                        "#4169E1": [6, 8],
+                        "blue": [8, 10],
+                    },
+                },
+                scale={
+                    "custom": {
+                        1: {"label": "Strong Sell"},
+                        3: {"label": "Sell"},
+                        5: {"label": "Neutral"},
+                        7: {"label": "Buy"},
+                        9: {"label": "Strong Buy"},
+                    }
+                },
+                value=0,
+                max=10,
+                min=0,
+            ),
         ], style={'display': 'inline-block'}),
 
     ], style={'display': 'flex', 'flexDirection': 'row'}),
@@ -590,7 +605,7 @@ app.layout = html.Div(children=[
         # Интервал обновления данных - 1 минута
         dcc.Interval(
             id='interval-1min',
-            interval=1000 * 60,   # 1 минута
+            interval=1000 * 60,  # 1 минута
             n_intervals=0),
 
         # Интервал обновления данных - 5 минут
@@ -626,6 +641,7 @@ app.layout = html.Div(children=[
     ])
 ])
 
+
 # app.layout = html.Div([
 #     html.Button("START", id="button1", n_clicks=0, style={'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block', 'margin': '0 auto'}),
 #     html.Button("SAVE", id="button2", n_clicks=0, style={'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block', 'margin': '0 auto'}),
@@ -655,6 +671,7 @@ def update_time(n):
         html.Br(),
         html.Pre(info)
     ]
+
 
 # Обновление графика улыбки волатильности
 @app.callback(Output('plot_smile', 'figure', allow_duplicate=True),
@@ -718,12 +735,6 @@ def update_output_smile(value, n):
         # Create figure with secondary y-axis
         fig = make_subplots(specs=[[{"secondary_y": True}]])
 
-        # # Рисуем график улыбки
-        # for exp_day in dff_call['expiration_date'].unique():
-        #     dff_smile = dff_call[dff_call.expiration_date == exp_day]
-        #     fig.add_trace(go.Scatter(x=dff_smile['_strike'], y=dff_smile['_volatility'], mode='lines+text',
-        #                              name=exp_day), secondary_y=False, )
-
         # Рисуем график улыбки с уникальными цветами
         for exp_day in exp_dates:
             dff_smile = dff_call[dff_call.expiration_date == exp_day]
@@ -734,42 +745,6 @@ def update_output_smile(value, n):
                 name=exp_day,
                 line=dict(color=expdate_colors[exp_day])
             ), secondary_y=False)
-
-        # # Мои позиции BUY
-        # fig.add_trace(go.Scatter(x=df_table_buy['strike'], y=df_table_buy['OpenIV'],
-        #                          mode='markers+text', text=df_table_buy['OpenIV'], textposition='middle left',
-        #                          marker=dict(size=11, symbol="star-triangle-up-open", color='lightgreen'),
-        #                          name='My Pos Buy',
-        #                          customdata=df_table_buy[['option_type', 'net_pos', 'expdate', 'ticker']],
-        #                          hovertemplate="<b>%{customdata}</b>"
-        #                          ))
-        #
-        # # Мои позиции SELL
-        # fig.add_trace(go.Scatter(x=df_table_sell['strike'], y=df_table_sell['OpenIV'],
-        #                          mode='markers+text', text=df_table_sell['OpenIV'], textposition='middle left',
-        #                          marker=dict(size=11, symbol="star-triangle-down-open", color='magenta'),
-        #                          name='My Pos Sell',
-        #                          customdata=df_table_sell[['option_type', 'net_pos', 'expdate', 'ticker']],
-        #                          hovertemplate="<b>%{customdata}</b><br>"
-        #                          ))
-        #
-        # # Мои ордерра BUY
-        # fig.add_trace(go.Scatter(x=df_orders_buy['strike'], y=df_orders_buy['volatility'],
-        #                          mode='markers+text', text=df_orders_buy['volatility'], textposition='middle left',
-        #                          marker=dict(size=8, symbol="cross-thin", line=dict(width=1, color="lightgreen")),
-        #                          name='My Orders BUY',
-        #                          customdata=df_orders_buy[['operation', 'option_type', 'expdate', 'price', 'ticker']],
-        #                          hovertemplate="<b>%{customdata}</b><br>"
-        #                          ))
-        #
-        # # Мои ордерра SELL
-        # fig.add_trace(go.Scatter(x=df_orders_sell['strike'], y=df_orders_sell['volatility'],
-        #                          mode='markers+text', text=df_orders_sell['volatility'], textposition='middle left',
-        #                          marker=dict(size=8, symbol="cross-thin", line=dict(width=1, color="magenta")),
-        #                          name='My Orders SELL',
-        #                          customdata=df_orders_sell[['operation', 'option_type', 'expdate', 'price', 'ticker']],
-        #                          hovertemplate="<b>%{customdata}</b><br>"
-        #                          ))
 
         # Мои позиции BUY
         for exp_day in df_table_buy['expdate'].unique():
@@ -1014,24 +989,60 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
     fig = make_subplots(specs=[[{"secondary_y": True}]])
 
     # График истории волатильности ПО ДАННЫМ ИЗ DAMP (из CSV OptionsVolaHistoryDamp.csv)
-    for d_exp in sorted(df_vol_history['expiration_datetime'].unique()):
+    exp_dates = sorted(df_vol_history['expiration_datetime'].unique())
+    colors = px.colors.qualitative.Plotly
+
+    # Сначала определяем, какие даты истекли
+    current_date = datetime.now().date()
+    expired_dates = set()
+    active_dates = []
+
+    for d_exp in exp_dates:
+        exp_date = pd.to_datetime(d_exp).date()
+        if exp_date <= current_date:
+            expired_dates.add(d_exp)
+        else:
+            active_dates.append(d_exp)
+
+    # Создаем словарь цветов для активных опционов
+    active_colors = {}
+    for i, d_exp in enumerate(active_dates):
+        active_colors[d_exp] = colors[i % len(colors)]
+
+    # График истории наклона улыбки ПО ДАННЫМ ИЗ DAMP
+    for d_exp in exp_dates:
         dff = df_vol_history[df_vol_history.expiration_datetime == d_exp]
+
+        # Определяем цвет: серый для истёкших опционов
+        if d_exp in expired_dates:
+            color = 'gray'
+        else:
+            color = active_colors[d_exp]
+
         fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['Real_vol'], visible='legendonly',
-                                 legendgroup="group",  # this can be any string, not just "group"
+                                 legendgroup="group",
                                  legendgrouptitle_text="RealVol",
                                  mode='lines+text',
-                                 name=d_exp), secondary_y=True, )
-    fig.update_layout(legend_title_text=radiobutton_value)
+                                 line=dict(color=color),
+                                 name=d_exp), secondary_y=True)
 
     # График истории БИРЖЕВОЙ волатильности (из CSV OptionsVolaHistoryDamp.csv)
-    for d_exp in sorted(df_vol_history['expiration_datetime'].unique()):
+    for d_exp in exp_dates:
         dff = df_vol_history[df_vol_history.expiration_datetime == d_exp]
+
+        # Определяем цвет: серый для истёкших опционов
+        if d_exp in expired_dates:
+            color = 'gray'
+        else:
+            color = active_colors[d_exp]
+
         fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['Quik_vol'], visible='legendonly',
                                  legendgroup="group2",
                                  legendgrouptitle_text="QuikVol",
                                  mode='lines+text',
-                                 line=dict(width=2, dash='dashdot'),
-                                 name=d_exp), secondary_y=True, )
+                                 line=dict(width=2, dash='dashdot', color=color),
+                                 name=d_exp), secondary_y=True)
+
     fig.update_layout(legend=dict(groupclick="toggleitem"))
 
     # График Candles
@@ -1104,15 +1115,15 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
     fig['layout']['yaxis']['showgrid'] = False
 
     fig.update_layout(
-        plot_bgcolor='rgb(30, 30, 30)', # Фон графика
-        paper_bgcolor='rgb(30, 30, 30)', # Фон области рисования
+        plot_bgcolor='rgb(30, 30, 30)',  # Фон графика
+        paper_bgcolor='rgb(30, 30, 30)',  # Фон области рисования
         font_color='white',  # Цвет текста
-        xaxis=dict( # Цвет вертикальных линий сетки
+        xaxis=dict(  # Цвет вертикальных линий сетки
             gridcolor='rgb(60, 60, 60)',
             gridwidth=1,
             zerolinecolor='rgb(60, 60, 60)'
         ),
-        yaxis=dict( # Цвет горизонтальных линий сетки
+        yaxis=dict(  # Цвет горизонтальных линий сетки
             gridcolor='rgb(50, 50, 50)',
             gridwidth=0.5,
             zerolinecolor='rgb(50, 50, 50)'
@@ -1153,7 +1164,7 @@ def update_output_MyPosHistory(dropdown_value, slider_value, n):
         df_MyPosHistory = df_MyPosHistory[(df_MyPosHistory.option_base == dropdown_value)]
 
         df_MyPosHistory['DateTime'] = pd.to_datetime(df_MyPosHistory['DateTime'],
-                                                  format='%Y-%m-%d %H:%M:%S')
+                                                     format='%Y-%m-%d %H:%M:%S')
         df_MyPosHistory.index = pd.DatetimeIndex(df_MyPosHistory['DateTime'])
         # df_MyPosHistory = df_MyPosHistory[(df_vol_history.type == radiobutton_value)]
         df_MyPosHistory = df_MyPosHistory[(df_MyPosHistory.DateTime > limit_time)]
@@ -1184,40 +1195,46 @@ def update_output_MyPosHistory(dropdown_value, slider_value, n):
     # График истории моей позиции (из MyPosHistory.cs)
     for pos in sorted(df_MyPosHistory['pos'].unique(), reverse=True):
         dff = df_MyPosHistory[df_MyPosHistory.pos == pos]
+        color = 'red' if pos == "short" else 'green'
         fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['mypos'], visible='legendonly',
-                                 legendgroup=pos,  # this can be any string, not just "group"
+                                 legendgroup=pos,
                                  legendgrouptitle_text=pos,
                                  mode='lines+text',
-                                 line=dict(dash='dot'),
+                                 line=dict(dash='dot', color=color),
                                  name='MyPos'), secondary_y=True, )
 
-    # График истории моей позиции ПО теоретической цене из MyPosHistory
+    # График истории моей позиции ПО LAST цене из MyPosHistory
     for pos in sorted(df_MyPosHistory['pos'].unique()):
         dff = df_MyPosHistory[df_MyPosHistory.pos == pos]
+        color = 'red' if pos == "short" else 'green'
         fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['last'],
-                                 legendgroup=pos,  # this can be any string, not just "group"
+                                 legendgroup=pos,
                                  legendgrouptitle_text=pos,
                                  mode='lines+text',
+                                 line=dict(color=color),
                                  name='Last'), secondary_y=True, )
 
-    # График истории моей позиции по цене LAST (из MyPosHistory.csv)
+    # График истории моей позиции по цене Theor (из MyPosHistory.csv)
     for pos in sorted(df_MyPosHistory['pos'].unique(), reverse=True):
         dff = df_MyPosHistory[df_MyPosHistory.pos == pos]
+        color = 'red' if pos == "short" else 'green'
         fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['theor'],
                                  legendgroup=pos,
                                  legendgrouptitle_text=pos,
                                  mode='lines+text',
-                                 line=dict(color='gray', width=1, dash='dot'),
+                                 line=dict(color=color, width=1, dash='dot'),
                                  name='Theor'), secondary_y=True, )
 
     # График истории моей позиции ПО рынку из MyPosHistory
     for pos in sorted(df_MyPosHistory['pos'].unique(), reverse=True):
         dff = df_MyPosHistory[df_MyPosHistory.pos == pos]
+        color = 'red' if pos == "short" else 'green'
         fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['market'], visible='legendonly',
-                                 legendgroup=pos,  # this can be any string, not just "group"
+                                 legendgroup=pos,
                                  legendgrouptitle_text=pos,
                                  mode='lines+text',
-                                 name='Market'), secondary_y=True, )
+                                 line=dict(color=color, dash='longdashdot'),
+                                 name='Market'), secondary_y=True)
 
     # Мои сделки (trades) на графике
     for opt in sorted(df_trades['ticker'].unique()):
@@ -1376,24 +1393,62 @@ def update_output_history_naklon(dropdown_value, slider_value, n):
     fig = make_subplots(specs=[[{"secondary_y": True}]])
 
     # График истории наклона улыбки ПО ДАННЫМ ИЗ DAMP (из CSV OptionsSmileNaklonHistory.csv)
-    for d_exp in sorted(df_vol_history_naklon['expiration_datetime'].unique()):
-        dff = df_vol_history_naklon[df_vol_history_naklon.expiration_datetime == d_exp]
-        fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['Real'], visible='legendonly',
-                                 legendgroup="group",  # this can be any string, not just "group"
-                                 legendgrouptitle_text="Real",
-                                 mode='lines+text',
-                                 name=d_exp), secondary_y=True, )
-    # fig.update_layout(legend_title_text=radiobutton_value)
+    # Для графиков с истекшей датой используется серый цвет
+    # Для активных графиков используются стандартные цвета Plotly по порядку
 
-    # График истории наклона БИРЖЕВОЙ улыбки (из CSV OptionsSmileNaklonHistory.csv)
-    for d_exp in sorted(df_vol_history_naklon['expiration_datetime'].unique()):
+    # График истории наклона улыбки ПО ДАННЫМ ИЗ DAMP и БИРЖЕВОЙ улыбки
+    # Цвета серий графиков по дате экспирации должны совпадать
+    # Для истёкших опционов использовать серый цвет
+
+    # Получаем уникальные даты экспирации и сортируем их
+    expiration_dates = sorted(df_vol_history_naklon['expiration_datetime'].unique())
+    current_date = datetime.now().date()
+
+    # Получаем стандартные цвета Plotly
+    colors = px.colors.qualitative.Plotly
+    color_index = 0
+
+    # Создаем словарь цветов для каждой даты экспирации
+    color_map = {}
+    for d_exp in expiration_dates:
+        exp_date = pd.to_datetime(d_exp).date()
+        if exp_date <= current_date:
+            color_map[d_exp] = 'gray'  # Серый для истёкших
+        else:
+            color_map[d_exp] = colors[color_index % len(colors)]  # Цвета из палитры для активных
+            color_index += 1
+
+    # График истории наклона улыбки ПО ДАННЫМ ИЗ DAMP
+    for d_exp in expiration_dates:
         dff = df_vol_history_naklon[df_vol_history_naklon.expiration_datetime == d_exp]
-        fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['Quik'], visible='legendonly',
-                                 legendgroup="group2",
-                                 legendgrouptitle_text="Quik",
-                                 mode='lines+text',
-                                 line=dict(width=1, dash='dashdot'),
-                                 name=d_exp), secondary_y=True, )
+        color = color_map[d_exp]
+
+        fig.add_trace(go.Scatter(
+            x=dff['DateTime'],
+            y=dff['Real'],
+            visible='legendonly',
+            legendgroup="group",
+            legendgrouptitle_text="Real",
+            mode='lines+text',
+            name=d_exp,
+            line=dict(color=color)
+        ), secondary_y=True)
+
+    # График истории наклона БИРЖЕВОЙ улыбки
+    for d_exp in expiration_dates:
+        dff = df_vol_history_naklon[df_vol_history_naklon.expiration_datetime == d_exp]
+        color = color_map[d_exp]
+
+        fig.add_trace(go.Scatter(
+            x=dff['DateTime'],
+            y=dff['Quik'],
+            line=dict(width=1, dash='dashdot', color=color),
+            name=d_exp,
+            legendgroup="group2",
+            legendgrouptitle_text="Quik",
+            mode='lines+text',
+            visible='legendonly'
+        ), secondary_y=True)
     fig.update_layout(legend=dict(groupclick="toggleitem"))
 
     # График Candles
@@ -1643,6 +1698,7 @@ def update_equity_history(dropdown_value, slider_value, n):
 
     return fig
 
+
 # Callback для изменения цвета кнопки SAVE
 @app.callback(
     Output("button1", "style"),
@@ -1652,7 +1708,8 @@ def change_save_color(n_clicks, stop_clicks):
     if n_clicks:
         return {'backgroundColor': '#006400', 'color': 'white', 'display': 'block', 'margin': '0 auto'}  # Темно-зеленый
     elif stop_clicks:
-        return {'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block', 'margin': '0 auto'}  # Исходный цвет
+        return {'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block',
+                'margin': '0 auto'}  # Исходный цвет
     return {'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block', 'margin': '0 auto'}
 
 
@@ -1665,7 +1722,8 @@ def change_start_color(n_clicks, stop_clicks):
     if n_clicks:
         return {'backgroundColor': '#8B0000', 'color': 'white', 'display': 'block', 'margin': '0 auto'}  # Темно-красный
     elif stop_clicks:
-        return {'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block', 'margin': '0 auto'}  # Исходный цвет
+        return {'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block',
+                'margin': '0 auto'}  # Исходный цвет
     return {'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block', 'margin': '0 auto'}
 
 
@@ -1678,6 +1736,7 @@ def change_stop_color(n_clicks):
     if n_clicks:
         return {'backgroundColor': '#8B0000', 'color': 'white', 'display': 'block', 'margin': '0 auto'}  # Темно-красный
     return {'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white', 'display': 'block', 'margin': '0 auto'}
+
 
 # Callback to update the table "MyPos Table"
 @app.callback(
@@ -1829,6 +1888,7 @@ def updateGauge(n, value):
         value = (abs(tv_sum_positive) / (abs(tv_sum_positive) + abs(tv_sum_negative))) * 10
     return value
 
+
 ## MyQuoteRobot ##
 @app.callback(
     Output('MyQuoteRobot', 'data', allow_duplicate=True),
@@ -1837,6 +1897,7 @@ def updateGauge(n, value):
     prevent_initial_call=True)
 def updateMyQuoteRobot(n, value):
     pass
+
 
 if __name__ == '__main__':
     app.run(debug=False)  # Run the Dash app
