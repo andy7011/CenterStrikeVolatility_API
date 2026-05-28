@@ -8,7 +8,7 @@ from pytz import utc
 from threading import Thread  # Запускаем поток подписки
 from AlorPy import AlorPy  # Работа с Alor OpenAPI V2
 from FinamPy import FinamPy
-from FinamPy.grpc.orders_service_pb2 import Order, OrderState, OrderType, CancelOrderRequest
+from FinamPy.grpc.orders_service_pb2 import Order, OrderState, OrderType, CancelOrderRequest, OrdersRequest
 from FinamPy.grpc.accounts_service_pb2 import GetAccountRequest, GetAccountResponse  # Счет
 import FinamPy.grpc.side_pb2 as side  # Направление заявки
 from FinLabPy.Schedule.MOEX import Futures  # Расписание торгов срочного рынка
@@ -25,7 +25,6 @@ from google.type.decimal_pb2 import Decimal
 app_instance = None
 account_id = "1218884"
 # Глобальные переменные для хранения данных
-# global base_asset_list, option_list, expiration_dates, selected_expiration_date, base_asset_ticker, sell_tickers_call, sell_tickers_put
 base_asset_list = []
 option_list = []
 expiration_dates = []
@@ -35,6 +34,11 @@ old_target_price_sell = None
 old_target_price_buy = None
 order_id_sell_control = None
 order_id_buy_control = None
+dataname_base_asset_ticker_old = ''
+dataname_guid_sell_old = ''
+dataname_guid_buy_old = ''
+# Словарь для хранения GUID подписок
+guids_dict = {}
 
 # Глобальные переменные
 # global filename, dataname_sell, dataname_buy, base_asset_ticker, quoter_side, expected_profit, lot_count, basket_size, timeout
@@ -53,9 +57,6 @@ indent = 0
 CALL = 'C'
 PUT = 'P'
 r = 0  # Безрисковая ставка
-# Список GUID для отписки
-guids = []
-
 
 def utc_to_msk_datetime(dt, tzinfo=False):
     """Перевод времени из UTC в московское
@@ -100,7 +101,7 @@ def get_portfolio_positions():
     return portfolio_positions
 
 
-# Словарь новых котироок
+# Словарь новых котировок
 new_quotes = {}
 
 
@@ -108,6 +109,7 @@ def _on_new_quotes(response):
     # logger.info(f'Котировка - {response["data"]}')
     # Извлекаем данные
     description = response["data"]['description']
+    # print(response["data"])
     ask = float(response["data"]['ask']) if response["data"]['ask'] else 0.0
     ask_vol = float(response["data"]['ask_vol']) if response["data"]['ask_vol'] else 0.0
     bid = float(response["data"]['bid']) if response["data"]['bid'] else 0.0
@@ -196,34 +198,49 @@ def _on_trade(trade):
 
 # Получаем данные по базовому активу, подписываемся на котировки
 def on_base_asset_change(event, app_instance):
-    global base_asset_ticker
-    base_asset_ticker = app_instance.combobox_base_asset.get()
-    dataname_base_asset_ticker = 'SPBFUT.' + base_asset_ticker
-    # print(f'dataname_base_asset_ticker {dataname_base_asset_ticker}')
-    message = f'Получаем данные по базовому активу {base_asset_ticker}, подписываемся на котировки'
+    global base_asset_ticker, dataname_base_asset_ticker_old
+    selected_base_asset_ticker = app_instance.combobox_base_asset.get()
+    base_asset_ticker = selected_base_asset_ticker
+    # print(f'selected_base_asset_ticker {selected_base_asset_ticker}')
+    dataname_base_asset_ticker = 'SPBFUT.' + selected_base_asset_ticker
+
+    # Проверяем и удаляем существующую подписку на предыдущий инструмент
+    if dataname_base_asset_ticker_old in guids_dict:
+        try:
+            # print(f'guids_dict {guids_dict}')
+            guid_to_unsubscribe = guids_dict[dataname_base_asset_ticker_old]  # Получаем GUID из словаря
+            ap_provider.unsubscribe(guid_to_unsubscribe)
+            guids_dict.pop(dataname_base_asset_ticker_old, None)
+            logger.info(f'Удаление подписки {dataname_base_asset_ticker_old}')
+        except Exception as e:
+            logger.error(f'Ошибка отписки от {dataname_base_asset_ticker_old}: {e}')
+
+    message = f'Получаем данные по базовому активу {selected_base_asset_ticker}, подписываемся на котировки'
     app_instance.add_message(message)  # Передаём текст в окно сообщений
-    print(f'Получаем данные по базовому активу {base_asset_ticker}, подписываемся на котировки')
-    alor_board, symbol = ap_provider.dataname_to_alor_board_symbol(
-        base_asset_ticker)  # Код режима торгов Алора и код и тикер
+    print(f'Получаем данные по базовому активу {selected_base_asset_ticker}, подписываемся на котировки')
+    alor_board, symbol = ap_provider.dataname_to_alor_board_symbol(selected_base_asset_ticker)  # Код режима торгов Алора и код и тикер
     exchange = ap_provider.get_exchange(alor_board, symbol)  # Код биржи
     guid = ap_provider.quotes_subscribe(exchange, symbol)  # Получаем код подписки
-    guids.append(guid)
+    guids_dict[dataname_base_asset_ticker] = guid
+    dataname_base_asset_ticker_old = dataname_base_asset_ticker
     logger.info(f'Подписка на котировки {guid} тикера {base_asset_ticker} создана')
     app_instance.add_message(f'Подписка на котировки {guid} тикера {base_asset_ticker} создана')
+
     sleep(1)
 
     # Список дат экспирации по тикеру БА
-    expirations = get_option_expirations(base_asset_ticker)
+    expirations = get_option_expirations(selected_base_asset_ticker)
     expiration_dates_ = list(set(exp['expiration_date'] for exp in expirations))
     # Сортируем и форматируем даты
     expiration_dates = [date.split('-')[2] + '.' + date.split('-')[1] + '.' + date.split('-')[0]
                         for date in sorted(expiration_dates_, key=lambda x: datetime.strptime(x, '%Y-%m-%d'))]
-    app_instance.add_message(f'Даты экспирации опционов базового актива {base_asset_ticker}: {expiration_dates}')
+    app_instance.add_message(f'Даты экспирации опционов базового актива {selected_base_asset_ticker}: {expiration_dates}')
 
     # Обновляем значения в combobox_expire
     app_instance.combobox_expire['values'] = list(expiration_dates)
     app_instance.combobox_expire.set(expiration_dates[0])
 
+    dataname_base_asset_ticker_old = dataname_base_asset_ticker
     return expiration_dates
 
 
@@ -264,7 +281,7 @@ def selected_sell(app_instance):
     global dataname_sell
     selected_sell_ticker = app_instance.combobox_sell.get()
     dataname_sell = "SPBOPT." + selected_sell_ticker
-    option_data_sell = get_option_data_alor(dataname_sell)
+    option_data_sell = get_option_data_alor_sell(dataname_sell)
     app_instance.add_message(f'Подписка на котировки опциона {selected_sell_ticker}')
 
 
@@ -285,7 +302,7 @@ def selected_buy(app_instance):
     global dataname_buy
     selected_buy_ticker = app_instance.combobox_buy.get()
     dataname_buy = "SPBOPT." + selected_buy_ticker
-    option_data_buy = get_option_data_alor(dataname_buy)
+    option_data_buy = get_option_data_alor_buy(dataname_buy)
     app_instance.add_message(f'Подписка на котировки опциона {selected_buy_ticker}')
 
 
@@ -315,7 +332,7 @@ def selected_profit(app_instance):
         # Поиск позиции по символу
         for symbol, quantity in portfolio_positions.items():
             # print(symbol, dataname, ticker, quantity)
-            if ticker in symbol:  # Сравнение если ticker содержится в symbol
+            if ticker == symbol.split('@')[0]:  # Сравнение если ticker содержится в symbol
 
                 try:
                     open_iv_value = float(
@@ -373,8 +390,10 @@ def selected_profit(app_instance):
         sigma = options_data[dataname_buy]['volatility'] / 100
         ask_iv_buy = newton_vol_put(S, K, T, ask_buy, r, sigma) * 100
         bid_iv_buy = newton_vol_put(S, K, T, bid_buy, r, sigma) * 100
-    theor_iv_buy = options_data[dataname_buy]['volatility']
     # print(f'ask_iv_buy: {round(ask_iv_buy, 2)}, bid_iv_buy: {round(bid_iv_buy, 2)}, last_iv_buy: {round(last_iv_buy, 2)}')
+
+    theor_iv_sell = options_data[dataname_sell]['volatility']
+    theor_iv_buy = options_data[dataname_buy]['volatility']
 
     if quoter_side == 'SELL':
 
@@ -382,6 +401,7 @@ def selected_profit(app_instance):
 
         # PUT - слева CALL - справа
         opt_type_sell = CALL if options_data[dataname_sell]['optionSide'] == 'Call' else PUT
+
         if opt_type_sell == CALL:
             target_iv_sell = ask_iv_buy + expected_profit  # Целевая прибыль для котирования продажи
             limit_price_sell_ = option_price(S, target_iv_sell / 100, K, T, r,
@@ -396,6 +416,7 @@ def selected_profit(app_instance):
                 f'{"bid:":<7}{round(bid_buy, decimals):<7}{round(bid_iv_buy, 2):<7}{"bid:":<7}{round(bid_sell, decimals):<7}{round(bid_iv_sell, 2):<7}')
             app_instance.add_message(
                 f'{"target:":<7}{round(ask_buy, decimals):<7}{round(ask_iv_buy, 2):<7}{"target:":<7}{round(limit_price_sell, decimals):<7}{round(target_iv_sell, 2):<7}')
+            app_instance.add_message(f'{"Diff. theor:":<7}{round((theor_iv_sell - theor_iv_buy), 2):<7}{"Diff.:":<7}{"market:":<7}{round((bid_iv_sell - ask_iv_buy), 2):<7}')
         else:  # opt_type_sell == PUT
             target_iv_sell = ask_iv_buy - expected_profit  # Целевая прибыль для котирования продажи
             limit_price_sell_ = option_price(S, target_iv_sell / 100, K, T, r,
@@ -410,6 +431,7 @@ def selected_profit(app_instance):
                 f'{"bid:":<7}{round(bid_sell, decimals):<7}{round(bid_iv_sell, 2):<7}{"bid:":<7}{round(bid_buy, decimals):<7}{round(bid_iv_buy, 2):<7}')
             app_instance.add_message(
                 f'{"target:":<7}{round(limit_price_sell, decimals):<7}{round(target_iv_sell, 2):<7}{"target:":<7}{round(ask_buy, decimals):<7}{round(ask_iv_buy, 2):<7}')
+            app_instance.add_message(f'{"Diff. theor:":<7}{round((theor_iv_buy - theor_iv_sell), 2):<7}{"Diff.:":<7}{"market:":<7}{round((ask_iv_buy - bid_iv_sell), 2):<7}')
     else:  # quoter_side == 'BUY'
 
         S, K, T, opt_type_buy = get_option_data_for_calc_price(dataname_buy)  # Получаем данные опциона dataname_sell
@@ -430,6 +452,7 @@ def selected_profit(app_instance):
                 f'{"bid:":<7}{round(bid_sell, decimals):<7}{round(bid_iv_sell, 2):<7}{"bid:":<7}{round(bid_buy, decimals):<7}{round(bid_iv_buy, 2):<7}')
             app_instance.add_message(
                 f'{"target:":<7}{round(bid_sell, decimals):<7}{round(bid_iv_sell, 2):<7}{"target:":<7}{round(limit_price_buy, decimals):<7}{round(target_iv_buy, 2):<7}')
+            app_instance.add_message(f'{"Diff.:":<7}{"theor:":<7}{round((theor_iv_buy - theor_iv_sell), 2):<7}{"Diff.:":<7}{"market:":<7}{round((ask_iv_buy - bid_iv_sell), 2):<7}')
         else:
             target_iv_buy = bid_iv_sell - expected_profit  # Целевая прибыль для котирования покупки
             limit_price_buy_ = option_price(S, target_iv_buy / 100, K, T, r,
@@ -444,6 +467,7 @@ def selected_profit(app_instance):
                 f'{"bid:":<7}{round(bid_buy, decimals):<7}{round(bid_iv_buy, 2):<7}{"bid:":<7}{round(bid_sell, decimals):<7}{round(bid_iv_sell, 2):<7}')
             app_instance.add_message(
                 f'{"target:":<7}{round(limit_price_buy, decimals):<7}{round(target_iv_buy, 2):<7}{"target:":<7}{round(bid_sell, decimals):<7}{round(bid_iv_sell, 2):<7}')
+            app_instance.add_message(f'{"Diff. theor:":<7}{round((theor_iv_sell - theor_iv_buy), 2):<7}{"Diff.:":<7}{"market:":<7}{round((bid_iv_sell - ask_iv_buy), 2):<7}')
 
 
 def selected_lot_count(app_instance):
@@ -473,14 +497,26 @@ def selected_indent(app_instance):
 # Получаем данные по опционам, сохраняем в словарь
 options_data = {}
 
+def get_option_data_alor_sell(dataname_sell):
+    global guids_dict, dataname_guid_sell_old
+    # Проверяем и удаляем существующую подписку на этот инструмент
+    if dataname_guid_sell_old in guids_dict:
+        try:
+            guid_to_unsubscribe = guids_dict[dataname_guid_sell_old]  # Получаем GUID из словаря
+            ap_provider.unsubscribe(guid_to_unsubscribe)
+            # guids.remove(dataname_guid_sell_old)
+            guids_dict.pop(dataname_guid_sell_old, None)
+            logger.info(f'Удаление подписки {dataname_guid_sell_old}')
+        except Exception as e:
+            logger.error(f'Ошибка отписки от {dataname_guid_sell_old}: {e}')
 
-def get_option_data_alor(dataname):
-    alor_board, symbol = ap_provider.dataname_to_alor_board_symbol(dataname)  # Код режима торгов Алора и код и тикер
-    exchange = ap_provider.get_exchange(alor_board, symbol)  # Код биржи
-    si = ap_provider.get_symbol_info(exchange, symbol)  # Получаем информацию о тикере
-    # print(si)
+    # Получаем информацию о тикере
+    alor_board, symbol = ap_provider.dataname_to_alor_board_symbol(dataname_sell)
+    exchange = ap_provider.get_exchange(alor_board, symbol)
+    si = ap_provider.get_symbol_info(exchange, symbol)
+
     # Создаем словарь для опциона
-    options_data[dataname] = {
+    options_data[dataname_sell] = {
         'ticker': si['shortname'],
         'theorPrice': si['theorPrice'],
         'volatility': float(si['volatility']),
@@ -492,11 +528,61 @@ def get_option_data_alor(dataname):
         'minstep': si['minstep'],
         'decimals': si['decimals']
     }
-    # print(f'options_data {options_data}')
-    guid = ap_provider.quotes_subscribe(exchange, symbol)  # Получаем код подписки
-    guids.append(guid)
-    logger.info(f'Подписка на котировки {guid} тикера {dataname} создана')
+
+    # Создаем новую подписку
+    try:
+        guid = ap_provider.quotes_subscribe(exchange, symbol)
+        guids_dict[dataname_sell] = guid
+        logger.info(f'Подписка на котировки {guid} тикера {dataname_sell} создана')
+        dataname_guid_sell_old = dataname_sell
+    except Exception as e:
+        logger.error(f'Ошибка подписки на {dataname_sell}: {e}')
+
     return options_data
+
+def get_option_data_alor_buy(dataname_buy):
+    global guids_dict, dataname_guid_buy_old
+    # Проверяем и удаляем существующую подписку на этот инструмент
+    if dataname_guid_buy_old in guids_dict:
+        try:
+            guid_to_unsubscribe = guids_dict[dataname_guid_buy_old]  # Получаем GUID из словаря
+            ap_provider.unsubscribe(guid_to_unsubscribe)
+            # guids.remove(dataname_guid_buy_old)
+            guids_dict.pop(dataname_guid_buy_old, None)
+            logger.info(f'Удаление подписки {dataname_guid_buy_old}')
+        except Exception as e:
+            logger.error(f'Ошибка отписки от {dataname_guid_buy_old}: {e}')
+
+    # Получаем информацию о тикере
+    alor_board, symbol = ap_provider.dataname_to_alor_board_symbol(dataname_buy)
+    exchange = ap_provider.get_exchange(alor_board, symbol)
+    si = ap_provider.get_symbol_info(exchange, symbol)
+
+    # Создаем словарь для опциона
+    options_data[dataname_buy] = {
+        'ticker': si['shortname'],
+        'theorPrice': si['theorPrice'],
+        'volatility': float(si['volatility']),
+        'strikePrice': float(si['strikePrice']),
+        'endExpiration': si['endExpiration'],
+        'base_asset_ticker': si['underlyingSymbol'],
+        'optionSide': si['optionSide'],
+        'lot_size': si['lotsize'],
+        'minstep': si['minstep'],
+        'decimals': si['decimals']
+    }
+
+    # Создаем новую подписку
+    try:
+        guid = ap_provider.quotes_subscribe(exchange, symbol)
+        guids_dict[dataname_buy] = guid
+        logger.info(f'Подписка на котировки {guid} тикера {dataname_buy} создана')
+        dataname_guid_buy_old = dataname_buy
+    except Exception as e:
+        logger.error(f'Ошибка подписки на {dataname_buy}: {e}')
+
+    return options_data
+
 
 
 # Выставление лимитной заявки на продажу инструмента symbol_sell (типа 'RI127500BD6@RTSX') в количестве quantity_sell
@@ -712,7 +798,13 @@ def schedule_market(market_dt: datetime):
         return session
 
 
+
+
 class App:
+    # Функция для изменения цвета светодиода
+    def set_led_color(self, color):
+        self.led_canvas.itemconfig(self.led_circle, fill=color)
+
     def __init__(self):
         self.root = tk.Tk()
         self.root.title(filename)
@@ -733,7 +825,6 @@ class App:
         main_frame.pack(side=tk.LEFT, fill=tk.Y, padx=5, pady=5)
 
         # Создаем фрейм для окна сообщений
-        # self.message_frame = tk.Frame(self.root, width=650, bg='lightgray')
         self.message_frame = tk.Frame(self.root, width=700, height=700, bg='lightgray')
         self.message_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=1, pady=1)
         self.message_frame.pack_propagate(False)  # Не изменять размер по содержимому
@@ -741,8 +832,6 @@ class App:
         # Создаем текстовое поле для сообщений
         self.message_text = tk.Text(self.message_frame, height=20, width=70)
         self.message_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        # self.message_text = tk.Text(self.message_frame, height=20, width=70)
-        # self.message_text.pack(padx=5, pady=5)
 
         # Label My Quote Robot
         self.label = tk.Label(main_frame, text=filename)
@@ -813,7 +902,6 @@ class App:
         self.quoter_side_label.pack(pady=1)
 
         # Выбор SELL - котируем опцион на продажу, BUY - котируем опцион на покупку
-        # Сделка по второй ноге происходит по рынку
         radio_frame = tk.Frame(main_frame)
         radio_frame.pack(pady=1, side=tk.TOP)  # Явно указываем side
         self.quoter_side = tk.StringVar(value="BUY")  # или "SELL", по умолчанию "BUY"
@@ -906,9 +994,16 @@ class App:
         self.exit_button = tk.Button(main_frame, text="Exit", command=self.exit)
         self.exit_button.pack(pady=2)
 
-        # Label status
-        self.status_label = tk.Label(main_frame, text="Status: Stopped")
-        self.status_label.pack(pady=1)
+        # Виртуальный светодиод на одной линии с Label status
+        self.led_frame = tk.Frame(main_frame)
+        self.led_frame.pack(pady=1)
+
+        self.status_label = tk.Label(self.led_frame, text="Status: Stopped")  # Добавлено создание атрибута
+        self.status_label.pack(side=tk.LEFT, padx=(0, 5))
+
+        self.led_canvas = tk.Canvas(self.led_frame, width=20, height=20, highlightthickness=0)
+        self.led_circle = self.led_canvas.create_oval(5, 5, 15, 15, fill='lightgray', outline='black')
+        self.led_canvas.pack(side=tk.LEFT)
 
         # Label counter
         self.counter_label = tk.Label(main_frame, text="Счётчик сделок: 0")
@@ -948,7 +1043,8 @@ class App:
             # Поиск позиции по символу
             for symbol, quantity in portfolio_positions.items():
                 # print(symbol, dataname)
-                if ticker in symbol:  # Сравнение если ticker содержится в symbol
+                # if ticker in symbol:  # Сравнение если ticker содержится в symbol
+                if ticker == symbol.split('@')[0]:  # Сравнение если ticker содержится в symbol
                     try:
                         open_iv_sell = float(
                             (calculate_open_data_open_price_open_iv(ticker, float(quantity)))[2])
@@ -992,7 +1088,7 @@ class App:
             # Поиск позиции по символу
             for symbol, quantity in portfolio_positions.items():
                 # print(symbol, dataname)
-                if ticker in symbol:  # Сравнение если ticker содержится в symbol
+                if ticker == symbol.split('@')[0]:  # Сравнение если ticker содержится в symbol
                     try:
                         open_iv_buy = float(
                             (calculate_open_data_open_price_open_iv(ticker, float(quantity)))[2])
@@ -1098,7 +1194,16 @@ class App:
                     # logger.info(f'Заявка на покупку по данному тикеру {dataname_buy} уже существует: {order_dict[symbol_buy]["order_id"]}')
                     if target_price_buy < bid_buy:  # Цена на покупку вне спреда
                         # logger.info(f'Вне спреда')
-                        get_cancel_order(account_id, order_dict[symbol_buy]['order_id'])
+                        for symbol, order_info in order_dict.items():
+                            if symbol == symbol_buy:
+                                order_id = order_info['order_id']
+                                try:
+                                    get_cancel_order(account_id, order_id)
+                                    print(f"Отмена заявки {order_id} по {symbol} выполнена")
+                                except Exception as e:
+                                    print(f"Ошибка отмены заявки {order_id}: {e}")
+
+                        self.set_led_color('yellow')  # Смена цвета светодиода
                         logger.info(f'Заявка на покупку снята:{order_dict[symbol_buy]['order_id']}')
                         # В начало цикла
                         self.root.after(1000, self.loop_function)
@@ -1107,7 +1212,16 @@ class App:
                         # Проверка на соответствие лимитной цены в заявке target-цене
                         if float(order_dict[symbol_buy]['limit_price']) != target_price_buy:
                             # Лимитная цена уже не соответствует таргет-цене, снимаем старую заявку
-                            get_cancel_order(account_id, order_dict[symbol_buy]['order_id'])
+                            for symbol, order_info in order_dict.items():
+                                if symbol == symbol_buy:
+                                    order_id = order_info['order_id']
+                                    try:
+                                        get_cancel_order(account_id, order_id)
+                                        print(f"Отмена заявки {order_id} по {symbol} выполнена")
+                                    except Exception as e:
+                                        print(f"Ошибка отмены заявки {order_id}: {e}")
+
+                            self.set_led_color('yellow')  # Смена цвета светодиода
                             logger.info(f'Заявка на покупку снята:{order_dict[symbol_buy]['order_id']}')
                             # В начало цикла
                             self.root.after(1000, self.loop_function)
@@ -1119,6 +1233,7 @@ class App:
                             return
                 else:  # Заявка на покупку по данному тикеру не существует
                     # print(f'Заявка на покупку по данному тикеру {dataname_buy} не существует')
+                    self.set_led_color('yellow') # Смена цвета светодиода
                     # Прежде чем выставлять новую заявку нужно вставить проверку исполнилась ли старая заявка на продажу за время цикла
                     position_control = trade_dict.get(order_id_buy_control)
                     if position_control:  # Старая заявка исполнилась за время цикла
@@ -1162,6 +1277,7 @@ class App:
                                 if self.counter >= lot_count:
                                     self.add_message(
                                         f'Заданное количество лотов {self.counter} исполнено. Завершение работы котировщика!')
+                                    self.set_led_color('lightgray')  # Смена цвета светодиода
                                     sleep(timeout)
                                     self.running = False
                                 else:
@@ -1199,6 +1315,7 @@ class App:
                                 quantity_buy = basket_size
                                 logger.info(
                                     f'Выставляем лимитную заявку на покупку опциона {dataname_buy} по цене {limit_price_buy} и количеством {quantity_buy}')
+                                self.set_led_color('lightgreen')  # Смена цвета светодиода
                                 # Вызов функции выставления заявки на покупку
                                 order_id_buy, status_buy = get_order_buy(
                                     account_id=account_id,  # Укажите реальный номер счета
@@ -1251,6 +1368,7 @@ class App:
                                         if self.counter >= lot_count:
                                             self.add_message(
                                                 f'Заданное количество лотов {self.counter} исполнено. Завершение работы котировщика!')
+                                            self.set_led_color('lightgray')  # Смена цвета светодиода
                                             sleep(1)
                                             self.running = False
                                         else:
@@ -1270,7 +1388,16 @@ class App:
                                     if symbol_buy in order_dict and new_quotes[ticker_buy]['bid'] != float(
                                             order_dict[symbol_buy]['limit_price']) or target_price_sell != int(
                                         round(new_quotes[ticker_sell]['bid'], decimals)):
-                                        get_cancel_order(account_id, order_id_buy)
+                                        for symbol, order_info in order_dict.items():
+                                            if symbol == symbol_buy:
+                                                order_id = order_info['order_id']
+                                                try:
+                                                    get_cancel_order(account_id, order_id)
+                                                    print(f"Отмена заявки {order_id} по {symbol} выполнена")
+                                                except Exception as e:
+                                                    print(f"Ошибка отмены заявки {order_id}: {e}")
+
+                                        self.set_led_color('yellow')  # Смена цвета светодиода
                                         self.add_message(f'Заявка на покупку снята:{order_id_buy}')
                                     sleep(1)
 
@@ -1346,7 +1473,16 @@ class App:
                     # logger.info(f'Заявка на продажу по данному тикеру {dataname_sell} уже существует: {order_dict[symbol_sell]["order_id"]}')
                     if target_price_sell > ask_sell:  # Цена на продажу вне спреда
                         # logger.info(f'Вне спреда')
-                        get_cancel_order(account_id, order_dict[symbol_sell]['order_id'])
+                        for symbol, order_info in order_dict.items():
+                            if symbol == symbol_sell:
+                                order_id = order_info['order_id']
+                                try:
+                                    get_cancel_order(account_id, order_id)
+                                    print(f"Отмена заявки {order_id} по {symbol} выполнена")
+                                except Exception as e:
+                                    print(f"Ошибка отмены заявки {order_id}: {e}")
+
+                        self.set_led_color('yellow')  # Смена цвета светодиода
                         logger.info(
                             f'Заявка на продажу снята limit_price:{order_dict[symbol_sell]['limit_price']} ask_sell: {ask_sell}')
                         # В начало цикла
@@ -1357,7 +1493,15 @@ class App:
                         # print(f'old_target_price_sell {old_target_price_sell} target_price_sell {target_price_sell}')
                         if float(order_dict[symbol_sell]['limit_price']) != target_price_sell:
                             # Лимитная цена уже не соответствует таргет-цене, снимаем старую заявку
-                            get_cancel_order(account_id, order_dict[symbol_sell]['order_id'])
+                            for symbol, order_info in order_dict.items():
+                                if symbol == symbol_sell:
+                                    order_id = order_info['order_id']
+                                    try:
+                                        get_cancel_order(account_id, order_id)
+                                        print(f"Отмена заявки {order_id} по {symbol} выполнена")
+                                    except Exception as e:
+                                        print(f"Ошибка отмены заявки {order_id}: {e}")
+                            self.set_led_color('yellow')  # Смена цвета светодиода
                             logger.info(f'Заявка на продажу снята limit_price:{order_dict[symbol_sell]['limit_price']} ask_sell: {ask_sell}')
                             # В начало цикла
                             self.root.after(1000, self.loop_function)
@@ -1369,6 +1513,7 @@ class App:
                             return
                 else:  # Заявка на продажу по данному тикеру не существует
                     # print(f'Заявка на продажу по данному тикеру {dataname_sell} не существует')
+                    self.set_led_color('yellow') # Смена цвета светодиода
                     # Прежде чем выставлять новую заявку нужно вставить проверку исполнилась ли старая заявка на продажу за время цикла
                     position_control = trade_dict.get(order_id_sell_control)
                     if position_control:  # Старая заявка исполнилась за время цикла
@@ -1412,6 +1557,7 @@ class App:
                                 if self.counter >= lot_count:
                                     self.add_message(
                                         f'Заданное количество лотов {self.counter} исполнено. Завершение работы котировщика!')
+                                    self.set_led_color('lightgray')  # Смена цвета светодиода
                                     sleep(timeout)
                                     self.running = False
                                 else:
@@ -1449,6 +1595,7 @@ class App:
                                 quantity_sell = basket_size
                                 logger.info(f'Выставляем лимитную заявку на продажу: {dataname_sell}')
                                 logger.info(f'по цене: {limit_price_sell} колич: {quantity_sell}.')
+                                self.set_led_color('lightgreen')  # Смена цвета светодиода
                                 # Вызов функции выставления заявки на продажу
                                 order_id, status = get_order_sell(
                                     account_id=account_id,  # Укажите реальный номер счета
@@ -1500,6 +1647,7 @@ class App:
                                         if self.counter >= lot_count:
                                             self.add_message(
                                                 f'Заданное количество лотов {self.counter} исполнено. Завершение работы котировщика!')
+                                            self.set_led_color('lightgray')  # Смена цвета светодиода
                                             sleep(timeout)
                                             self.running = False
                                         else:
@@ -1518,9 +1666,16 @@ class App:
                                     ticker_sell = options_data[dataname_sell]['ticker']
                                     if symbol_sell in order_dict and new_quotes[ticker_sell]['ask'] != float(
                                             order_dict[symbol_sell]['limit_price']) or target_price_buy != \
-                                            new_quotes[ticker_buy]['ask'] and order_dict[symbol_sell]['client_order_id'][
-                                        :10] == filename:
-                                        get_cancel_order(account_id, order_id)
+                                            new_quotes[ticker_buy]['ask']:
+                                        for symbol, order_info in order_dict.items():
+                                            if symbol == symbol_sell:
+                                                order_id = order_info['order_id']
+                                                try:
+                                                    get_cancel_order(account_id, order_id)
+                                                    print(f"Отмена заявки {order_id} по {symbol} выполнена")
+                                                except Exception as e:
+                                                    print(f"Ошибка отмены заявки {order_id}: {e}")
+                                        self.set_led_color('yellow')  # Смена цвета светодиода
                                         logger.info(f'Заявка на продажу снята:{order_id}')
                                     sleep(1)
 
@@ -1570,16 +1725,23 @@ class App:
         """Остановка цикла и снятие активных заявок"""
         # Сначала останавливаем цикл
         self.running = False
-
+        self.set_led_color('lightgray')  # Смена цвета светодиода
         # Снимаем все активные заявки
         for symbol, order_data in order_dict.items():
-            if order_data['status'] == 1 and order_data['client_order_id'][
-                :10] == filename:  # Активная заявка для данного файла
+            if order_data['status'] == 1:  # Активная заявка
                 # Отменяем заявку через API
                 try:
                     get_cancel_order(order_data['account_id'], order_data['order_id'])
                 except Exception as e:
                     self.add_message(f"Ошибка отмены заявки {order_data['order_id']}: {e}")
+
+        # Получение списка заявок для аккаунта
+        orders_request = OrdersRequest(account_id=account_id)
+        orders_response = fp_provider.call_function(fp_provider.orders_stub.GetOrders, orders_request)
+
+        # Вывод списка заявок
+        for order in orders_response.orders:
+            print(f"Заявка: {order.order_id}, Статус: {order.status}, Тикер: {order.order.symbol}")
 
         # Обновляем статус в интерфейсе
         self.status_label.config(text="Status: Stopped")
@@ -1591,21 +1753,20 @@ class App:
         # Здесь будет ваш код сброса параметров
 
     def exit(self):
-        global guids
+        global guids_dict
         """Выход из приложения"""
         self.add_message('Отмена подписок')
-        # Отписываемся от всех каналов
-        if guids:  # Проверяем, есть ли подписки
-            for guid in guids:
+        if guids_dict:  # Проверяем, есть ли подписки в словаре
+            # Отписка от всех GUID из словаря
+            for key, guid_value in guids_dict.items():
                 try:
-                    ap_provider.unsubscribe(guid)
-                    logger.info(f'Отписка от котировок {guid} выполнена')
-                    self.add_message(f'Отписка от котировок {guid} выполнена')
-                    print(f'Отписка от котировок {guid} выполнена')
+                    ap_provider.unsubscribe(guid_value)
+                    print(f"Отписка от {key}: {guid_value}")
                 except Exception as e:
-                    logger.error(f'Ошибка при отписке от {guid}: {e}')
+                    print(f"Ошибка отписки от {key}: {e}")
         else:
             logger.info('Нет активных подписок для отписки')
+
         # Отмена подписок
         self.add_message(f'\n')
         self.add_message('Отмена подписок')

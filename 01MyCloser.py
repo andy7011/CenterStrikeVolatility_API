@@ -101,7 +101,7 @@ def get_portfolio_positions():
     return portfolio_positions
 
 
-# Словарь новых котироок
+# Словарь новых котировок
 new_quotes = {}
 
 
@@ -1088,7 +1088,6 @@ class App:
             # Поиск позиции по символу
             for symbol, quantity in portfolio_positions.items():
                 # print(symbol, dataname)
-                # if ticker in symbol:  # Сравнение если ticker содержится в symbol
                 if ticker == symbol.split('@')[0]:  # Сравнение если ticker содержится в symbol
                     try:
                         open_iv_buy = float(
@@ -1628,9 +1627,8 @@ class App:
                                     ticker_sell = options_data[dataname_sell]['ticker']
                                     if symbol_sell in order_dict and new_quotes[ticker_sell]['ask'] != float(
                                             order_dict[symbol_sell]['limit_price']) or target_price_buy != \
-                                            new_quotes[ticker_buy]['ask'] and order_dict[symbol_sell]['client_order_id'][
-                                        :10] == filename:
-                                        get_cancel_order(account_id, order_id)
+                                            new_quotes[ticker_buy]['ask']:
+                                        get_cancel_order(account_id, order_dict[symbol_sell]['order_id'])
                                         self.set_led_color('yellow')  # Смена цвета светодиода
                                         logger.info(f'Заявка на продажу снята:{order_id}')
                                     sleep(1)
@@ -1684,8 +1682,7 @@ class App:
         self.set_led_color('lightgray')  # Смена цвета светодиода
         # Снимаем все активные заявки
         for symbol, order_data in order_dict.items():
-            if order_data['status'] == 1 and order_data['client_order_id'][
-                :10] == filename:  # Активная заявка для данного файла
+            if order_data['status'] == 1:  # Активная заявка
                 # Отменяем заявку через API
                 try:
                     get_cancel_order(order_data['account_id'], order_data['order_id'])

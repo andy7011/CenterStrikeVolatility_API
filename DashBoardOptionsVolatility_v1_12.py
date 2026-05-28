@@ -999,7 +999,7 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
 
     for d_exp in exp_dates:
         exp_date = pd.to_datetime(d_exp).date()
-        if exp_date <= current_date:
+        if exp_date < current_date:
             expired_dates.add(d_exp)
         else:
             active_dates.append(d_exp)
@@ -1412,7 +1412,7 @@ def update_output_history_naklon(dropdown_value, slider_value, n):
     color_map = {}
     for d_exp in expiration_dates:
         exp_date = pd.to_datetime(d_exp).date()
-        if exp_date <= current_date:
+        if exp_date < current_date:
             color_map[d_exp] = 'gray'  # Серый для истёкших
         else:
             color_map[d_exp] = colors[color_index % len(colors)]  # Цвета из палитры для активных
