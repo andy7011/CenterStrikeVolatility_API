@@ -27,7 +27,7 @@ from AlorPy import AlorPy  # Работа с Alor OpenAPI V2
 
 ap_provider = AlorPy()  # Подключаемся ко всем торговым счетам
 
-temp_str = 'C:\\Users\\sftpuser\\Position\\$name_file'
+temp_str = 'C:\\Users\\шадрин\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 # Глобальные переменные для хранения данных
@@ -208,6 +208,7 @@ file.close()
 
 # Будем запрашивать глубину истории 140 дней
 dt_from = datetime.now() - timedelta(days=140)
+print(f'dt_from {dt_from}')
 dataname = f'SPBFUT.{first_key}'
 time_frame = 'M15'
 
