@@ -126,6 +126,7 @@ def _on_new_quotes(response):
         'bid_vol': bid_vol,
         'last_price': last_price
     }
+    print(new_quotes)
     # print(f"Котировки для {description}: ask={ask}, ask_vol={ask_vol}, bid={bid}, bid_vol={bid_vol}, last_price={last_price}")
 
 
