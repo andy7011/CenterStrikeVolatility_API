@@ -557,27 +557,28 @@ def selected_profit(app_instance):
             quantity_sell = quantity_value
 
     # Получаем информацию о тикере dataname_sell
-    option_sell_info = get_option_info(dataname_sell)
+    # option_sell_info = get_option_info(dataname_sell)
+    sell_ticker = dataname_sell.split('.')[-1]
     expected_profit = float(app_instance.spinbox_profit.get())
     decimals = options_data[dataname_sell]['decimals']
     step_price = int(float(options_data[dataname_sell]['minstep']))  # Минимальный шаг цены
-    theor_iv_sell = option_sell_info[dataname_sell]['volatility']
+    # theor_iv_sell = option_sell_info[dataname_sell]['volatility']
+    theor_iv_sell = new_quotes[sell_ticker]['implied_volatility']
 
     # Получаем информацию о тикере dataname_buy
-    option_buy_info = get_option_info(dataname_buy)
+    # option_buy_info = get_option_info(dataname_buy)
     # Получаем ask, bid из потока котировок по подписке из обновляемого словаря new_quotes
-    sell_ticker = dataname_sell.split('.')[-1]
     ask_sell = new_quotes[sell_ticker]['ask']
     bid_sell = new_quotes[sell_ticker]['bid']
     # print(f'ask_sell: {ask_sell}, bid_sell: {bid_sell}, last_sell: {last_sell}')
     S, K, T, opt_type_sell = get_option_data_for_calc_price(dataname_sell)  # Получаем данные опциона dataname_sell
     if opt_type_sell == 'C':
-        sigma = option_sell_info[dataname_sell]['volatility'] / 100
+        sigma = new_quotes[sell_ticker]['implied_volatility'] / 100
         ask_iv_sell = newton_vol_call(S, K, T, ask_sell, r, sigma) * 100
         bid_iv_sell = newton_vol_call(S, K, T, bid_sell, r, sigma) * 100
         diff_pos = open_iv_sell - open_iv_buy
     else:  # opt_type_sell == 'P'
-        sigma = option_sell_info[dataname_sell]['volatility'] / 100
+        sigma = new_quotes[sell_ticker]['implied_volatility'] / 100
         ask_iv_sell = newton_vol_put(S, K, T, ask_sell, r, sigma) * 100
         bid_iv_sell = newton_vol_put(S, K, T, bid_sell, r, sigma) * 100
         diff_pos = open_iv_buy - open_iv_sell
@@ -585,19 +586,20 @@ def selected_profit(app_instance):
     app_instance.add_message(f"Expected profit: {expected_profit} Difference pos: {round(diff_pos, 2)}")
     # print(f'ask_iv_sell: {round(ask_iv_sell, 2)}, bid_iv_sell: {round(bid_iv_sell, 2)}, last_iv_sell: {round(last_iv_sell, 2)}')
 
-    theor_iv_buy = option_buy_info[dataname_buy]['volatility']
-    # Получаем ask, bid из потока котировок по подписке из обновляемого словаря new_quotes
     buy_ticker = dataname_buy.split('.')[-1]
+    # theor_iv_buy = option_buy_info[dataname_buy]['volatility']
+    theor_iv_buy = new_quotes[buy_ticker]['implied_volatility']
+    # Получаем ask, bid из потока котировок по подписке из обновляемого словаря new_quotes
     ask_buy = new_quotes[buy_ticker]['ask']
     bid_buy = new_quotes[buy_ticker]['bid']
     # print(f'ask_buy: {ask_buy}, bid_buy: {bid_buy}, last_buy: {last_buy}')
     S, K, T, opt_type_buy = get_option_data_for_calc_price(dataname_buy)  # Получаем данные опциона dataname_buy
     if opt_type_buy == 'C':
-        sigma = option_buy_info[dataname_buy]['volatility'] / 100
+        sigma = new_quotes[buy_ticker]['implied_volatility'] / 100
         ask_iv_buy = newton_vol_call(S, K, T, ask_buy, r, sigma) * 100
         bid_iv_buy = newton_vol_call(S, K, T, bid_buy, r, sigma) * 100
     else:
-        sigma = option_buy_info[dataname_buy]['volatility'] / 100
+        sigma = new_quotes[buy_ticker]['implied_volatility'] / 100
         ask_iv_buy = newton_vol_put(S, K, T, ask_buy, r, sigma) * 100
         bid_iv_buy = newton_vol_put(S, K, T, bid_buy, r, sigma) * 100
     # print(f'ask_iv_buy: {round(ask_iv_buy, 2)}, bid_iv_buy: {round(bid_iv_buy, 2)}, last_iv_buy: {round(last_iv_buy, 2)}')
@@ -711,47 +713,47 @@ def selected_indent(app_instance):
     app_instance.add_message(f"Сдвиг ордера в шагах цены: {indent}")
 
 
-option_info = {}
+# option_info = {}
 # Глобальная переменная для хранения времени последнего вызова get_option_info
-last_call_time = 0
+# last_call_time = 0
 
-def get_option_info(option_dataname):
-    global last_call_time
-
-    current_time = time.time()
-
-    # Определяем, нужно ли загружать данные с сервера
-    if current_time - last_call_time > 10:
-        # Более 10 секунд прошло - загружаем с сервера
-        reload = True
-    else:
-        # Менее 10 секунд - используем кэшированные данные
-        reload = False
-
-    # Получаем информацию о тикере
-    alor_board, symbol = ap_provider.dataname_to_alor_board_symbol(option_dataname)
-    exchange = ap_provider.get_exchange(alor_board, symbol)
-    si = ap_provider.get_symbol_info(exchange, symbol, reload=reload)
-
-    # Создаем словарь для опциона option_dataname
-    option_info[option_dataname] = {}
-    option_info[option_dataname] = {
-        'ticker': si['shortname'],
-        'theorPrice': si['theorPrice'],
-        'volatility': float(si['volatility']),
-        'strikePrice': float(si['strikePrice']),
-        'endExpiration': si['endExpiration'],
-        'base_asset_ticker': si['underlyingSymbol'],
-        'optionSide': si['optionSide'],
-        'lot_size': si['lotsize'],
-        'minstep': si['minstep'],
-        'decimals': si['decimals']
-    }
-
-    # Обновляем время последнего вызова
-    last_call_time = current_time
-
-    return option_info
+# def get_option_info(option_dataname):
+#     global last_call_time
+#
+#     current_time = time.time()
+#
+#     # Определяем, нужно ли загружать данные с сервера
+#     if current_time - last_call_time > 10:
+#         # Более 10 секунд прошло - загружаем с сервера
+#         reload = True
+#     else:
+#         # Менее 10 секунд - используем кэшированные данные
+#         reload = False
+#
+#     # Получаем информацию о тикере
+#     alor_board, symbol = ap_provider.dataname_to_alor_board_symbol(option_dataname)
+#     exchange = ap_provider.get_exchange(alor_board, symbol)
+#     si = ap_provider.get_symbol_info(exchange, symbol, reload=reload)
+#
+#     # Создаем словарь для опциона option_dataname
+#     option_info[option_dataname] = {}
+#     option_info[option_dataname] = {
+#         'ticker': si['shortname'],
+#         'theorPrice': si['theorPrice'],
+#         'volatility': float(si['volatility']),
+#         'strikePrice': float(si['strikePrice']),
+#         'endExpiration': si['endExpiration'],
+#         'base_asset_ticker': si['underlyingSymbol'],
+#         'optionSide': si['optionSide'],
+#         'lot_size': si['lotsize'],
+#         'minstep': si['minstep'],
+#         'decimals': si['decimals']
+#     }
+#
+#     # Обновляем время последнего вызова
+#     last_call_time = current_time
+#
+#     return option_info
 
 
 # Получаем данные по опционам, сохраняем в словарь
@@ -910,44 +912,46 @@ def option_price(S, sigma, K, T, r: float, opt_type):
     return price
 
 
-# Сбор данных опциона CALL для расчета IV
-def option_data_for_IV_calculation_call(dataname, price_call):
-    # S: последняя цена БА из обновляемого словаря new_quotes
-    # K: strike price
-    # T: time to maturity
-    # C: Call value
-    # r: interest rate
-    # sigma: volatility of underlying asset
-    base_asset_ticker = options_data[dataname]['base_asset_ticker']
-    S = float(new_quotes[base_asset_ticker]['last_price'])
-    K = float(options_data[dataname]['strikePrice'])
-    expiration_datetime = options_data[dataname]['endExpiration']
-    expiration_dt = datetime.fromisoformat(expiration_datetime.replace('Z', '+00:00'))
-    T_razn = (expiration_dt - datetime.today()).days
-    T = float((T_razn + 1.151) / 365)
-    C = price_call
-    sigma = options_data[dataname]['volatility'] / 100
-    return S, K, T, C, sigma
+# # Сбор данных опциона CALL для расчета IV
+# def option_data_for_IV_calculation_call(dataname, price_call):
+#     # S: последняя цена БА из обновляемого словаря new_quotes
+#     # K: strike price
+#     # T: time to maturity
+#     # C: Call value
+#     # r: interest rate
+#     # sigma: volatility of underlying asset
+#     base_asset_ticker = options_data[dataname]['base_asset_ticker']
+#     S = float(new_quotes[base_asset_ticker]['last_price'])
+#     K = float(options_data[dataname]['strikePrice'])
+#     expiration_datetime = options_data[dataname]['endExpiration']
+#     expiration_dt = datetime.fromisoformat(expiration_datetime.replace('Z', '+00:00'))
+#     T_razn = (expiration_dt - datetime.today()).days
+#     T = float((T_razn + 1.151) / 365)
+#     C = price_call
+#     # sigma = options_data[dataname]['volatility'] / 100
+#     sigma = new_quotes[dataname]['implied_volatility'] / 100
+#     return S, K, T, C, sigma
 
 
-# Сбор данных опциона PUT для расчета IV
-def option_data_for_IV_calculation_put(dataname, price_put):
-    # S: последняя цена БА из обновляемого словаря new_quotes
-    # K: strike price
-    # T: time to maturity
-    # P: Put value
-    # r: interest rate
-    # sigma: volatility of underlying asset
-    base_asset_ticker = options_data[dataname]['base_asset_ticker']
-    S = float(new_quotes[base_asset_ticker]['last_price'])
-    K = float(options_data[dataname]['strikePrice'])
-    expiration_datetime = options_data[dataname]['endExpiration']
-    expiration_dt = datetime.fromisoformat(expiration_datetime.replace('Z', '+00:00'))
-    T_razn = (expiration_dt - datetime.today()).days
-    T = float((T_razn + 1.151) / 365)
-    P = price_put
-    sigma = options_data[dataname]['volatility'] / 100
-    return S, K, T, P, sigma
+# # Сбор данных опциона PUT для расчета IV
+# def option_data_for_IV_calculation_put(dataname, price_put):
+#     # S: последняя цена БА из обновляемого словаря new_quotes
+#     # K: strike price
+#     # T: time to maturity
+#     # P: Put value
+#     # r: interest rate
+#     # sigma: volatility of underlying asset
+#     base_asset_ticker = options_data[dataname]['base_asset_ticker']
+#     S = float(new_quotes[base_asset_ticker]['last_price'])
+#     K = float(options_data[dataname]['strikePrice'])
+#     expiration_datetime = options_data[dataname]['endExpiration']
+#     expiration_dt = datetime.fromisoformat(expiration_datetime.replace('Z', '+00:00'))
+#     T_razn = (expiration_dt - datetime.today()).days
+#     T = float((T_razn + 1.151) / 365)
+#     P = price_put
+#     # sigma = options_data[dataname]['volatility'] / 100
+#     sigma = new_quotes[dataname]['implied_volatility'] / 100
+#     return S, K, T, P, sigma
 
 
 # Расчет IV Метод Ньютона для опциона CALL
@@ -1274,8 +1278,6 @@ class App:
             # print(f'open_iv_sell: {open_iv_sell}')
             quantity_sell = options_data[dataname_sell]['lot_size']  # Размер лота
             step_price = int(float(options_data[dataname_sell]['minstep']))  # Минимальный шаг цены
-            theoretical_price_sell_ = options_data[dataname_sell]['theorPrice']
-            theor_iv_sell = options_data[dataname_sell]['volatility']
             decimals = options_data[dataname_sell]['decimals']
             # profit_iv_sell = theor_iv_sell + expected_profit
             # # Далее вычисляем profit_price_sell из profit_iv_sell по формуле Блэка-Шоулза
@@ -1293,11 +1295,13 @@ class App:
             bid_sell_vol = int(round(new_quotes[ticker]['bid_vol'], decimals))
             # print(f'ask_sell: {ask_sell}, bid_sell: {bid_sell} ask_sell_vol: {ask_sell_vol}, bid_sell_vol: {bid_sell_vol}')
             if opt_type_sell == CALL:
-                sigma = options_data[dataname_sell]['volatility'] / 100
+                # sigma = options_data[dataname_sell]['volatility'] / 100
+                sigma = new_quotes[ticker]['implied_volatility'] / 100
                 ask_iv_sell = newton_vol_call(S, K, T, ask_sell, r, sigma) * 100
                 bid_iv_sell = newton_vol_call(S, K, T, bid_sell, r, sigma) * 100
             else:
-                sigma = options_data[dataname_sell]['volatility'] / 100
+                # sigma = options_data[dataname_sell]['volatility'] / 100
+                sigma = new_quotes[ticker]['implied_volatility'] / 100
                 ask_iv_sell = newton_vol_put(S, K, T, ask_sell, r, sigma) * 100
                 bid_iv_sell = newton_vol_put(S, K, T, bid_sell, r, sigma) * 100
 
@@ -1327,12 +1331,14 @@ class App:
             bid_buy_vol = int(round(new_quotes[ticker]['bid_vol'], decimals))
             # print(f'opt_type {opt_type} Котировки ask_buy: {ask_buy} ask_buy_vol: {ask_buy_vol} bid_buy: {bid_buy} bid_buy_vol: {bid_buy_vol}')
             if opt_type_buy == 'C':
-                sigma = options_data[dataname_buy]['volatility'] / 100
+                # sigma = options_data[dataname_buy]['volatility'] / 100
+                sigma = new_quotes[ticker]['implied_volatility'] / 100
                 ask_iv_buy = newton_vol_call(S, K, T, ask_buy, r, sigma) * 100
                 bid_iv_buy = newton_vol_call(S, K, T, bid_buy, r, sigma) * 100
                 difference_pos = round(open_iv_buy - open_iv_sell, 2)
             else:
-                sigma = options_data[dataname_buy]['volatility'] / 100
+                # sigma = options_data[dataname_buy]['volatility'] / 100
+                sigma = new_quotes[ticker]['implied_volatility'] / 100
                 ask_iv_buy = newton_vol_put(S, K, T, ask_buy, r, sigma) * 100
                 bid_iv_buy = newton_vol_put(S, K, T, bid_buy, r, sigma) * 100
                 difference_pos = round(open_iv_sell - open_iv_buy, 2)
