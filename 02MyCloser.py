@@ -1,8 +1,7 @@
 import logging  # Выводим лог на консоль и в файл
-logging.basicConfig(level=logging.WARNING)  # уровень логгирования
+# logging.basicConfig(level=logging.WARNING)  # уровень логгирования
 import os.path
 import tkinter as tk
-import time
 from tkinter import ttk
 from app.supported_base_asset import MAP
 from pytz import utc
@@ -14,7 +13,6 @@ from FinamPy.grpc.marketdata_service_pb2 import SubscribeQuoteResponse, Subscrib
 from FinamPy.grpc.accounts_service_pb2 import GetAccountRequest, GetAccountResponse  # Счет
 import FinamPy.grpc.side_pb2 as side  # Направление заявки
 from FinLabPy.Schedule.MOEX import Futures  # Расписание торгов срочного рынка
-from zoneinfo import ZoneInfo  # ВременнАя зона
 from moex_api import get_option_board, get_option_expirations
 from QUIK_Stream_v1_7 import calculate_open_data_open_price_open_iv
 import math
@@ -43,7 +41,6 @@ dataname_guid_buy_old = ''
 guids_dict = {}
 
 # Глобальные переменные
-# global filename, dataname_sell, dataname_buy, base_asset_ticker, quoter_side, expected_profit, lot_count, basket_size, timeout
 filename = os.path.splitext(os.path.basename(__file__))[
     0]  # Получаем имя файла (не более 10 символов исключая служебные) без пути до точки .py
 dataname_sell = ''
@@ -586,7 +583,6 @@ def selected_profit(app_instance):
     # print(f'ask_iv_sell: {round(ask_iv_sell, 2)}, bid_iv_sell: {round(bid_iv_sell, 2)}, last_iv_sell: {round(last_iv_sell, 2)}')
 
     buy_ticker = dataname_buy.split('.')[-1]
-    # theor_iv_buy = option_buy_info[dataname_buy]['volatility']
     theor_iv_buy = new_quotes[buy_ticker]['implied_volatility']
     # Получаем ask, bid из потока котировок по подписке из обновляемого словаря new_quotes
     ask_buy = new_quotes[buy_ticker]['ask']
@@ -956,6 +952,7 @@ class App:
         self.target_iv_call = 0
         self.trade_count = 0  # Счётчик циклов попыток исполнения встречной заявки
         self.difference_pos = 0
+        self.difference_theor = 0
 
         # Создаем фрейм для основных элементов
         main_frame = tk.Frame(self.root)
@@ -1052,6 +1049,10 @@ class App:
         # Label Difference pos, %:
         self.expected_profit_label = tk.Label(main_frame, text=f"Difference position, % : {self.difference_pos:.2f}")
         self.expected_profit_label.pack(pady=1)
+
+        # Label Difference theor, %:
+        self.difference_theor_label = tk.Label(main_frame, text=f"Difference theor, % : {self.difference_theor:.2f}")
+        self.difference_theor_label.pack(pady=1)
 
         # Спинбокс spinbox_profit profit/difference
         self.spinbox_profit_var = tk.DoubleVar(value=-2.00)
@@ -1176,6 +1177,7 @@ class App:
             self.status_label.config(text="Status: Running")
 
             ticker = options_data[dataname_sell]['ticker']
+            theor_price_sell_ = new_quotes[ticker]['theoretical_price']  # Теоретическая цена для котирования продажи
             symbol_sell = f'{ticker}@RTSX'  # Тикер Финама
             # Поиск позиции по символу
             for symbol, quantity in portfolio_positions.items():
@@ -1203,24 +1205,24 @@ class App:
             # theoretical_price_sell = int(round((theoretical_price_sell_ // step_price) * step_price, decimals))
             # Получаем ask, bid из потока котировок по подписке из обновляемого словаря new_quotes
             ticker = options_data[dataname_sell]['ticker']
+            theor_iv_sell = new_quotes[ticker]['implied_volatility']
             ask_sell = int(round(new_quotes[ticker]['ask'], decimals))
             ask_sell_vol = int(round(new_quotes[ticker]['ask_vol'], decimals))
             bid_sell = int(round(new_quotes[ticker]['bid'], decimals))
             bid_sell_vol = int(round(new_quotes[ticker]['bid_vol'], decimals))
             # print(f'ask_sell: {ask_sell}, bid_sell: {bid_sell} ask_sell_vol: {ask_sell_vol}, bid_sell_vol: {bid_sell_vol}')
             if opt_type_sell == CALL:
-                # sigma = options_data[dataname_sell]['volatility'] / 100
                 sigma = new_quotes[ticker]['implied_volatility'] / 100
                 ask_iv_sell = newton_vol_call(S, K, T, ask_sell, r, sigma) * 100
                 bid_iv_sell = newton_vol_call(S, K, T, bid_sell, r, sigma) * 100
             else:
-                # sigma = options_data[dataname_sell]['volatility'] / 100
                 sigma = new_quotes[ticker]['implied_volatility'] / 100
                 ask_iv_sell = newton_vol_put(S, K, T, ask_sell, r, sigma) * 100
                 bid_iv_sell = newton_vol_put(S, K, T, bid_sell, r, sigma) * 100
 
             # Для тикера на покупку
             ticker = options_data[dataname_buy]['ticker']
+            theor_price_buy_ = new_quotes[ticker]['theoretical_price']  # Теоретическая цена для котирования покупки
             symbol_buy = f'{ticker}@RTSX'  # Тикер Финама
             # Поиск позиции по символу
             for symbol, quantity in portfolio_positions.items():
@@ -1239,27 +1241,30 @@ class App:
                 dataname_buy)  # Получаем данные опциона dataname_sell
             # Получаем ask, bid из потока котировок по подписке из обновляемого словаря new_quotes
             ticker = options_data[dataname_buy]['ticker']
+            theor_iv_buy = new_quotes[ticker]['implied_volatility']
             ask_buy = int(round(new_quotes[ticker]['ask'], decimals))
             ask_buy_vol = int(round(new_quotes[ticker]['ask_vol'], decimals))
             bid_buy = int(round(new_quotes[ticker]['bid'], decimals))
             bid_buy_vol = int(round(new_quotes[ticker]['bid_vol'], decimals))
             # print(f'opt_type {opt_type} Котировки ask_buy: {ask_buy} ask_buy_vol: {ask_buy_vol} bid_buy: {bid_buy} bid_buy_vol: {bid_buy_vol}')
             if opt_type_buy == 'C':
-                # sigma = options_data[dataname_buy]['volatility'] / 100
                 sigma = new_quotes[ticker]['implied_volatility'] / 100
                 ask_iv_buy = newton_vol_call(S, K, T, ask_buy, r, sigma) * 100
                 bid_iv_buy = newton_vol_call(S, K, T, bid_buy, r, sigma) * 100
                 difference_pos = round(open_iv_buy - open_iv_sell, 2)
+                difference_theor = round(theor_iv_buy - theor_iv_sell, 2)
             else:
-                # sigma = options_data[dataname_buy]['volatility'] / 100
                 sigma = new_quotes[ticker]['implied_volatility'] / 100
                 ask_iv_buy = newton_vol_put(S, K, T, ask_buy, r, sigma) * 100
                 bid_iv_buy = newton_vol_put(S, K, T, bid_buy, r, sigma) * 100
                 difference_pos = round(open_iv_sell - open_iv_buy, 2)
+                difference_theor = round(theor_iv_sell - theor_iv_buy, 2)
             # print(f'Волатильность ask_iv_buy: {round(ask_iv_buy, 2)} bid_iv_buy: {round(bid_iv_buy, 2)}')
             self.difference_pos = difference_pos
             self.expected_profit_label.config(text=f"Difference pos, % : {self.difference_pos:.2f}")
             # print(f'self.difference_pos: {self.difference_pos}')
+            self.difference_theor = difference_theor
+            self.difference_theor_label.config(text=f"Difference theor, % : {self.difference_theor:.2f}")
 
             # Вариант 1 "Котируем покупку"
             if quoter_side == 'BUY':
@@ -1295,6 +1300,8 @@ class App:
                 target_price_buy_ = option_price(S, target_profit_buy / 100, K, T, r,
                                                  opt_type=opt_type_buy)  # Целевая цена для котирования покупки
                 target_price_buy = int(round((target_price_buy_ // step_price) * step_price, decimals))
+                # theor_price_buy = int(round((theor_price_buy_ // step_price) * step_price, decimals))
+
                 # Таргет-цены на панель управления
                 if opt_type_buy == CALL:
                     self.target_price_call = target_price_buy
@@ -1312,10 +1319,10 @@ class App:
                     current_time = datetime.now().strftime('%H:%M:%S')
                     opt_type = CALL if options_data[dataname_buy]['optionSide'] == 'Call' else PUT
                     if opt_type == CALL:
-                        self.add_message(f'                    PUT      CALL')
+                        # self.add_message(f'                    PUT      CALL')
                         self.add_message(f'{current_time} Target: BUY {target_price_sell} SELL {target_price_buy}')
                     else:
-                        self.add_message(f'                    PUT      CALL')
+                        # self.add_message(f'                    PUT      CALL')
                         self.add_message(f'{current_time} Target: BUY {target_price_buy} SELL {target_price_sell}')
                     # Сохраняем новые значения
                     old_target_price_sell = target_price_sell
@@ -1570,6 +1577,8 @@ class App:
                 target_price_sell_ = option_price(S, target_profit_sell / 100, K, T, r,
                                                   opt_type=opt_type_sell)  # Целевая цена для котирования продажи
                 target_price_sell = int(round((target_price_sell_ // step_price) * step_price, decimals))
+                # theor_price_sell = int(round(theor_price_sell_ // step_price) * step_price, decimals)
+
                 # Таргет-цены на панель управления
                 if opt_type_sell == CALL:
                     self.target_opt_type = 'C'  # Устанавливаем атрибут класса
@@ -1591,10 +1600,10 @@ class App:
                     current_time = datetime.now().strftime('%H:%M:%S')
                     opt_type = CALL if options_data[dataname_sell]['optionSide'] == 'Call' else PUT
                     if opt_type == CALL:
-                        self.add_message(f'                    PUT      CALL')
+                        # self.add_message(f'                    PUT      CALL')
                         self.add_message(f'{current_time} Target: BUY {target_price_buy} SELL {target_price_sell}')
                     else:
-                        self.add_message(f'                    PUT      CALL')
+                        # self.add_message(f'                    PUT      CALL')
                         self.add_message(f'{current_time} Target: SELL {target_price_sell} BUY {target_price_buy}')
                     # Сохраняем новые значения
                     old_target_price_sell = target_price_sell
@@ -1916,7 +1925,6 @@ class App:
         self.add_message('Отмена подписок')
         fp_provider.on_order.unsubscribe(_on_order)  # Сбрасываем обработчик заявок
         fp_provider.on_trade.unsubscribe(_on_trade)  # Сбрасываем обработчик сделок
-        # ap_provider.on_new_quotes.unsubscribe(_on_new_quotes)  # Отменяем подписку на события
         fp_provider.on_quote.unsubscribe(_on_new_quotes)  # Отменяем подписку на котировки
         self.add_message('Закрываем канал перед выходом')
         fp_provider.close_channel()  # Закрываем канал перед выходом
