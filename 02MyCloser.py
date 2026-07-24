@@ -562,7 +562,7 @@ def selected_profit(app_instance):
     theor_iv_sell = new_quotes[sell_ticker]['implied_volatility']
 
     # Получаем информацию о тикере dataname_buy
-    # option_buy_info = get_option_info(dataname_buy)
+
     # Получаем ask, bid из потока котировок по подписке из обновляемого словаря new_quotes
     ask_sell = new_quotes[sell_ticker]['ask']
     bid_sell = new_quotes[sell_ticker]['bid']
@@ -664,7 +664,7 @@ def selected_profit(app_instance):
             app_instance.add_message(
                 f'{"target:":<7}{round(bid_sell, decimals):<7}{round(bid_iv_sell, 2):<7}{"target:":<7}{round(limit_price_buy, decimals):<7}{round(target_iv_buy, 2):<7}')
             app_instance.add_message(
-                f'{"Diff.":<7}{"theor:":<7}{round((theor_iv_buy - theor_iv_sell), 2):<7}{"Diff.":<7}{"market:":<7}{round((ask_iv_buy - bid_iv_sell), 2):<7}')
+                f'{"Diff. theor:":<7}{round((theor_iv_buy - theor_iv_sell), 2):<7}{"Diff.":<7}{"market:":<7}{round((ask_iv_buy - bid_iv_sell), 2):<7}')
         else:
             target_iv_buy = bid_iv_sell - expected_profit  # Целевая прибыль для котирования покупки
             limit_price_buy_ = option_price(S, target_iv_buy / 100, K, T, r,
@@ -941,7 +941,7 @@ class App:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title(filename)
-        self.root.geometry("550x720")
+        self.root.geometry("550x610")
 
         self.running = False
         self.counter = 0
@@ -959,17 +959,13 @@ class App:
         main_frame.pack(side=tk.LEFT, fill=tk.Y, padx=5, pady=5)
 
         # Создаем фрейм для окна сообщений
-        self.message_frame = tk.Frame(self.root, width=700, height=700, bg='lightgray')
+        self.message_frame = tk.Frame(self.root, width=700, height=610, bg='lightgray')
         self.message_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=1, pady=1)
         self.message_frame.pack_propagate(False)  # Не изменять размер по содержимому
 
         # Создаем текстовое поле для сообщений
         self.message_text = tk.Text(self.message_frame, height=20, width=70)
         self.message_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-
-        # Label My Quote Robot
-        self.label = tk.Label(main_frame, text=filename)
-        self.label.pack(pady=1)
 
         # Label base_tickers_list
         self.base_asset_ticker_label = tk.Label(main_frame, text="Базовый актив: ")
@@ -1054,11 +1050,29 @@ class App:
         self.difference_theor_label = tk.Label(main_frame, text=f"Difference theor, % : {self.difference_theor:.2f}")
         self.difference_theor_label.pack(pady=1)
 
-        # Спинбокс spinbox_profit profit/difference
-        self.spinbox_profit_var = tk.DoubleVar(value=-2.00)
-        self.spinbox_profit = tk.Spinbox(main_frame, from_=-50, to=50, increment=0.01, format="%.2f", width=8,
+        # # Спинбокс spinbox_profit profit/difference
+        # self.spinbox_profit_var = tk.DoubleVar(value=-2.00)
+        # self.spinbox_profit = tk.Spinbox(main_frame, from_=-50, to=50, increment=0.01, format="%.2f", width=8,
+        #                                  textvariable=self.spinbox_profit_var, command=lambda: selected_profit(self))
+        # self.spinbox_profit.pack(pady=1)
+
+        # Создаем фрейм для размещения Spinbox и Theor на одной линии
+        theor_profit_frame = tk.Frame(main_frame)
+        theor_profit_frame.pack(pady=1, side=tk.TOP)
+
+        # Создаем переменную для Spinbox
+        self.spinbox_profit_var = tk.StringVar(value="-2.00")  # Значение по умолчанию -2.0
+
+        # Spinbox для profit
+        self.spinbox_profit = tk.Spinbox(theor_profit_frame, from_=-100, to=100, increment=0.01, format="%.2f", width=6,
                                          textvariable=self.spinbox_profit_var, command=lambda: selected_profit(self))
-        self.spinbox_profit.pack(pady=1)
+                                         # textvariable=self.expected_profit_var)
+        self.spinbox_profit.pack(side=tk.LEFT, padx=5)
+
+        # Checkbutton Theor - размещаем справа от Spinbox
+        self.theor_var = tk.BooleanVar(value=True)  # По умолчанию True (включен)
+        self.theor_check = tk.Checkbutton(theor_profit_frame, text="Theor", variable=self.theor_var)
+        self.theor_check.pack(side=tk.LEFT, padx=10)
 
         # Target-цены
         self.target_label = tk.Label(main_frame, text=" PUT   CALL")
@@ -1076,57 +1090,112 @@ class App:
         self.target_price_label_call.pack(side=tk.LEFT, pady=1)
         self.target_iv_label_call.pack(side=tk.LEFT, pady=1)
 
-        # Label Выбор количества лотов
-        self.lot_count_label = tk.Label(main_frame, text="Количество лотов:")
+        # # Label Выбор количества лотов
+        # self.lot_count_label = tk.Label(main_frame, text="Количество лотов:")
+        # self.lot_count_label.pack(pady=1)
+        #
+        # # # Spinbox Переменная lot_count
+        # # self.spinbox_lot_count_var = tk.IntVar(value=1)
+        # self.spinbox_lot_count_var = tk.StringVar(value="1")  # Используем StringVar
+        # self.spinbox_lot_count = tk.Spinbox(main_frame, from_=1, to=100, increment=1, width=8,
+        #                                     textvariable=self.spinbox_lot_count_var,
+        #                                     command=lambda: selected_lot_count(self))
+        # self.spinbox_lot_count.pack(pady=1)
+        #
+        # # Label Выбор размера лота
+        # self.basket_size_label = tk.Label(main_frame, text="Размер лота:")
+        # self.basket_size_label.pack(pady=1)
+        #
+        # # Spinbox Переменная Basket_size
+        # self.spinbox_basket_size_var = tk.IntVar(value=1)
+        # self.spinbox_basket_size = tk.Spinbox(main_frame, from_=1, to=100, increment=1, width=8,
+        #                                       textvariable=self.spinbox_basket_size_var,
+        #                                       command=lambda: selected_basket_size(self))
+        # self.spinbox_basket_size.pack(pady=1)
+
+        # Label Выбор количества и размера лотов
+        self.lot_count_label = tk.Label(main_frame, text="Количество и размер лота:")
         self.lot_count_label.pack(pady=1)
 
-        # # Spinbox Переменная lot_count
-        # self.spinbox_lot_count_var = tk.IntVar(value=1)
+        # Создаем фрейм для размещения двух Spinbox на одной линии
+        spinbox_frame = tk.Frame(main_frame)
+        spinbox_frame.pack()
+
+        # Spinbox lot_count
         self.spinbox_lot_count_var = tk.StringVar(value="1")  # Используем StringVar
-        self.spinbox_lot_count = tk.Spinbox(main_frame, from_=1, to=100, increment=1, width=8,
+        self.spinbox_lot_count = tk.Spinbox(spinbox_frame, from_=1, to=100, increment=1, width=8,
                                             textvariable=self.spinbox_lot_count_var,
                                             command=lambda: selected_lot_count(self))
-        self.spinbox_lot_count.pack(pady=1)
+        self.spinbox_lot_count.pack(side=tk.LEFT, padx=5)
 
-        # Label Выбор размера лота
-        self.basket_size_label = tk.Label(main_frame, text="Размер лота:")
-        self.basket_size_label.pack(pady=1)
-
-        # Spinbox Переменная Basket_size
+        # Spinbox basket_size
         self.spinbox_basket_size_var = tk.IntVar(value=1)
-        self.spinbox_basket_size = tk.Spinbox(main_frame, from_=1, to=100, increment=1, width=8,
+        self.spinbox_basket_size = tk.Spinbox(spinbox_frame, from_=1, to=100, increment=1, width=8,
                                               textvariable=self.spinbox_basket_size_var,
                                               command=lambda: selected_basket_size(self))
-        self.spinbox_basket_size.pack(pady=1)
+        self.spinbox_basket_size.pack(side=tk.LEFT, padx=5)
+
+        # # Label Выбор таймаута
+        # self.timeout_label = tk.Label(main_frame, text="Таймаут (сек):")
+        # self.timeout_label.pack(pady=1)
+        #
+        # # Spinbox Выбор таймаута
+        # self.spinbox_timeout = tk.Spinbox(main_frame, from_=1, to=100, increment=1, width=10)
+        # self.spinbox_timeout.delete(0, "end")
+        # self.spinbox_timeout.insert(0, timeout)
+        # self.spinbox_timeout.pack(pady=1)
+        # self.spinbox_timeout.bind("<Return>", lambda event: selected_timeout(self))
+        #
+        # # Label indent
+        # self.indent_label = tk.Label(main_frame, text="Indent: ")
+        # self.indent_label.pack(pady=1)
+        #
+        # # Spinbox Переменная indent
+        # self.spinbox_indent_var = tk.IntVar(value=0)
+        # self.spinbox_indent = tk.Spinbox(main_frame, from_=-10, to=10, increment=1, width=8,
+        #                                  textvariable=self.spinbox_indent_var, command=lambda: selected_indent(self))
+        # self.spinbox_indent.pack(pady=1)
 
         # Label Выбор таймаута
-        self.timeout_label = tk.Label(main_frame, text="Таймаут (сек):")
+        self.timeout_label = tk.Label(main_frame, text="Таймаут (сек) Indent (шаг):")
         self.timeout_label.pack(pady=1)
 
+        # Создаем фрейм для размещения двух Spinbox на одной линии
+        timeout_indent_frame = tk.Frame(main_frame)
+        timeout_indent_frame.pack()
+
         # Spinbox Выбор таймаута
-        self.spinbox_timeout = tk.Spinbox(main_frame, from_=1, to=100, increment=1, width=10)
+        self.spinbox_timeout = tk.Spinbox(timeout_indent_frame, from_=1, to=100, increment=1, width=10)
         self.spinbox_timeout.delete(0, "end")
         self.spinbox_timeout.insert(0, timeout)
-        self.spinbox_timeout.pack(pady=1)
+        self.spinbox_timeout.pack(side=tk.LEFT, padx=5)
         self.spinbox_timeout.bind("<Return>", lambda event: selected_timeout(self))
-
-        # Label indent
-        self.indent_label = tk.Label(main_frame, text="Indent: ")
-        self.indent_label.pack(pady=1)
 
         # Spinbox Переменная indent
         self.spinbox_indent_var = tk.IntVar(value=0)
-        self.spinbox_indent = tk.Spinbox(main_frame, from_=-10, to=10, increment=1, width=8,
+        self.spinbox_indent = tk.Spinbox(timeout_indent_frame, from_=-10, to=10, increment=1, width=8,
                                          textvariable=self.spinbox_indent_var, command=lambda: selected_indent(self))
-        self.spinbox_indent.pack(pady=1)
+        self.spinbox_indent.pack(side=tk.LEFT, padx=5)
+
+        # # Кнопка старт
+        # self.start_button = tk.Button(main_frame, text="Старт", command=self.start_loop)
+        # self.start_button.pack(pady=2)
+        #
+        # # Кнопка стоп
+        # self.stop_button = tk.Button(main_frame, text="Стоп", command=self.stop_loop)
+        # self.stop_button.pack(pady=2)
+
+        # Создаем фрейм для размещения кнопок на одной линии
+        button_frame = tk.Frame(main_frame)
+        button_frame.pack(pady=2)
 
         # Кнопка старт
-        self.start_button = tk.Button(main_frame, text="Старт", command=self.start_loop)
-        self.start_button.pack(pady=2)
+        self.start_button = tk.Button(button_frame, text="Старт", command=self.start_loop)
+        self.start_button.pack(side=tk.LEFT, padx=5)
 
         # Кнопка стоп
-        self.stop_button = tk.Button(main_frame, text="Стоп", command=self.stop_loop)
-        self.stop_button.pack(pady=2)
+        self.stop_button = tk.Button(button_frame, text="Стоп", command=self.stop_loop)
+        self.stop_button.pack(side=tk.LEFT, padx=5)
 
         # Button Exit
         self.exit_button = tk.Button(main_frame, text="Exit", command=self.exit)
