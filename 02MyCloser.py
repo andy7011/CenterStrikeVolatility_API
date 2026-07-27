@@ -482,7 +482,7 @@ def get_option_type_buy(app_instance):
 
 
 def selected_buy(app_instance):
-    global dataname_buy, dataname_guid_buy_old
+    global dataname_buy, dataname_sell, dataname_guid_buy_old, diff_theor
     selected_buy_ticker = app_instance.combobox_buy.get()
     dataname_buy = "SPBOPT." + selected_buy_ticker
 
@@ -497,6 +497,21 @@ def selected_buy(app_instance):
         get_option_data_alor_buy(dataname_buy)
         dataname_guid_buy_old = dataname_buy
 
+    # Вычисление наклона Diff. theor
+    sell_ticker = dataname_sell.split('.')[-1]
+    theor_iv_sell = options_data[dataname_sell]['volatility']
+    # theor_iv_sell = new_quotes[sell_ticker]['implied_volatility']
+    opt_type_sell = options_data[dataname_sell]['optionSide']
+    buy_ticker = dataname_buy.split('.')[-1]
+    # theor_iv_buy = new_quotes[buy_ticker]['implied_volatility']
+    theor_iv_buy = options_data[dataname_buy]['volatility']
+    if opt_type_sell == 'Call':
+        diff_theor = theor_iv_sell - theor_iv_buy
+    else:  # opt_type_sell == 'Put'
+        diff_theor = theor_iv_buy - theor_iv_sell
+    # Обновляем значение в Spinbox
+    app_instance.spinbox_profit_var.set(f"{diff_theor:.2f}")
+    app_instance.add_message(f'Diff. theor: {diff_theor:.2f}')
 
 # Функция для отписки от всех инструментов (вызывается при выходе)
 def unsubscribe_all():
@@ -514,7 +529,7 @@ def get_quoter_side(app_instance):
 
 
 def selected_profit(app_instance):
-    global expected_profit, dataname_sell, dataname_buy # , quantity_buy, quantity_sell
+    global expected_profit, dataname_sell, dataname_buy, diff_theor # , quantity_buy, quantity_sell
 
     # Цикл для вычисления open_iv_buy и open_iv_sell для тикеров dataname_buy и dataname_sell
     for dataname in [dataname_buy, dataname_sell]:
@@ -1050,18 +1065,12 @@ class App:
         self.difference_theor_label = tk.Label(main_frame, text=f"Difference theor, % : {self.difference_theor:.2f}")
         self.difference_theor_label.pack(pady=1)
 
-        # # Спинбокс spinbox_profit profit/difference
-        # self.spinbox_profit_var = tk.DoubleVar(value=-2.00)
-        # self.spinbox_profit = tk.Spinbox(main_frame, from_=-50, to=50, increment=0.01, format="%.2f", width=8,
-        #                                  textvariable=self.spinbox_profit_var, command=lambda: selected_profit(self))
-        # self.spinbox_profit.pack(pady=1)
-
         # Создаем фрейм для размещения Spinbox и Theor на одной линии
         theor_profit_frame = tk.Frame(main_frame)
         theor_profit_frame.pack(pady=1, side=tk.TOP)
 
         # Создаем переменную для Spinbox
-        self.spinbox_profit_var = tk.StringVar(value="-2.00")  # Значение по умолчанию -2.0
+        self.spinbox_profit_var = tk.StringVar(value='0.00')  # Значение по умолчанию
 
         # Spinbox для profit
         self.spinbox_profit = tk.Spinbox(theor_profit_frame, from_=-100, to=100, increment=0.01, format="%.2f", width=6,
@@ -1090,28 +1099,6 @@ class App:
         self.target_price_label_call.pack(side=tk.LEFT, pady=1)
         self.target_iv_label_call.pack(side=tk.LEFT, pady=1)
 
-        # # Label Выбор количества лотов
-        # self.lot_count_label = tk.Label(main_frame, text="Количество лотов:")
-        # self.lot_count_label.pack(pady=1)
-        #
-        # # # Spinbox Переменная lot_count
-        # # self.spinbox_lot_count_var = tk.IntVar(value=1)
-        # self.spinbox_lot_count_var = tk.StringVar(value="1")  # Используем StringVar
-        # self.spinbox_lot_count = tk.Spinbox(main_frame, from_=1, to=100, increment=1, width=8,
-        #                                     textvariable=self.spinbox_lot_count_var,
-        #                                     command=lambda: selected_lot_count(self))
-        # self.spinbox_lot_count.pack(pady=1)
-        #
-        # # Label Выбор размера лота
-        # self.basket_size_label = tk.Label(main_frame, text="Размер лота:")
-        # self.basket_size_label.pack(pady=1)
-        #
-        # # Spinbox Переменная Basket_size
-        # self.spinbox_basket_size_var = tk.IntVar(value=1)
-        # self.spinbox_basket_size = tk.Spinbox(main_frame, from_=1, to=100, increment=1, width=8,
-        #                                       textvariable=self.spinbox_basket_size_var,
-        #                                       command=lambda: selected_basket_size(self))
-        # self.spinbox_basket_size.pack(pady=1)
 
         # Label Выбор количества и размера лотов
         self.lot_count_label = tk.Label(main_frame, text="Количество и размер лота:")
@@ -1135,26 +1122,6 @@ class App:
                                               command=lambda: selected_basket_size(self))
         self.spinbox_basket_size.pack(side=tk.LEFT, padx=5)
 
-        # # Label Выбор таймаута
-        # self.timeout_label = tk.Label(main_frame, text="Таймаут (сек):")
-        # self.timeout_label.pack(pady=1)
-        #
-        # # Spinbox Выбор таймаута
-        # self.spinbox_timeout = tk.Spinbox(main_frame, from_=1, to=100, increment=1, width=10)
-        # self.spinbox_timeout.delete(0, "end")
-        # self.spinbox_timeout.insert(0, timeout)
-        # self.spinbox_timeout.pack(pady=1)
-        # self.spinbox_timeout.bind("<Return>", lambda event: selected_timeout(self))
-        #
-        # # Label indent
-        # self.indent_label = tk.Label(main_frame, text="Indent: ")
-        # self.indent_label.pack(pady=1)
-        #
-        # # Spinbox Переменная indent
-        # self.spinbox_indent_var = tk.IntVar(value=0)
-        # self.spinbox_indent = tk.Spinbox(main_frame, from_=-10, to=10, increment=1, width=8,
-        #                                  textvariable=self.spinbox_indent_var, command=lambda: selected_indent(self))
-        # self.spinbox_indent.pack(pady=1)
 
         # Label Выбор таймаута
         self.timeout_label = tk.Label(main_frame, text="Таймаут (сек) Indent (шаг):")
@@ -1177,13 +1144,6 @@ class App:
                                          textvariable=self.spinbox_indent_var, command=lambda: selected_indent(self))
         self.spinbox_indent.pack(side=tk.LEFT, padx=5)
 
-        # # Кнопка старт
-        # self.start_button = tk.Button(main_frame, text="Старт", command=self.start_loop)
-        # self.start_button.pack(pady=2)
-        #
-        # # Кнопка стоп
-        # self.stop_button = tk.Button(main_frame, text="Стоп", command=self.stop_loop)
-        # self.stop_button.pack(pady=2)
 
         # Создаем фрейм для размещения кнопок на одной линии
         button_frame = tk.Frame(main_frame)
@@ -1388,11 +1348,9 @@ class App:
                     current_time = datetime.now().strftime('%H:%M:%S')
                     opt_type = CALL if options_data[dataname_buy]['optionSide'] == 'Call' else PUT
                     if opt_type == CALL:
-                        # self.add_message(f'                    PUT      CALL')
-                        self.add_message(f'{current_time} Target: BUY {target_price_sell} SELL {target_price_buy}')
+                        self.add_message(f'{current_time} Target: BUY {target_price_sell} SELL {target_price_buy} Difference: {expected_profit}')
                     else:
-                        # self.add_message(f'                    PUT      CALL')
-                        self.add_message(f'{current_time} Target: BUY {target_price_buy} SELL {target_price_sell}')
+                        self.add_message(f'{current_time} Target: BUY {target_price_buy} SELL {target_price_sell} Difference: {expected_profit}')
                     # Сохраняем новые значения
                     old_target_price_sell = target_price_sell
                     old_target_price_buy = target_price_buy
@@ -1669,11 +1627,9 @@ class App:
                     current_time = datetime.now().strftime('%H:%M:%S')
                     opt_type = CALL if options_data[dataname_sell]['optionSide'] == 'Call' else PUT
                     if opt_type == CALL:
-                        # self.add_message(f'                    PUT      CALL')
-                        self.add_message(f'{current_time} Target: BUY {target_price_buy} SELL {target_price_sell}')
+                        self.add_message(f'{current_time} Target: BUY {target_price_buy} SELL {target_price_sell} Difference: {expected_profit}')
                     else:
-                        # self.add_message(f'                    PUT      CALL')
-                        self.add_message(f'{current_time} Target: SELL {target_price_sell} BUY {target_price_buy}')
+                        self.add_message(f'{current_time} Target: SELL {target_price_sell} BUY {target_price_buy} Difference: {expected_profit}')
                     # Сохраняем новые значения
                     old_target_price_sell = target_price_sell
                     old_target_price_buy = target_price_buy
