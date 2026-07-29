@@ -708,15 +708,15 @@ def selected_profit(app_instance):
                 f'{"target:":<7}{round(bid_sell, decimals):<7}{round(bid_iv_sell, 2):<7}{"target:":<7}{round(limit_price_buy, decimals):<7}{round(target_iv_buy, 2):<7}')
             app_instance.add_message(
                 f'{"Diff. theor:":<7}{round((theor_iv_buy - theor_iv_sell), 2):<7}{"Diff.":<7}{"market:":<7}{round((ask_iv_buy - bid_iv_sell), 2):<7}')
-        else:
+        else: # PUT
             # target_iv_buy = bid_iv_sell - expected_profit  # Целевая прибыль для котирования покупки
             if app_instance.theor_var.get():  # Если флаг "Theor" - True
                 if expected_profit >= theor_iv_sell - theor_iv_buy:
-                    target_iv_buy = bid_iv_sell + expected_profit  # Целевая прибыль для котирования покупки
+                    target_iv_buy = bid_iv_sell - expected_profit  # Целевая прибыль для котирования покупки
                 else:
-                    target_iv_buy = bid_iv_sell + (theor_iv_sell - theor_iv_buy)  # Котируем по теории
+                    target_iv_buy = bid_iv_sell - (theor_iv_sell - theor_iv_buy)  # Котируем по теории
             else:
-                target_iv_buy = bid_iv_sell + expected_profit  # Целевая прибыль для котирования покупки
+                target_iv_buy = bid_iv_sell - expected_profit  # Целевая прибыль для котирования покупки
 
             limit_price_buy_ = option_price(S, target_iv_buy / 100, K, T, r,
                                             opt_type=opt_type_buy)  # Целевая цена для котирования покупки
