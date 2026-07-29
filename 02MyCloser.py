@@ -104,9 +104,9 @@ def get_portfolio_positions():
 # Словарь новых котировок
 new_quotes = {}
 
+
 def _on_new_quotes(quote: SubscribeQuoteResponse):
     """Обработчик новых котировок"""
-    # logger.info(f'Котировка - {quote.quote[0] if len(quote.quote) > 0 else "Нет котировки"}')
 
     if len(quote.quote) > 0:  # Проверяем, что есть данные
         quote_data = quote.quote[0]  # Берем первую котировку
@@ -121,13 +121,6 @@ def _on_new_quotes(quote: SubscribeQuoteResponse):
         bid = float(quote_data.bid.value) if quote_data.bid and quote_data.bid.value else 0.0
         bid_size = float(quote_data.bid_size.value) if quote_data.bid_size and quote_data.bid_size.value else 0.0
         last_price = float(quote_data.last.value) if quote_data.last and quote_data.last.value else 0.0
-        # last_size = float(quote_data.last_size.value) if quote_data.last_size and quote_data.last_size.value else 0.0
-        # volume = float(quote_data.volume.value) if quote_data.volume and quote_data.volume.value else 0.0
-        # open_price = float(quote_data.open.value) if quote_data.open and quote_data.open.value else 0.0
-        # high = float(quote_data.high.value) if quote_data.high and quote_data.high.value else 0.0
-        # low = float(quote_data.low.value) if quote_data.low and quote_data.low.value else 0.0
-        # close = float(quote_data.close.value) if quote_data.close and quote_data.close.value else 0.0
-        # change = float(quote_data.change.value) if quote_data.change and quote_data.change.value else 0.0
 
         # Опционные данные (с проверкой наличия поля option)
         implied_volatility = None
@@ -139,54 +132,61 @@ def _on_new_quotes(quote: SubscribeQuoteResponse):
             if option_data.theoretical_price and option_data.theoretical_price.value:
                 theoretical_price = float(option_data.theoretical_price.value)
 
-        # *** ИСПРАВЛЕНИЕ: используем description для проверки в словаре ***
+        # Проверяем, есть ли в ответе хоть какие-то значимые данные
+        has_quote_data = not (ask == 0.0 and bid == 0.0 and last_price == 0.0)
+        has_option_data = implied_volatility is not None or theoretical_price is not None
+
+        # Если нет ни котировок, ни опционных данных — пропускаем
+        if not has_quote_data and not has_option_data:
+            logger.warning(f'Пропущен пустой ответ для {description}: нет ни котировок, ни опционных данных')
+            return
+
         # Если тикер уже есть в словаре
         if description in new_quotes:
-            # Обновляем опционные данные, если они пришли
+            # Если есть котировки — обновляем их
+            if has_quote_data:
+                new_quotes[description]['ask'] = ask
+                new_quotes[description]['ask_vol'] = ask_size
+                new_quotes[description]['bid'] = bid
+                new_quotes[description]['bid_vol'] = bid_size
+                new_quotes[description]['last_price'] = last_price
+            else:
+                # Если котировок нет (все нули), то только обновляем опционные данные
+                logger.info(f'Обновлены только опционные данные для {description}')
+
+            # Всегда обновляем опционные данные, если они пришли
             if implied_volatility is not None:
                 new_quotes[description]['implied_volatility'] = implied_volatility
             if theoretical_price is not None:
                 new_quotes[description]['theoretical_price'] = theoretical_price
 
-            # Проверяем, что ответ содержит хотя бы одно не нулевое значение из ключевых полей
-            # Если это "пустой" ответ (только с опционными данными), то обновляем только iv и theor_price
-            # и не перезаписываем основные котировки
-            if ask == 0.0 and bid == 0.0 and last_price == 0.0:
-                logger.info(
-                    f'Обновлены опционные данные для {description}: iv={new_quotes[description]["implied_volatility"]:.2f}%, '
-                    f'theor_price={new_quotes[description]["theoretical_price"]}')
-                return  # Выходим, не перезаписывая основные котировки нулями
-
-            # Для существующего тикера, если опционные данные не пришли, оставляем предыдущие значения
-            else:
-                if implied_volatility is None:
-                    implied_volatility = new_quotes[description]['implied_volatility']  # Оставляем предыдущее значение
-                if theoretical_price is None:
-                    theoretical_price = new_quotes[description]['theoretical_price']  # Оставляем предыдущее значение
         else:
-            # Для нового тикера
+            # Для нового тикера — ОБЯЗАТЕЛЬНЫ котировки
+            if not has_quote_data:
+                logger.warning(f'Пропущен некорректный ответ для нового тикера {description}: нет котировок')
+                return
+
+            # Для нового тикера заполняем опционные данные по умолчанию, если их нет
             if implied_volatility is None:
                 implied_volatility = 0.0
             if theoretical_price is None:
                 theoretical_price = 0.0
 
-            # Проверяем, что ответ содержит хотя бы одно не нулевое значение из ключевых полей
-            if ask == 0.0 and bid == 0.0 and last_price == 0.0:
-                logger.warning(f'Пропущен некорректный ответ для нового тикера {description}: все ключевые поля равны 0.0')
-                return  # Выходим, не сохраняя в словарь
+            # Сохраняем в словарь
+            new_quotes[description] = {
+                'ask': ask,
+                'ask_vol': ask_size,
+                'bid': bid,
+                'bid_vol': bid_size,
+                'last_price': last_price,
+                'implied_volatility': implied_volatility,
+                'theoretical_price': theoretical_price
+            }
 
-        # Сохраняем в словарь по description (ключ - только тикер)
-        new_quotes[description] = {
-            'ask': ask,
-            'ask_vol': ask_size,  # Для совместимости со старым кодом
-            'bid': bid,
-            'bid_vol': bid_size,  # Для совместимости со старым кодом
-            'last_price': last_price,
-            'implied_volatility': implied_volatility,
-            'theoretical_price': theoretical_price
-        }
+            logger.info(f'Добавлен новый тикер {description}: ask={ask}, bid={bid}, last={last_price}')
 
-        print(new_quotes)
+        # Вывод для отладки
+        # print(new_quotes)
     else:
         logger.warning('Пустая котировка')
 
@@ -624,7 +624,17 @@ def selected_profit(app_instance):
         opt_type_sell = CALL if options_data[dataname_sell]['optionSide'] == 'Call' else PUT
 
         if opt_type_sell == CALL:
-            target_iv_sell = ask_iv_buy + expected_profit  # Целевая прибыль для котирования продажи
+
+            # target_iv_sell = ask_iv_buy + expected_profit  # Целевая прибыль для котирования продажи
+            if app_instance.theor_var.get():  # Если флаг "Theor" - True
+                # print(f'Флаг "Theor" - True')
+                if expected_profit >= theor_iv_sell - theor_iv_buy:
+                    target_iv_sell = ask_iv_buy + expected_profit  # Целевая прибыль для котирования продажи
+                else:
+                    target_iv_sell = ask_iv_buy + (theor_iv_sell - theor_iv_buy)  # Котируем по теории
+            else:
+                target_iv_sell = ask_iv_buy + expected_profit  # Целевая прибыль для котирования продажи
+
             limit_price_sell_ = option_price(S, target_iv_sell / 100, K, T, r,
                                              opt_type=opt_type_sell)  # Целевая цена для котирования продажи
             limit_price_sell = int(round((limit_price_sell_ // step_price) * step_price, decimals))
@@ -641,7 +651,17 @@ def selected_profit(app_instance):
             app_instance.add_message(
                 f'{"Diff. theor:":<7}{round((theor_iv_sell - theor_iv_buy), 2):<7}{"Diff.":<7}{"market:":<7}{round((bid_iv_sell - ask_iv_buy), 2):<7}')
         else:  # opt_type_sell == PUT
-            target_iv_sell = ask_iv_buy - expected_profit  # Целевая прибыль для котирования продажи
+
+            # target_iv_sell = ask_iv_buy - expected_profit  # Целевая прибыль для котирования продажи
+            if app_instance.theor_var.get():  # Если флаг "Theor" - True
+                # print(f'Флаг "Theor" - True')
+                if expected_profit >= theor_iv_buy - theor_iv_sell:
+                    target_iv_sell = ask_iv_buy - expected_profit  # Целевая прибыль для котирования продажи
+                else:
+                    target_iv_sell = ask_iv_buy - (theor_iv_buy - theor_iv_sell)  # Котируем по теории
+            else:
+                target_iv_sell = ask_iv_buy - expected_profit  # Целевая прибыль для котирования продажи
+
             limit_price_sell_ = option_price(S, target_iv_sell / 100, K, T, r,
                                              opt_type=opt_type_sell)  # Целевая цена для котирования продажи
             limit_price_sell = int(round((limit_price_sell_ // step_price) * step_price, decimals))
@@ -664,7 +684,15 @@ def selected_profit(app_instance):
         # PUT - слева CALL - справа
         opt_type_buy = CALL if options_data[dataname_buy]['optionSide'] == 'Call' else PUT
         if opt_type_buy == CALL:
-            target_iv_buy = bid_iv_sell + expected_profit  # Целевая прибыль для котирования покупки
+            # target_iv_buy = bid_iv_sell + expected_profit  # Целевая прибыль для котирования покупки
+            if app_instance.theor_var.get():  # Если флаг "Theor" - True
+                if expected_profit >= theor_iv_buy - theor_iv_sell:
+                    target_iv_buy = bid_iv_sell + expected_profit  # Целевая прибыль для котирования покупки
+                else:
+                    target_iv_buy = bid_iv_sell + (theor_iv_buy - theor_iv_sell)  # Котируем по теории
+            else:
+                target_iv_buy = bid_iv_sell + expected_profit  # Целевая прибыль для котирования покупки
+
             limit_price_buy_ = option_price(S, target_iv_buy / 100, K, T, r,
                                             opt_type=opt_type_buy)  # Целевая цена для котирования покупки
             limit_price_buy = int(round((limit_price_buy_ // step_price) * step_price, decimals))
@@ -681,7 +709,15 @@ def selected_profit(app_instance):
             app_instance.add_message(
                 f'{"Diff. theor:":<7}{round((theor_iv_buy - theor_iv_sell), 2):<7}{"Diff.":<7}{"market:":<7}{round((ask_iv_buy - bid_iv_sell), 2):<7}')
         else:
-            target_iv_buy = bid_iv_sell - expected_profit  # Целевая прибыль для котирования покупки
+            # target_iv_buy = bid_iv_sell - expected_profit  # Целевая прибыль для котирования покупки
+            if app_instance.theor_var.get():  # Если флаг "Theor" - True
+                if expected_profit >= theor_iv_sell - theor_iv_buy:
+                    target_iv_buy = bid_iv_sell + expected_profit  # Целевая прибыль для котирования покупки
+                else:
+                    target_iv_buy = bid_iv_sell + (theor_iv_sell - theor_iv_buy)  # Котируем по теории
+            else:
+                target_iv_buy = bid_iv_sell + expected_profit  # Целевая прибыль для котирования покупки
+
             limit_price_buy_ = option_price(S, target_iv_buy / 100, K, T, r,
                                             opt_type=opt_type_buy)  # Целевая цена для котирования покупки
             limit_price_buy = int(round((limit_price_buy_ // step_price) * step_price, decimals))
@@ -1079,7 +1115,7 @@ class App:
         self.spinbox_profit.pack(side=tk.LEFT, padx=5)
 
         # Checkbutton Theor - размещаем справа от Spinbox
-        self.theor_var = tk.BooleanVar(value=True)  # По умолчанию True (включен)
+        self.theor_var = tk.BooleanVar(value=False)  # По умолчанию False (выключен)
         self.theor_check = tk.Checkbutton(theor_profit_frame, text="Theor", variable=self.theor_var)
         self.theor_check.pack(side=tk.LEFT, padx=10)
 
@@ -1198,6 +1234,7 @@ class App:
         global options_data, old_target_price_sell, old_target_price_buy, indent, order_id_sell_control, order_id_buy_control
         open_iv_sell = 0.0
         open_iv_buy = 0.0
+        diff = 0.0  # Инициализация по умолчанию
 
         """Функция, которая будет выполняться в цикле"""
         if self.running:
@@ -1315,7 +1352,17 @@ class App:
                     self.target_iv_call = round(target_iv_sell, 2)
                     self.target_iv_label_call.config(text=f"{self.target_iv_call}")
                     self.update_target_labels()  # Вызов функции обновления меток
-                    target_profit_buy = bid_iv_sell - expected_profit  # Целевая прибыль для котирования покупки
+                    # Определение target_profit в зависимости от флага self.theor_var
+                    if self.theor_var.get(): # Если флаг "Theor" - True
+                        if expected_profit >= difference_theor:  # Если expected_profit больше difference_theor
+                            target_profit_buy = bid_iv_sell - expected_profit
+                            diff = expected_profit
+                        else:
+                            target_profit_buy = bid_iv_sell - difference_theor # Котируем по теории
+                            diff = difference_theor
+                    else:
+                        target_profit_buy = bid_iv_sell - expected_profit  # Целевая прибыль для котирования покупки
+                        diff = expected_profit
                 else:
                     self.target_opt_type = 'P'
                     self.target_price_put = target_price_sell
@@ -1323,7 +1370,18 @@ class App:
                     self.target_iv_put = round(target_iv_sell, 2)
                     self.target_iv_label_put.config(text=f"{self.target_iv_put}")
                     self.update_target_labels()  # Вызов функции обновления меток
-                    target_profit_buy = bid_iv_sell + expected_profit  # Целевая прибыль для котирования покупки
+                    # Определение target_profit в зависимости от флага self.theor_var
+                    if self.theor_var.get(): # Если флаг "Theor" - True
+                        if expected_profit >= difference_theor:  # Если expected_profit больше difference_theor
+                            target_profit_buy = bid_iv_sell + expected_profit # Целевая прибыль для котирования продажи
+                            diff = expected_profit
+                        else:
+                            target_profit_buy = bid_iv_sell + difference_theor # Котируем по теории
+                            diff = difference_theor
+                    else:
+                        target_profit_buy = bid_iv_sell + expected_profit  # Целевая прибыль для котирования покупки
+                        diff = expected_profit
+
                 S, K, T, opt_type_buy = get_option_data_for_calc_price(
                     dataname_buy)  # Получаем данные опциона dataname_buy
                 target_price_buy_ = option_price(S, target_profit_buy / 100, K, T, r,
@@ -1333,24 +1391,28 @@ class App:
 
                 # Таргет-цены на панель управления
                 if opt_type_buy == CALL:
+                    self.target_opt_type = 'C'  # Устанавливаем атрибут класса
                     self.target_price_call = target_price_buy
                     self.target_price_label_call.config(text=f"{self.target_price_call}")
                     self.target_iv_call = round(target_profit_buy, 2)
                     self.target_iv_label_call.config(text=f"{self.target_iv_call}")
+                    self.update_target_labels()  # Вызов функции обновления меток
                 else:
+                    self.target_opt_type = 'P'  # Устанавливаем атрибут класса
                     self.target_price_put = target_price_buy
                     self.target_price_label_put.config(text=f"{self.target_price_put}")
                     self.target_iv_put = round(target_profit_buy, 2)
                     self.target_iv_label_put.config(text=f"{self.target_iv_put}")
+                    self.update_target_labels()  # Вызов функции обновления меток
 
                 # В каждом цикле сравниваем target_price с предыдущими значениями old_target_price и выводим на экран при изменении
                 if old_target_price_buy != target_price_buy or old_target_price_sell != target_price_sell:
                     current_time = datetime.now().strftime('%H:%M:%S')
                     opt_type = CALL if options_data[dataname_buy]['optionSide'] == 'Call' else PUT
                     if opt_type == CALL:
-                        self.add_message(f'{current_time} Target: BUY {target_price_sell} SELL {target_price_buy} Difference: {expected_profit}')
+                        self.add_message(f'{current_time} Target: BUY {target_price_sell} SELL {target_price_buy} Diff.: {diff}')
                     else:
-                        self.add_message(f'{current_time} Target: BUY {target_price_buy} SELL {target_price_sell} Difference: {expected_profit}')
+                        self.add_message(f'{current_time} Target: BUY {target_price_buy} SELL {target_price_sell} Diff.: {diff}')
                     # Сохраняем новые значения
                     old_target_price_sell = target_price_sell
                     old_target_price_buy = target_price_buy
@@ -1588,17 +1650,42 @@ class App:
                 opt_type_buy = CALL if options_data[dataname_buy]['optionSide'] == 'Call' else PUT
                 # Таргет-цены на панель управления
                 if opt_type_buy == CALL:
+                    self.target_opt_type = 'C'
                     self.target_price_call = target_price_buy
                     self.target_price_label_call.config(text=f"{self.target_price_call}")
                     self.target_iv_call = round(target_iv_buy, 2)
                     self.target_iv_label_call.config(text=f"{self.target_iv_call}")
-                    target_profit_sell = ask_iv_buy - expected_profit  # Целевая прибыль для котирования продажи
+                    self.update_target_labels()  # Вызов функции обновления меток
+                    # Определение target_profit в зависимости от флага self.theor_var
+                    if self.theor_var.get(): # Если флаг "Theor" - True
+                        if expected_profit >= difference_theor:
+                            target_profit_sell = ask_iv_buy - expected_profit  # Целевая прибыль для котирования продажи
+                            diff = expected_profit
+                        else:
+                            target_profit_sell = ask_iv_buy - difference_theor  # Котируем по теории
+                            diff = difference_theor
+                    else:
+                        target_profit_sell = ask_iv_buy - expected_profit  # Целевая прибыль для котирования продажи
+                        diff = expected_profit
                 else:
+                    self.target_opt_type = 'P'
                     self.target_price_put = target_price_buy
                     self.target_price_label_put.config(text=f"{self.target_price_put}")
                     self.target_iv_put = round(target_iv_buy, 2)
                     self.target_iv_label_put.config(text=f"{self.target_iv_put}")
-                    target_profit_sell = ask_iv_buy + expected_profit  # Целевая прибыль для котирования продажи
+                    self.update_target_labels()  # Вызов функции обновления меток
+                    # Определение target_profit в зависимости от флага self.theor_var
+                    if self.theor_var.get(): # Если флаг "Theor" - True
+                        if expected_profit >= difference_theor:  # Если expected_profit больше difference_theor
+                            target_profit_sell = ask_iv_buy + expected_profit  # Целевая прибыль для котирования продажи
+                            diff = expected_profit
+                        else:
+                            target_profit_sell = ask_iv_buy + difference_theor  # Котируем по теории
+                            diff = difference_theor
+                    else:
+                        target_profit_sell = ask_iv_buy + expected_profit  # Целевая прибыль для котирования продажи
+                        diff = expected_profit
+
                 S, K, T, opt_type_sell = get_option_data_for_calc_price(
                     dataname_sell)  # Получаем данные опциона dataname_sell
                 target_price_sell_ = option_price(S, target_profit_sell / 100, K, T, r,
@@ -1627,9 +1714,9 @@ class App:
                     current_time = datetime.now().strftime('%H:%M:%S')
                     opt_type = CALL if options_data[dataname_sell]['optionSide'] == 'Call' else PUT
                     if opt_type == CALL:
-                        self.add_message(f'{current_time} Target: BUY {target_price_buy} SELL {target_price_sell} Difference: {expected_profit}')
+                        self.add_message(f'{current_time} Target: BUY {target_price_buy} SELL {target_price_sell} Diff.: {diff}')
                     else:
-                        self.add_message(f'{current_time} Target: SELL {target_price_sell} BUY {target_price_buy} Difference: {expected_profit}')
+                        self.add_message(f'{current_time} Target: SELL {target_price_sell} BUY {target_price_buy} Diff.: {diff}')
                     # Сохраняем новые значения
                     old_target_price_sell = target_price_sell
                     old_target_price_buy = target_price_buy
