@@ -43,6 +43,9 @@ guids_dict = {}
 # Глобальные переменные
 filename = os.path.splitext(os.path.basename(__file__))[
     0]  # Получаем имя файла (не более 10 символов исключая служебные) без пути до точки .py
+# Получаем 6 символов начиная с пятого (индекс 4)
+file_type = filename[4:10]  # Или filename[4:4+6]
+print(file_type)  # "Closer"
 dataname_sell = ''
 dataname_buy = ''
 base_asset_ticker = ''
@@ -50,7 +53,7 @@ quoter_side = ''
 expected_profit = 2.0  # Значение по умолчанию
 lot_count = 1
 basket_size = 1
-timeout = 3
+timeout = 1
 indent = 0
 
 CALL = 'C'
@@ -992,7 +995,7 @@ class App:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title(filename)
-        self.root.geometry("550x610")
+        self.root.geometry("555x610")
 
         self.running = False
         self.counter = 0
@@ -1010,7 +1013,7 @@ class App:
         main_frame.pack(side=tk.LEFT, fill=tk.Y, padx=5, pady=5)
 
         # Создаем фрейм для окна сообщений
-        self.message_frame = tk.Frame(self.root, width=700, height=610, bg='lightgray')
+        self.message_frame = tk.Frame(self.root, width=705, height=610, bg='lightgray')
         self.message_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=1, pady=1)
         self.message_frame.pack_propagate(False)  # Не изменять размер по содержимому
 
@@ -1353,16 +1356,12 @@ class App:
                     self.target_iv_label_call.config(text=f"{self.target_iv_call}")
                     self.update_target_labels()  # Вызов функции обновления меток
                     # Определение target_profit в зависимости от флага self.theor_var
-                    if self.theor_var.get(): # Если флаг "Theor" - True
-                        if expected_profit >= difference_theor:  # Если expected_profit больше difference_theor
-                            target_profit_buy = bid_iv_sell - expected_profit
-                            diff = expected_profit
-                        else:
-                            target_profit_buy = bid_iv_sell - difference_theor # Котируем по теории
-                            diff = difference_theor
+                    if self.theor_var.get():
+                        # Для "Closer": >=, для "Opener": <=
+                        cond = expected_profit >= difference_theor if file_type == "Closer" else expected_profit <= difference_theor
+                        target_profit_buy = bid_iv_sell - (diff := expected_profit if cond else difference_theor)
                     else:
-                        target_profit_buy = bid_iv_sell - expected_profit  # Целевая прибыль для котирования покупки
-                        diff = expected_profit
+                        target_profit_buy = bid_iv_sell - (diff := expected_profit)
                 else:
                     self.target_opt_type = 'P'
                     self.target_price_put = target_price_sell
@@ -1371,16 +1370,12 @@ class App:
                     self.target_iv_label_put.config(text=f"{self.target_iv_put}")
                     self.update_target_labels()  # Вызов функции обновления меток
                     # Определение target_profit в зависимости от флага self.theor_var
-                    if self.theor_var.get(): # Если флаг "Theor" - True
-                        if expected_profit >= difference_theor:  # Если expected_profit больше difference_theor
-                            target_profit_buy = bid_iv_sell + expected_profit # Целевая прибыль для котирования продажи
-                            diff = expected_profit
-                        else:
-                            target_profit_buy = bid_iv_sell + difference_theor # Котируем по теории
-                            diff = difference_theor
+                    if self.theor_var.get():
+                        # Для "Closer": >=, для "Opener": <=
+                        cond = expected_profit >= difference_theor if file_type == "Closer" else expected_profit <= difference_theor
+                        target_profit_buy = bid_iv_sell + (diff := expected_profit if cond else difference_theor)
                     else:
-                        target_profit_buy = bid_iv_sell + expected_profit  # Целевая прибыль для котирования покупки
-                        diff = expected_profit
+                        target_profit_buy = bid_iv_sell + (diff := expected_profit)
 
                 S, K, T, opt_type_buy = get_option_data_for_calc_price(
                     dataname_buy)  # Получаем данные опциона dataname_buy
@@ -1657,16 +1652,12 @@ class App:
                     self.target_iv_label_call.config(text=f"{self.target_iv_call}")
                     self.update_target_labels()  # Вызов функции обновления меток
                     # Определение target_profit в зависимости от флага self.theor_var
-                    if self.theor_var.get(): # Если флаг "Theor" - True
-                        if expected_profit >= difference_theor:
-                            target_profit_sell = ask_iv_buy - expected_profit  # Целевая прибыль для котирования продажи
-                            diff = expected_profit
-                        else:
-                            target_profit_sell = ask_iv_buy - difference_theor  # Котируем по теории
-                            diff = difference_theor
+                    if self.theor_var.get():
+                        # Для "Closer": >=, для "Opener": <=
+                        cond = expected_profit >= difference_theor if file_type == "Closer" else expected_profit <= difference_theor
+                        target_profit_sell = ask_iv_buy - (diff := expected_profit if cond else difference_theor)
                     else:
-                        target_profit_sell = ask_iv_buy - expected_profit  # Целевая прибыль для котирования продажи
-                        diff = expected_profit
+                        target_profit_sell = ask_iv_buy - (diff := expected_profit)
                 else:
                     self.target_opt_type = 'P'
                     self.target_price_put = target_price_buy
@@ -1675,16 +1666,12 @@ class App:
                     self.target_iv_label_put.config(text=f"{self.target_iv_put}")
                     self.update_target_labels()  # Вызов функции обновления меток
                     # Определение target_profit в зависимости от флага self.theor_var
-                    if self.theor_var.get(): # Если флаг "Theor" - True
-                        if expected_profit >= difference_theor:  # Если expected_profit больше difference_theor
-                            target_profit_sell = ask_iv_buy + expected_profit  # Целевая прибыль для котирования продажи
-                            diff = expected_profit
-                        else:
-                            target_profit_sell = ask_iv_buy + difference_theor  # Котируем по теории
-                            diff = difference_theor
+                    if self.theor_var.get():
+                        # Для "Closer": >=, для "Opener": <=
+                        cond = expected_profit >= difference_theor if file_type == "Closer" else expected_profit <= difference_theor
+                        target_profit_sell = ask_iv_buy + (diff := expected_profit if cond else difference_theor)
                     else:
-                        target_profit_sell = ask_iv_buy + expected_profit  # Целевая прибыль для котирования продажи
-                        diff = expected_profit
+                        target_profit_sell = ask_iv_buy + (diff := expected_profit)
 
                 S, K, T, opt_type_sell = get_option_data_for_calc_price(
                     dataname_sell)  # Получаем данные опциона dataname_sell

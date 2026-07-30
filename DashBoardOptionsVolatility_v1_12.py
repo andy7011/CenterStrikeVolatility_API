@@ -27,7 +27,7 @@ from AlorPy import AlorPy  # Работа с Alor OpenAPI V2
 
 ap_provider = AlorPy()  # Подключаемся ко всем торговым счетам
 
-temp_str = 'C:\\Users\\шадрин\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\sftpuser\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 # Глобальные переменные для хранения данных
@@ -208,10 +208,39 @@ file.close()
 
 # Будем запрашивать глубину истории 140 дней
 dt_from = datetime.now() - timedelta(days=140)
-print(f'dt_from {dt_from}')
 dataname = f'SPBFUT.{first_key}'
 time_frame = 'M15'
 
+
+# # Получаем историю баров для указанного инструмента и временного интервала
+# def get_candles_request(dataname, time_frame, dt_from):
+# """
+# Функция получения датафрейма свечей от брокера Алор.
+# Args:
+# dataname: имя инструмента в формате SPBFUT.RIH6
+# ime_frame: таймфрейм
+# dt_from: начальная дата
+# """
+# global df_candles
+# broker = brokers['Ф']  # Брокер по ключу из Config.py словаря brokers
+# symbol = broker.get_symbol_by_dataname(dataname)  # Тикер по названию
+# bars = broker.get_history(symbol, time_frame, dt_from=dt_from)  # Получаем историю тикера за 140 дней
+
+# # alor_board, symbol = ap_provider.dataname_to_alor_board_symbol(dataname)  # Код режима торгов Алора и тикер
+# # exchange = ap_provider.get_exchange(alor_board, symbol)  # Биржа тикера
+# # class_code = 'SPBFUT'  # Фьючерсы (RFUD)
+# # symbol = ap_provider.get_symbol_info(exchange, symbol)  # Получаем информацию о тикере
+# # bars = ap_provider.get_history(exchange, symbol, time_frame, seconds_from=dt_from)  # Запрос истории рынка
+
+# print(f"Запрос свечей: {dataname} {time_frame} начиная с даты {dt_from}")
+# print(f"Первый бар: {bars[0]}")  # Первый бар
+# print(f"Последний бар: {bars[-1]}")  # Последний бар
+# df_candles = bars_to_df(bars)  # Все бары в pandas DataFrame pd_bars
+# # print(df_candles)  # Все бары в pandas DataFrame pd_bars
+
+# ap_provider.close_web_socket()  # Перед выходом закрываем соединение с WebSocket
+
+# return df_candles
 
 # Получаем историю баров для указанного инструмента и временного интервала
 def get_candles_request(dataname, time_frame, dt_from):
@@ -223,24 +252,15 @@ def get_candles_request(dataname, time_frame, dt_from):
         dt_from: начальная дата
     """
     global df_candles
-    broker = brokers['Ф']  # Брокер по ключу из Config.py словаря brokers
+    broker = brokers['АС']  # Брокер по ключу из Config.py словаря brokers
     symbol = broker.get_symbol_by_dataname(dataname)  # Тикер по названию
     bars = broker.get_history(symbol, time_frame, dt_from=dt_from)  # Получаем историю тикера за 140 дней
-
-    # alor_board, symbol = ap_provider.dataname_to_alor_board_symbol(dataname)  # Код режима торгов Алора и тикер
-    # exchange = ap_provider.get_exchange(alor_board, symbol)  # Биржа тикера
-    # class_code = 'SPBFUT'  # Фьючерсы (RFUD)
-    # symbol = ap_provider.get_symbol_info(exchange, symbol)  # Получаем информацию о тикере
-    # bars = ap_provider.get_history(exchange, symbol, time_frame, seconds_from=dt_from)  # Запрос истории рынка
-
     print(f"Запрос свечей: {dataname} {time_frame} начиная с даты {dt_from}")
     # print(f"Первый бар: {bars[0]}")  # Первый бар
     # print(f"Последний бар: {bars[-1]}")  # Последний бар
     df_candles = bars_to_df(bars)  # Все бары в pandas DataFrame pd_bars
     # print(df_candles)  # Все бары в pandas DataFrame pd_bars
-
-    ap_provider.close_web_socket()  # Перед выходом закрываем соединение с WebSocket
-
+    broker.close()  # Закрываем брокера
     return df_candles
 
 
@@ -868,19 +888,42 @@ def update_output_smile(value, n):
                                  ))
 
         # LAST
-        fig.add_trace(go.Scatter(x=dff_MyPosOrders['_strike'], y=dff_MyPosOrders['_last_price_iv'],
-                                 mode='markers', text=dff_MyPosOrders['_last_price_iv'], textposition='top left',
-                                 marker=dict(size=8, color='goldenrod'),
-                                 name='Last',
-                                 customdata=dff_MyPosOrders[
-                                     ['_type', '_last_price', '_last_price_iv', 'expiration_date', '_ticker',
-                                      'converted_time']],
-                                 hovertemplate="<b>%{customdata}</b><br>"
-                                 ))
+        fig.add_trace(
+            go.Scatter(x=dff_MyPosOrders['_strike'], y=dff_MyPosOrders['_last_price_iv'], visible='legendonly',
+                       mode='markers', text=dff_MyPosOrders['_last_price_iv'], textposition='top left',
+                       marker=dict(size=8, color='goldenrod'),
+                       name='Last',
+                       customdata=dff_MyPosOrders[
+                           ['_type', '_last_price', '_last_price_iv', 'expiration_date', '_ticker',
+                            'converted_time']],
+                       hovertemplate="<b>%{customdata}</b><br>"
+                       ))
+
+        # # TrueVega позиции
+        # fig.add_trace(go.Bar(x=df_table_base['strike'], y=df_table_base['TrueVega'], text=df_table_base['TrueVega'],
+        # textposition='auto', name='TrueVega', opacity=0.1), secondary_y=True)
 
         # TrueVega позиции
-        fig.add_trace(go.Bar(x=df_table_base['strike'], y=df_table_base['TrueVega'], text=df_table_base['TrueVega'],
-                             textposition='auto', name='TrueVega', opacity=0.1), secondary_y=True)
+        for exp_day in exp_dates:
+            df_filtered = df_table_base[df_table_base.expdate == exp_day]
+            fig.add_trace(
+                go.Bar(
+                    x=df_filtered['strike'],
+                    y=df_filtered['TrueVega'],
+                    text=df_filtered['TrueVega'],
+                    textposition='auto',
+                    name=f'TrueVega {exp_day}',
+                    marker_color=expdate_colors[exp_day],
+                    opacity=0.1
+                ),
+                secondary_y=True
+            )
+
+        # После установки barmode='stack' переупорядочиваем легенду
+        fig.update_layout(
+            barmode='stack',
+            legend_traceorder='normal'  # 'normal' - в порядке добавления, 'reversed' - обратный порядок
+        )
 
         # Цена базового актива (вертикальная линия)
         fig.add_vline(x=base_asset_last_price, line_dash='dash', line_color='firebrick')
@@ -1061,7 +1104,7 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
     fig.update_xaxes(
         rangebreaks=[
             dict(bounds=["sat", "mon"]),  # hide weekends, eg. hide sat to before mon
-            dict(bounds=[24, 9], pattern="hour"),  # hide hours outside of 9am-24pm
+            dict(bounds=[24, 7], pattern="hour"),  # hide hours outside of 9am-24pm
         ]
     )
 
@@ -1287,7 +1330,7 @@ def update_output_MyPosHistory(dropdown_value, slider_value, n):
     fig.update_xaxes(
         rangebreaks=[
             dict(bounds=["sat", "mon"]),  # hide weekends, eg. hide sat to before mon
-            dict(bounds=[24, 9], pattern="hour"),  # hide hours outside of 9am-24pm
+            dict(bounds=[24, 7], pattern="hour"),  # hide hours outside of 9am-24pm
         ]
     )
 
@@ -1467,7 +1510,7 @@ def update_output_history_naklon(dropdown_value, slider_value, n):
     fig.update_xaxes(
         rangebreaks=[
             dict(bounds=["sat", "mon"]),  # hide weekends, eg. hide sat to before mon
-            dict(bounds=[24, 9], pattern="hour"),  # hide hours outside of 9am-24pm
+            dict(bounds=[24, 7], pattern="hour"),  # hide hours outside of 9am-24pm
         ]
     )
 
