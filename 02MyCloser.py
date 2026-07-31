@@ -83,115 +83,127 @@ def utc_timestamp_to_msk_datetime(seconds) -> datetime:
     dt_utc = datetime.fromtimestamp(seconds)  # Переводим кол-во секунд, прошедших с 01.01.1970 в UTC
     return utc_to_msk_datetime(dt_utc)  # Переводим время из UTC в московское
 
+_account_data = [{
+    'positions': {},
+    'cash': {},
+    'equity': 0.0,
+    'unrealized_profit': 0.0,
+    'portfolio_type': ''
+}]
 
-portfolio_positions = {}  # Глобальный словарь для хранения позиций
+def _on_account_info(account_response):
+    """Обработчик информации об аккаунте из стрим-подписки"""
+    data = _account_data[0]
 
+    if not account_response:
+        logger.warning('Получен пустой ответ по аккаунту из стрим-подписки')
+        return
 
-def get_portfolio_positions():
-    global portfolio_positions  # Используем глобальную переменную
+    if not hasattr(account_response, 'positions'):
+        logger.warning('В ответе нет атрибута positions')
+        return
 
-    portfolio_positions = {}  # Очищаем словарь перед заполнением
+    # Сохраняем базовую информацию
+    if hasattr(account_response, 'account_id'):
+        data['account_id'] = account_response.account_id
+    if hasattr(account_response, 'status'):
+        data['status'] = account_response.status
 
-    for account_id in fp_provider.account_ids:  # Пробегаемся по всем счетам
-        account = fp_provider.call_function(fp_provider.accounts_stub.GetAccount,
-                                            GetAccountRequest(account_id=account_id))  # Получаем счет
+    # Equity и unrealized_profit
+    if hasattr(account_response, 'equity') and account_response.equity:
+        data['equity'] = float(account_response.equity.value) if account_response.equity.value else 0.0
+    if hasattr(account_response, 'unrealized_profit') and account_response.unrealized_profit:
+        data['unrealized_profit'] = float(
+            account_response.unrealized_profit.value) if account_response.unrealized_profit.value else 0.0
 
-        for position in account.positions:  # Пробегаемся по всем позициям
-            symbol = position.symbol
-            quantity = position.quantity.value
-            portfolio_positions[symbol] = quantity
-    print(portfolio_positions)
-    return portfolio_positions
-
-
-# Словарь новых котировок
-new_quotes = {}
-
-
-def _on_new_quotes(quote: SubscribeQuoteResponse):
-    """Обработчик новых котировок"""
-
-    if len(quote.quote) > 0:  # Проверяем, что есть данные
-        quote_data = quote.quote[0]  # Берем первую котировку
-
-        # Извлекаем symbol (например "RI80000BS6D@RTSX")
-        symbol = quote_data.symbol
-        description = symbol.split('@')[0] if '@' in symbol else symbol  # Оставляем только тикер
-
-        # Получаем цены из объекта котировки (с проверкой на наличие полей)
-        ask = float(quote_data.ask.value) if quote_data.ask and quote_data.ask.value else 0.0
-        ask_size = float(quote_data.ask_size.value) if quote_data.ask_size and quote_data.ask_size.value else 0.0
-        bid = float(quote_data.bid.value) if quote_data.bid and quote_data.bid.value else 0.0
-        bid_size = float(quote_data.bid_size.value) if quote_data.bid_size and quote_data.bid_size.value else 0.0
-        last_price = float(quote_data.last.value) if quote_data.last and quote_data.last.value else 0.0
-
-        # Опционные данные (с проверкой наличия поля option)
-        implied_volatility = None
-        theoretical_price = None
-        if quote_data.HasField('option'):
-            option_data = quote_data.option
-            if option_data.implied_volatility and option_data.implied_volatility.value:
-                implied_volatility = float(option_data.implied_volatility.value)
-            if option_data.theoretical_price and option_data.theoretical_price.value:
-                theoretical_price = float(option_data.theoretical_price.value)
-
-        # Проверяем, есть ли в ответе хоть какие-то значимые данные
-        has_quote_data = not (ask == 0.0 and bid == 0.0 and last_price == 0.0)
-        has_option_data = implied_volatility is not None or theoretical_price is not None
-
-        # Если нет ни котировок, ни опционных данных — пропускаем
-        if not has_quote_data and not has_option_data:
-            logger.warning(f'Пропущен пустой ответ для {description}: нет ни котировок, ни опционных данных')
-            return
-
-        # Если тикер уже есть в словаре
-        if description in new_quotes:
-            # Если есть котировки — обновляем их
-            if has_quote_data:
-                new_quotes[description]['ask'] = ask
-                new_quotes[description]['ask_vol'] = ask_size
-                new_quotes[description]['bid'] = bid
-                new_quotes[description]['bid_vol'] = bid_size
-                new_quotes[description]['last_price'] = last_price
-            else:
-                # Если котировок нет (все нули), то только обновляем опционные данные
-                logger.info(f'Обновлены только опционные данные для {description}')
-
-            # Всегда обновляем опционные данные, если они пришли
-            if implied_volatility is not None:
-                new_quotes[description]['implied_volatility'] = implied_volatility
-            if theoretical_price is not None:
-                new_quotes[description]['theoretical_price'] = theoretical_price
-
-        else:
-            # Для нового тикера — ОБЯЗАТЕЛЬНЫ котировки
-            if not has_quote_data:
-                logger.warning(f'Пропущен некорректный ответ для нового тикера {description}: нет котировок')
-                return
-
-            # Для нового тикера заполняем опционные данные по умолчанию, если их нет
-            if implied_volatility is None:
-                implied_volatility = 0.0
-            if theoretical_price is None:
-                theoretical_price = 0.0
-
-            # Сохраняем в словарь
-            new_quotes[description] = {
-                'ask': ask,
-                'ask_vol': ask_size,
-                'bid': bid,
-                'bid_vol': bid_size,
-                'last_price': last_price,
-                'implied_volatility': implied_volatility,
-                'theoretical_price': theoretical_price
+    # Денежные средства (cash)
+    data['cash'] = {}
+    if hasattr(account_response, 'cash'):
+        for money_item in account_response.cash:
+            currency = money_item.currency_code if money_item.currency_code else 'RUB'
+            amount = float(money_item.units) + float(money_item.nanos) / 1_000_000_000 if money_item.units else 0.0
+            data['cash'][currency] = {
+                'balance': amount,
+                'blocked': 0.0,
+                'free': amount,
             }
 
-            logger.info(f'Добавлен новый тикер {description}: ask={ask}, bid={bid}, last={last_price}')
+    # Определяем тип портфеля
+    if hasattr(account_response, 'portfolio_forts') and account_response.HasField('portfolio_forts'):
+        data['portfolio_type'] = 'FORTS'
+        forts = account_response.portfolio_forts
+        data['margin'] = {
+            'available_cash': float(forts.available_cash.value) if forts.available_cash else 0.0,
+            'money_reserved': float(forts.money_reserved.value) if forts.money_reserved else 0.0,
+        }
+        data['cash']['RUB'] = {
+            'balance': float(forts.available_cash.value) if forts.available_cash else 0.0,
+            'blocked': float(forts.money_reserved.value) if forts.money_reserved else 0.0,
+            'free': float(forts.available_cash.value) if forts.available_cash else 0.0,
+        }
+        # logger.info(f"Денежные средства FORTS: доступно={data['cash']['RUB']['free']:.2f}, "
+        #             f"зарезервировано={data['cash']['RUB']['blocked']:.2f}")
+    elif hasattr(account_response, 'portfolio_mc') and account_response.HasField('portfolio_mc'):
+        data['portfolio_type'] = 'MC'
+        mc = account_response.portfolio_mc
+        data['margin'] = {
+            'available_cash': float(mc.available_cash.value) if mc.available_cash else 0.0,
+            'initial_margin': float(mc.initial_margin.value) if mc.initial_margin else 0.0,
+            'maintenance_margin': float(mc.maintenance_margin.value) if mc.maintenance_margin else 0.0,
+        }
+    elif hasattr(account_response, 'portfolio_mct') and account_response.HasField('portfolio_mct'):
+        data['portfolio_type'] = 'MCT'
+        mct = account_response.portfolio_mct
+        data['margin'] = {
+            'available_cash': float(mct.available_cash.value) if mct.available_cash else 0.0,
+            'initial_margin': float(mct.initial_margin.value) if mct.initial_margin else 0.0,
+            'maintenance_margin': float(mct.maintenance_margin.value) if mct.maintenance_margin else 0.0,
+        }
 
-        # Вывод для отладки
-        # print(new_quotes)
-    else:
-        logger.warning('Пустая котировка')
+    # Парсим позиции
+    data['positions'] = {}
+
+    for position in account_response.positions:
+        try:
+            symbol = position.symbol if hasattr(position, 'symbol') else 'UNKNOWN'
+
+            quantity = 0.0
+            if hasattr(position, 'quantity') and position.quantity and position.quantity.value:
+                quantity = float(position.quantity.value)
+
+            current_price = 0.0
+            if hasattr(position, 'current_price') and position.current_price and position.current_price.value:
+                current_price = float(position.current_price.value)
+
+            average_price = 0.0
+            if hasattr(position, 'average_price') and position.average_price and position.average_price.value:
+                average_price = float(position.average_price.value)
+
+            maintenance_margin = 0.0
+            if hasattr(position,
+                       'maintenance_margin') and position.maintenance_margin and position.maintenance_margin.value:
+                maintenance_margin = float(position.maintenance_margin.value)
+
+            daily_pnl = 0.0
+            if hasattr(position, 'daily_pnl') and position.daily_pnl and position.daily_pnl.value:
+                daily_pnl = float(position.daily_pnl.value)
+
+            unrealized_pnl = 0.0
+            if hasattr(position, 'unrealized_pnl') and position.unrealized_pnl and position.unrealized_pnl.value:
+                unrealized_pnl = float(position.unrealized_pnl.value)
+
+            data['positions'][symbol] = {
+                'quantity': quantity,
+                'current_price': current_price,
+                'average_price': average_price,
+                'maintenance_margin': maintenance_margin,
+                'daily_pnl': daily_pnl,
+                'unrealized_pnl': unrealized_pnl,
+            }
+
+        except Exception as e:
+            logger.error(f"Ошибка при парсинге позиции: {e}")
+    # print(data['positions'])
 
 
 # Словарь заявок
@@ -268,6 +280,8 @@ subscriptions_dict = {}
 # Словарь для хранения потоков подписки (один поток на один инструмент)
 quote_threads = {}
 
+# Словарь новых котировок
+new_quotes = {}
 
 # Единый обработчик котировок для всех инструментов
 def _on_new_quotes(quote: SubscribeQuoteResponse):
@@ -516,6 +530,48 @@ def selected_buy(app_instance):
     app_instance.spinbox_profit_var.set(f"{diff_theor:.2f}")
     app_instance.add_message(f'Diff. theor: {diff_theor:.2f}')
 
+    # Вычисление количества лотов предустановки для Closer
+    if file_type == 'Closer':
+        # Инициализация переменных
+        quantity_buy = 0
+        quantity_sell = 0
+
+        # Цикл для вычисления quantity_buy и quantity_sell для тикеров dataname_buy и dataname_sell
+        for dataname in [dataname_buy, dataname_sell]:
+            ticker = dataname.split('.')[1]
+            # print(ticker)
+
+            # Поиск позиции по символу
+            quantity_value = 0
+            for symbol in _account_data[0]['positions']:
+                if ticker == symbol.split('@')[0]:  # Сравнение если ticker содержится в symbol
+                    quantity = _account_data[0]['positions'][symbol]['quantity']
+                    try:
+                        quantity_value = float(quantity)
+                        # print(ticker, quantity_value)
+                    except (IndexError, TypeError, ValueError):
+                        quantity_value = 0
+                    break
+
+            # Установка переменной в зависимости от dataname
+            if dataname == dataname_buy:
+                quantity_buy = quantity_value
+            else:
+                quantity_sell = quantity_value
+
+        # lot_count - наименьшее значение по модулю quantity_buy и quantity_sell
+        if quantity_buy != 0 and quantity_sell != 0:
+            lot_count = int(min(abs(quantity_buy), abs(quantity_sell)))
+        else:
+            lot_count = 1
+
+        # Устанавливаем значение в Spinbox
+        if app_instance and hasattr(app_instance, 'spinbox_lot_count_var'):
+            app_instance.spinbox_lot_count_var.set(str(lot_count))
+
+        app_instance.add_message(f"Максимальное количество лотов пары: {lot_count}")
+
+
 # Функция для отписки от всех инструментов (вызывается при выходе)
 def unsubscribe_all():
     """Отписка от всех котировок"""
@@ -549,9 +605,9 @@ def selected_profit(app_instance):
         quantity_value = 0
 
         # Поиск позиции по символу
-        for symbol, quantity in portfolio_positions.items():
-            # print(symbol, dataname, ticker, quantity)
+        for symbol in _account_data[0]['positions']:
             if ticker == symbol.split('@')[0]:  # Сравнение если ticker содержится в symbol
+                quantity = _account_data[0]['positions'][symbol]['quantity']
 
                 try:
                     open_iv_value = float(
@@ -964,6 +1020,7 @@ def newton_vol_put(S, K, T, P, r, sigma):
     iteration = 0
     while abs(xnew - xold) > tolerance and iteration < max_iterations:
         xold = xnew
+        # print(S, K, T, P, r, xnew)
         d1 = (np.log(S / K) + (r - 0.5 * xnew ** 2) * T) / (xnew * np.sqrt(T))
         d2 = d1 - xnew * np.sqrt(T)
         fx = K * np.exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1) - P
@@ -1249,10 +1306,9 @@ class App:
             theor_price_sell_ = new_quotes[ticker]['theoretical_price']  # Теоретическая цена для котирования продажи
             symbol_sell = f'{ticker}@RTSX'  # Тикер Финама
             # Поиск позиции по символу
-            for symbol, quantity in portfolio_positions.items():
-                # print(symbol, dataname)
-                # if ticker in symbol:  # Сравнение если ticker содержится в symbol
+            for symbol in _account_data[0]['positions']:
                 if ticker == symbol.split('@')[0]:  # Сравнение если ticker содержится в symbol
+                    quantity = _account_data[0]['positions'][symbol]['quantity']
                     try:
                         open_iv_sell = float(
                             (calculate_open_data_open_price_open_iv(ticker, float(quantity)))[2])
@@ -1294,9 +1350,10 @@ class App:
             theor_price_buy_ = new_quotes[ticker]['theoretical_price']  # Теоретическая цена для котирования покупки
             symbol_buy = f'{ticker}@RTSX'  # Тикер Финама
             # Поиск позиции по символу
-            for symbol, quantity in portfolio_positions.items():
+            for symbol in _account_data[0]['positions']:
                 # print(symbol, dataname)
                 if ticker == symbol.split('@')[0]:  # Сравнение если ticker содержится в symbol
+                    quantity = _account_data[0]['positions'][symbol]['quantity']
                     try:
                         open_iv_buy = float(
                             (calculate_open_data_open_price_open_iv(ticker, float(quantity)))[2])
@@ -1304,6 +1361,7 @@ class App:
                     except (IndexError, TypeError, ValueError):
                         open_iv_buy = 0
                     break
+
             # print(f'open_iv_buy: {open_iv_buy}')
             quantity_buy = options_data[dataname_buy]['lot_size']  # Размер лота
             S, K, T, opt_type_buy = get_option_data_for_calc_price(
@@ -1503,7 +1561,6 @@ class App:
                                 # Увеличиваем счетчик
                                 self.counter += 1
                                 self.add_message(f'Завершение цикла N{self.counter} из {lot_count}')
-                                get_portfolio_positions()  # Обновляем портфель
                                 if self.counter >= lot_count:
                                     self.add_message(
                                         f'Заданное количество лотов {self.counter} исполнено. Завершение работы котировщика!')
@@ -1594,7 +1651,6 @@ class App:
                                         # Увеличиваем счетчик
                                         self.counter += 1
                                         self.add_message(f'Завершение цикла N{self.counter} из {lot_count}')
-                                        get_portfolio_positions()  # Обновляем портфель
                                         if self.counter >= lot_count:
                                             self.add_message(
                                                 f'Заданное количество лотов {self.counter} исполнено. Завершение работы котировщика!')
@@ -1801,7 +1857,6 @@ class App:
                                 # Увеличиваем счетчик
                                 self.counter += 1
                                 self.add_message(f'Завершение цикла N{self.counter} из {lot_count}')
-                                get_portfolio_positions()  # Обновляем портфель
                                 if self.counter >= lot_count:
                                     self.add_message(
                                         f'Заданное количество лотов {self.counter} исполнено. Завершение работы котировщика!')
@@ -1892,7 +1947,6 @@ class App:
                                         # Увеличиваем счетчик
                                         self.counter += 1
                                         self.add_message(f'Завершение цикла N{self.counter} из {lot_count}')
-                                        get_portfolio_positions()  # Обновляем портфель
                                         if self.counter >= lot_count:
                                             self.add_message(
                                                 f'Заданное количество лотов {self.counter} исполнено. Завершение работы котировщика!')
@@ -2052,7 +2106,6 @@ schedule = Futures()
 fp_provider = FinamPy()  # Подключаемся ко всем торговым счетам
 ap_provider = AlorPy()  # Подключаемся ко всем торговым счетам
 # Подписываемся на события
-# ap_provider.on_new_quotes.subscribe(_on_new_quotes)
 fp_provider.on_quote.subscribe(_on_new_quotes)  # Подписываемся на котировки
 # Подписываемся на свои заявки и сделки
 fp_provider.on_order.subscribe(_on_order)  # Подписываемся на заявки
@@ -2061,10 +2114,19 @@ Thread(target=fp_provider.subscribe_orders_thread,
        name='SubscriptionOrdersThread').start()  # Создаем и запускаем поток обработки своих заявок
 Thread(target=fp_provider.subscribe_trades_thread,
        name='SubscriptionTradesThread').start()  # Создаем и запускаем поток обработки своих сделок
-sleep(5)  # Ждем 1 секунду
+# Подписка на информацию по аккаунту
+if not fp_provider.account_ids:
+    fp_provider.account_ids = list(fp_provider.token_details().account_ids)
+if fp_provider.account_ids:
+    account_id = fp_provider.account_ids[0]
+    fp_provider.on_account_info.subscribe(_on_account_info)
+    Thread(target=fp_provider.subscribe_account_thread,
+           name='AccountThread',
+           args=(account_id,)).start()
+
+sleep(5)  # Ждем 5 секунд
 
 # Запуск приложения
 if __name__ == "__main__":
-    get_portfolio_positions()
     app = App()
     app.root.mainloop()
