@@ -611,8 +611,8 @@ def selected_profit(app_instance):
 
                 try:
                     open_iv_value = float(
-                        (calculate_open_data_open_price_open_iv(ticker, float(quantity)))[2])
-                    quantity_value = float(quantity)
+                        (calculate_open_data_open_price_open_iv(ticker, int(float(quantity))))[2])
+                    quantity_value = int(float(quantity))
                     # print(ticker, open_iv_value, quantity_value)
                 except (IndexError, TypeError, ValueError):
                     open_iv_value = 0
@@ -642,13 +642,16 @@ def selected_profit(app_instance):
     bid_sell = new_quotes[sell_ticker]['bid']
     # print(f'ask_sell: {ask_sell}, bid_sell: {bid_sell}, last_sell: {last_sell}')
     S, K, T, opt_type_sell = get_option_data_for_calc_price(dataname_sell)  # Получаем данные опциона dataname_sell
-    if opt_type_sell == 'C':
+    # Получаем implied_volatility из потока котировок по подписке из обновляемого словаря new_quotes
+    if new_quotes[sell_ticker].get('implied_volatility') is not None and new_quotes[sell_ticker]['implied_volatility'] != 0:
         sigma = new_quotes[sell_ticker]['implied_volatility'] / 100
+    else:
+        sigma = options_data[dataname_sell]['volatility'] / 100
+    if opt_type_sell == 'C':
         ask_iv_sell = newton_vol_call(S, K, T, ask_sell, r, sigma) * 100
         bid_iv_sell = newton_vol_call(S, K, T, bid_sell, r, sigma) * 100
         diff_pos = open_iv_sell - open_iv_buy
     else:  # opt_type_sell == 'P'
-        sigma = new_quotes[sell_ticker]['implied_volatility'] / 100
         ask_iv_sell = newton_vol_put(S, K, T, ask_sell, r, sigma) * 100
         bid_iv_sell = newton_vol_put(S, K, T, bid_sell, r, sigma) * 100
         diff_pos = open_iv_buy - open_iv_sell
@@ -663,12 +666,15 @@ def selected_profit(app_instance):
     bid_buy = new_quotes[buy_ticker]['bid']
     # print(f'ask_buy: {ask_buy}, bid_buy: {bid_buy}, last_buy: {last_buy}')
     S, K, T, opt_type_buy = get_option_data_for_calc_price(dataname_buy)  # Получаем данные опциона dataname_buy
-    if opt_type_buy == 'C':
+    # Получаем implied_volatility из потока котировок по подписке из обновляемого словаря new_quotes
+    if new_quotes[buy_ticker].get('implied_volatility') is not None and new_quotes[buy_ticker]['implied_volatility'] != 0:
         sigma = new_quotes[buy_ticker]['implied_volatility'] / 100
+    else:
+        sigma = options_data[dataname_buy]['volatility'] / 100
+    if opt_type_buy == 'C':
         ask_iv_buy = newton_vol_call(S, K, T, ask_buy, r, sigma) * 100
         bid_iv_buy = newton_vol_call(S, K, T, bid_buy, r, sigma) * 100
     else:
-        sigma = new_quotes[buy_ticker]['implied_volatility'] / 100
         ask_iv_buy = newton_vol_put(S, K, T, ask_buy, r, sigma) * 100
         bid_iv_buy = newton_vol_put(S, K, T, bid_buy, r, sigma) * 100
     # print(f'ask_iv_buy: {round(ask_iv_buy, 2)}, bid_iv_buy: {round(bid_iv_buy, 2)}, last_iv_buy: {round(last_iv_buy, 2)}')
@@ -1336,12 +1342,16 @@ class App:
             bid_sell = int(round(new_quotes[ticker]['bid'], decimals))
             bid_sell_vol = int(round(new_quotes[ticker]['bid_vol'], decimals))
             # print(f'ask_sell: {ask_sell}, bid_sell: {bid_sell} ask_sell_vol: {ask_sell_vol}, bid_sell_vol: {bid_sell_vol}')
-            if opt_type_sell == CALL:
+            # Получаем sigma из потока котировок по подписке из обновляемого словаря new_quotes
+            if new_quotes[ticker].get('implied_volatility') is not None and new_quotes[ticker][
+                'implied_volatility'] != 0:
                 sigma = new_quotes[ticker]['implied_volatility'] / 100
+            else:
+                sigma = options_data[dataname_sell]['volatility'] / 100
+            if opt_type_sell == CALL:
                 ask_iv_sell = newton_vol_call(S, K, T, ask_sell, r, sigma) * 100
                 bid_iv_sell = newton_vol_call(S, K, T, bid_sell, r, sigma) * 100
             else:
-                sigma = new_quotes[ticker]['implied_volatility'] / 100
                 ask_iv_sell = newton_vol_put(S, K, T, ask_sell, r, sigma) * 100
                 bid_iv_sell = newton_vol_put(S, K, T, bid_sell, r, sigma) * 100
 
@@ -1374,14 +1384,18 @@ class App:
             bid_buy = int(round(new_quotes[ticker]['bid'], decimals))
             bid_buy_vol = int(round(new_quotes[ticker]['bid_vol'], decimals))
             # print(f'opt_type {opt_type} Котировки ask_buy: {ask_buy} ask_buy_vol: {ask_buy_vol} bid_buy: {bid_buy} bid_buy_vol: {bid_buy_vol}')
-            if opt_type_buy == 'C':
+            # Получаем sigma из потока котировок по подписке из обновляемого словаря new_quotes
+            if new_quotes[ticker].get('implied_volatility') is not None and new_quotes[ticker][
+                'implied_volatility'] != 0:
                 sigma = new_quotes[ticker]['implied_volatility'] / 100
+            else:
+                sigma = options_data[dataname_buy]['volatility'] / 100
+            if opt_type_buy == 'C':
                 ask_iv_buy = newton_vol_call(S, K, T, ask_buy, r, sigma) * 100
                 bid_iv_buy = newton_vol_call(S, K, T, bid_buy, r, sigma) * 100
                 difference_pos = round(open_iv_buy - open_iv_sell, 2)
                 difference_theor = round(theor_iv_buy - theor_iv_sell, 2)
             else:
-                sigma = new_quotes[ticker]['implied_volatility'] / 100
                 ask_iv_buy = newton_vol_put(S, K, T, ask_buy, r, sigma) * 100
                 bid_iv_buy = newton_vol_put(S, K, T, bid_buy, r, sigma) * 100
                 difference_pos = round(open_iv_sell - open_iv_buy, 2)

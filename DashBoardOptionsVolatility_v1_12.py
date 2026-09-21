@@ -14,7 +14,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import plotly.express as px
 import pandas as pd
-from app.central_strike import _calculate_central_strike
+from app.central_strike import _calculate_central_strike, get_list_of_strikes
 from app.supported_base_asset import MAP
 from string import Template
 import time
@@ -27,7 +27,8 @@ from AlorPy import AlorPy  # Работа с Alor OpenAPI V2
 
 ap_provider = AlorPy()  # Подключаемся ко всем торговым счетам
 
-temp_str = 'C:\\Users\\sftpuser\\Position\\$name_file'
+# temp_str = 'C:\\Users\\sftpuser\\Position\\$name_file'
+temp_str = 'C:\\Users\\шадрин\\YandexDisk\\_ИИС\\Position\\$name_file'
 temp_obj = Template(temp_str)
 
 # Глобальные переменные для хранения данных
@@ -554,19 +555,45 @@ app.layout = html.Div(children=[
         html.Div(children=[  # Текущее время обновления данных
             # Текущее время обновления данных
             html.H6(id='last_update_time'),
-            dcc.Dropdown(  # Селектор выбора базового актива
-                df._base_asset_ticker.unique(),
-                value=first_key,
-                id='dropdown-selection',
+
+            html.Div(  # Контейнер для двух селекторов в одну линию
+                children=[
+                    dcc.Dropdown(  # Селектор выбора базового актива
+                        df._base_asset_ticker.unique(),
+                        value=first_key,
+                        id='dropdown-selection',
+                        style={
+                            'backgroundColor': '#2d2d2d',
+                            'color': 'white',
+                            'border': '1px solid #444',
+                            'borderRadius': '4px',
+                            'flex': '0 0 55%',  # 50% ширины контейнера
+                        },
+                        className='dark-dropdown'
+                    ),
+                    dcc.Dropdown(  # Селектор выбора количества страйков
+                        options=[{'label': str(i), 'value': i} for i in range(3, 16)],
+                        value=9,
+                        id='num_srikes_selection',
+                        style={
+                            'backgroundColor': '#2d2d2d',
+                            'color': 'white',
+                            'border': '1px solid #444',
+                            'borderRadius': '4px',
+                            'flex': '1 1 auto',  # занимает оставшиеся 30%
+                            'marginLeft': '8px',  # небольшой отступ между селекторами
+                        },
+                        className='dark-dropdown'
+                    ),
+                ],
                 style={
-                    'backgroundColor': '#2d2d2d',
-                    'color': 'white',
-                    'border': '1px solid #444',
-                    'borderRadius': '4px'
-                },
-                className='dark-dropdown'
-            )
-            ,
+                    'display': 'flex',
+                    'flexDirection': 'row',
+                    'alignItems': 'center',
+                    'width': '100%',
+                }
+            ),
+
             daq.Gauge(
                 # Спидометр TrueVega # https://stackoverflow.com/questions/69275527/python-dash-gauge-how-can-i-use-strings-as-values-instead-of-numbers
                 id="graph-gauge",
@@ -683,7 +710,7 @@ def clean_data(value, dff):
 @app.callback(Output('last_update_time', 'children'),
               [Input('interval-component', 'n_intervals')])
 def update_time(n):
-    fetch_api_data()
+    fetch_api_data() # вызов функции для обновления данных
     # My portfoloio info data
     with open(temp_obj.substitute(name_file='QUIK_MyPortfolioInfo.csv'), 'r') as file:
         info = file.read()
@@ -695,13 +722,17 @@ def update_time(n):
 
 
 # Обновление графика улыбки волатильности
-@app.callback(Output('plot_smile', 'figure', allow_duplicate=True),
-              [Input('dropdown-selection', 'value'),
-               Input('interval-component', 'n_intervals')],
-              prevent_initial_call=True)
-def update_output_smile(value, n):
+@app.callback(
+    Output('plot_smile', 'figure', allow_duplicate=True),
+    [
+        Input('dropdown-selection', 'value'),
+        Input('num_srikes_selection', 'value'),   # <-- добавили Input
+        Input('interval-component', 'n_intervals')
+    ],
+    prevent_initial_call=True
+)
+def update_output_smile(value, num_strikes, n):   # <-- новый параметр num_strikes
     try:
-
         # Список базовых активов
         base_asset_ticker_list = {}
         for i in range(len(base_asset_list)):
@@ -711,15 +742,22 @@ def update_output_smile(value, n):
         df = pd.DataFrame.from_dict(option_list, orient='columns')
         df = df.loc[df['_volatility'] > 0]
         df['_expiration_datetime'] = pd.to_datetime(df['_expiration_datetime'], format='%a, %d %b %Y %H:%M:%S GMT')
-        df['_expiration_datetime'].dt.date
         df['expiration_date'] = df['_expiration_datetime'].dt.strftime('%d.%m.%Y')
-        # print(df.columns)
 
-        dff = df[(df._base_asset_ticker == value)]  # оставим только опционы базового актива
+        dff = df[(df._base_asset_ticker == value)]
 
         for asset in base_asset_list:
             if asset['_ticker'] == value:
-                base_asset_last_price = asset['_last_price']  # получаем последнюю цену базового актива
+                base_asset_last_price = asset['_last_price']
+                strike_step = MAP[value]['strike_step']
+                # Используем значение из Dropdown вместо фиксированного max_strikes_count
+                strikes_count = num_strikes
+
+        strikes = get_list_of_strikes(base_asset_last_price, strike_step, strikes_count)
+        # print(strikes)
+
+        # Фильтруем данные по выбранному количеству страйков
+        dff = dff[dff['_strike'].isin(strikes)]
 
         dff_call = dff[(dff._type == 'C')]  # оставим только коллы
 
