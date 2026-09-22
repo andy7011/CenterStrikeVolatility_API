@@ -13,13 +13,22 @@ from app.supported_base_asset import MAP  # Список базовых акти
 # Логгер на уровне модуля
 logger = logging.getLogger('FinamPy.Stream')
 
+# ---------------------------------------------------------------------------
+# Глобальные переменные состояния
+# ---------------------------------------------------------------------------
 fp_provider = None  # Глобальный экземпляр FinamPy
 account_id = None   # Текущий идентификатор аккаунта
-base_symbols = set()  # Символы базовых фьючерсов, например {'RIZ6@RTSX', 'SiZ6@RTSX', ...}
-_known_symbols = set()   # все опционные символы, которые уже были обработаны
-_last_positions_symbols = set()  # последний набор символов из позиций (для быстрой проверки)
-_last_orders_symbols = set()     # последний набор символов из заявок
 
+# Множество символов базовых фьючерсов, например {'RIZ6@RTSX', 'SiZ6@RTSX', ...}
+# Заполняется в subscribe_base_assets и используется для фильтрации опционов.
+base_symbols = set()
+
+# Все опционные символы, которые уже были обработаны (чтобы не подписываться повторно)
+_known_symbols = set()
+
+# Последние наборы символов из позиций и заявок (для быстрой проверки изменений)
+_last_positions_symbols = set()
+_last_orders_symbols = set()
 
 # Глобальный список для хранения данных аккаунта
 _account_data = [{
@@ -37,6 +46,59 @@ schedule = Futures()
 # Хранилище активных заявок: {order_id: { ... }}
 active_orders = {}
 
+
+# ---------------------------------------------------------------------------
+# Вспомогательные функции
+# ---------------------------------------------------------------------------
+def to_float(decimal_field):
+    """Универсальное преобразование Decimal-поля protobuf в float."""
+    if decimal_field and hasattr(decimal_field, 'value') and decimal_field.value:
+        try:
+            return float(decimal_field.value)
+        except (ValueError, TypeError):
+            return 0.0
+    return 0.0
+
+
+def fmt_date(d):
+    """Форматирует дату protobuf в строку YYYY-MM-DD."""
+    if d is None:
+        return None
+    return f"{d.year:04d}-{d.month:02d}-{d.day:02d}"
+
+
+def is_order_status_active(status: str) -> bool:
+    """Определяет, является ли статус заявки активным (не терминальным)."""
+    short_status = status.replace('ORDER_STATUS_', '')
+    active_statuses = {
+        'NEW',
+        'PARTIALLY_FILLED',
+        'PENDING_NEW',
+        'PENDING_CANCEL',
+        'REPLACED',
+        'SUSPENDED',
+        'FORWARDING',
+        'WAIT',
+        'WATCHING',
+        'LINK_WAIT',
+        'SL_GUARD_TIME',
+        'SL_FORWARDING',
+        'TP_GUARD_TIME',
+        'TP_FORWARDING',
+        'TP_CORRECTION',
+        'TP_CORR_GUARD_TIME',
+    }
+    return short_status in active_statuses
+
+
+def get_market_now():
+    """Возвращает текущее время в часовой зоне биржи (Москва) как naive datetime."""
+    return datetime.now(schedule.market_timezone).replace(tzinfo=None)
+
+
+# ---------------------------------------------------------------------------
+# Обработчик событий по собственным заявкам
+# ---------------------------------------------------------------------------
 def _on_order(order_state):
     """
     Обработчик событий по собственным заявкам.
@@ -75,14 +137,6 @@ def _on_order(order_state):
                     continue
 
                 symbol = order.symbol if hasattr(order, 'symbol') else ''
-
-                def to_float(decimal_field):
-                    if decimal_field and hasattr(decimal_field, 'value') and decimal_field.value:
-                        try:
-                            return float(decimal_field.value)
-                        except (ValueError, TypeError):
-                            return 0.0
-                    return 0.0
 
                 quantity = to_float(order.quantity) if hasattr(order, 'quantity') else 0.0
                 price = to_float(order.limit_price) if hasattr(order, 'limit_price') else 0.0
@@ -133,45 +187,21 @@ def _on_order(order_state):
                     removed = active_orders.pop(order_id)
                     logger.info(f"Заявка #{order_id} удалена (статус: {status}). Была: {removed}")
 
-        # --- Временный лог: количество активных заявок в хранилище ---
-        # logger.info(f"Активных заявок в хранилище: {len(active_orders)}")
-
+        # Проверяем, не появились ли новые опционы в заявках
         update_option_subscriptions_from_portfolio()
 
     except Exception as e:
         logger.error(f"Ошибка в _on_order: {e}\n{traceback.format_exc()}")
 
 
-
-def is_order_status_active(status: str) -> bool:
-    """Определяет, является ли статус заявки активным."""
-    short_status = status.replace('ORDER_STATUS_', '')
-    active_statuses = {
-        'NEW',
-        'PARTIALLY_FILLED',
-        'PENDING_NEW',
-        'PENDING_CANCEL',
-        'REPLACED',
-        'SUSPENDED',
-        'FORWARDING',
-        'WAIT',
-        'WATCHING',
-        'LINK_WAIT',
-        'SL_GUARD_TIME',
-        'SL_FORWARDING',
-        'TP_GUARD_TIME',
-        'TP_FORWARDING',
-        'TP_CORRECTION',
-        'TP_CORR_GUARD_TIME',
-    }
-    return short_status in active_statuses
-
-
+# ---------------------------------------------------------------------------
+# Подписка на события по заявкам
+# ---------------------------------------------------------------------------
 def subscribe_orders(fp_provider, account_id):
     """Подписка на события по собственным заявкам"""
     fp_provider.on_order.subscribe(_on_order)
     thread = Thread(
-        target=fp_provider.subscribe_orders_thread,  # ← исправлено
+        target=fp_provider.subscribe_orders_thread,
         name='OrdersThread',
         args=(account_id,),
         daemon=True
@@ -181,52 +211,80 @@ def subscribe_orders(fp_provider, account_id):
     return thread
 
 
+# ---------------------------------------------------------------------------
+# Хранилища котировок
+# ---------------------------------------------------------------------------
+base_asset_quotes = {}  # Котировки базовых активов: {ticker: {...}}
+option_quotes = {}      # Котировки опционов: {symbol: {...}}
+subscribed_option_symbols = set()  # Символы опционов, на которые уже подписаны
+options_chains = {}               # {symbol: { ... }} — все опционы по базовым активам
+_options_chains_loaded = False    # Флаг однократной загрузки
 
-# Хранилище последних котировок базовых активов
-base_asset_quotes = {}
-# Хранилище котировок опционов и множество подписанных опционных символов
-option_quotes = {}
-subscribed_option_symbols = set()
-options_chains = {}            # {symbol: { ... }} — все опционы по базовым активам
-_options_chains_loaded = False # Флаг однократной загрузки
 
-
+# ---------------------------------------------------------------------------
+# Обработчик котировок (базовые активы + опционы)
+# ---------------------------------------------------------------------------
 def _on_quote(quote):
-    """Обработчик котировок базовых активов и опционов"""
+    """
+    Обработчик котировок базовых активов и опционов.
+
+    Структура хранилища соответствует ответу сервера:
+    - при первом получении символа создаётся запись со всеми полями,
+      значения которых ещё неизвестны, установленными в None;
+    - при последующих получениях обновляются только те поля,
+      которые реально присутствуют в текущем сообщении;
+    - отсутствующие поля сохраняют предыдущее значение (или None, если данных ещё не было).
+    """
     if not quote.quote:
         logger.warning("Получена пустая котировка")
         return
+
+    # Все поля верхнего уровня из ответа сервера (кроме symbol и timestamp)
+    top_level_fields = [
+        'ask', 'ask_size', 'bid', 'bid_size', 'last', 'last_size',
+        'volume', 'turnover', 'open', 'high', 'low', 'close', 'change',
+        'open_interest'
+    ]
+
+    # Поля объекта option
+    option_fields = [
+        'open_interest', 'implied_volatility', 'theoretical_price',
+        'delta', 'gamma', 'theta', 'vega', 'rho'
+    ]
 
     for q in quote.quote:
         full_symbol = q.symbol  # например, 'RI85000BW6@RTSX'
 
         # --- Обработка опционов ---
         if full_symbol in subscribed_option_symbols:
-            ask = float(q.ask.value) if q.HasField('ask') and q.ask.value else 0.0
-            bid = float(q.bid.value) if q.HasField('bid') and q.bid.value else 0.0
-            last = float(q.last.value) if q.HasField('last') and q.last.value else 0.0
+            # Если символа ещё нет — создаём полную структуру
+            if full_symbol not in option_quotes:
+                option_quotes[full_symbol] = {field: None for field in top_level_fields}
+                for field in option_fields:
+                    option_quotes[full_symbol][field] = None
+                option_quotes[full_symbol]['symbol'] = full_symbol
+                option_quotes[full_symbol]['time'] = None
 
-            option_data = {}
+            # Обновляем поля верхнего уровня, если они есть в текущем сообщении
+            for field in top_level_fields:
+                if q.HasField(field) and getattr(q, field).value:
+                    try:
+                        option_quotes[full_symbol][field] = float(getattr(q, field).value)
+                    except (ValueError, TypeError):
+                        option_quotes[full_symbol][field] = None
+
+            # Обновляем поля опциона
             if q.HasField('option'):
                 opt = q.option
-                option_data['open_interest'] = float(opt.open_interest.value) if opt.HasField('open_interest') and opt.open_interest.value else 0.0
-                option_data['implied_volatility'] = float(opt.implied_volatility.value) if opt.HasField('implied_volatility') and opt.implied_volatility.value else 0.0
-                option_data['theoretical_price'] = float(opt.theoretical_price.value) if opt.HasField('theoretical_price') and opt.theoretical_price.value else 0.0
-                option_data['delta'] = float(opt.delta.value) if opt.HasField('delta') and opt.delta.value else 0.0
-                option_data['gamma'] = float(opt.gamma.value) if opt.HasField('gamma') and opt.gamma.value else 0.0
-                option_data['theta'] = float(opt.theta.value) if opt.HasField('theta') and opt.theta.value else 0.0
-                option_data['vega'] = float(opt.vega.value) if opt.HasField('vega') and opt.vega.value else 0.0
-                option_data['rho'] = float(opt.rho.value) if opt.HasField('rho') and opt.rho.value else 0.0
+                for field in option_fields:
+                    if opt.HasField(field) and getattr(opt, field).value:
+                        try:
+                            option_quotes[full_symbol][field] = float(getattr(opt, field).value)
+                        except (ValueError, TypeError):
+                            option_quotes[full_symbol][field] = None
 
-            option_quotes[full_symbol] = {
-                'ask': ask,
-                'bid': bid,
-                'last': last,
-                **option_data,
-                'time': datetime.now().strftime('%H:%M:%S')
-            }
-            # При необходимости можно логировать:
-            # logger.info(f"Опцион {full_symbol}: {option_quotes[full_symbol]}")
+            # Обновляем время получения (наше служебное поле)
+            option_quotes[full_symbol]['time'] = datetime.now().strftime('%H:%M:%S')
 
         # --- Обработка базовых активов ---
         else:
@@ -234,21 +292,30 @@ def _on_quote(quote):
             if ticker not in MAP:
                 continue
 
-            ask = float(q.ask.value) if q.HasField('ask') and q.ask.value else 0.0
-            bid = float(q.bid.value) if q.HasField('bid') and q.bid.value else 0.0
-            last = float(q.last.value) if q.HasField('last') and q.last.value else 0.0
+            if ticker not in base_asset_quotes:
+                base_asset_quotes[ticker] = {
+                    'ask': None, 'bid': None, 'last': None, 'time': None
+                }
 
-            base_asset_quotes[ticker] = {
-                'ask': ask,
-                'bid': bid,
-                'last': last,
-                'time': datetime.now().strftime('%H:%M:%S')
-            }
+            if q.HasField('ask') and q.ask.value:
+                base_asset_quotes[ticker]['ask'] = float(q.ask.value)
+            if q.HasField('bid') and q.bid.value:
+                base_asset_quotes[ticker]['bid'] = float(q.bid.value)
+            if q.HasField('last') and q.last.value:
+                base_asset_quotes[ticker]['last'] = float(q.last.value)
 
-        # logger.info(f"{symbol}: ask={ask:.2f}, bid={bid:.2f}, last={last:.2f}")
+            base_asset_quotes[ticker]['time'] = datetime.now().strftime('%H:%M:%S')
 
+
+# ---------------------------------------------------------------------------
+# Подписка на котировки базовых активов
+# ---------------------------------------------------------------------------
 def subscribe_base_assets(fp_provider):
     """Подписка на котировки всех базовых активов из MAP."""
+    global base_symbols
+
+    # Очищаем множество базовых символов перед заполнением (актуально при переподключении)
+    base_symbols.clear()
     symbols_for_subscription = []
 
     for ticker in MAP.keys():
@@ -256,8 +323,9 @@ def subscribe_base_assets(fp_provider):
         try:
             finam_board, ticker_code = fp_provider.dataname_to_finam_board_ticker(dataname)
             mic = fp_provider.get_mic(finam_board, ticker_code)
-            symbols_for_subscription.append(f'{ticker_code}@{mic}')
-            base_symbols.add(f'{ticker_code}@{mic}')
+            symbol = f'{ticker_code}@{mic}'
+            symbols_for_subscription.append(symbol)
+            base_symbols.add(symbol)
         except Exception as e:
             logger.error(f"Не удалось определить биржу для {ticker}: {e}")
 
@@ -276,6 +344,10 @@ def subscribe_base_assets(fp_provider):
     logger.info(f"Подписка на базовые активы запущена: {list(MAP.keys())}")
     return thread
 
+
+# ---------------------------------------------------------------------------
+# Подписка на котировки опционов
+# ---------------------------------------------------------------------------
 def subscribe_option_quotes(symbols):
     """
     Подписка на котировки опционов по списку символов.
@@ -298,6 +370,9 @@ def subscribe_option_quotes(symbols):
     logger.info(f"Подписка на котировки опционов запущена: {new_symbols}")
 
 
+# ---------------------------------------------------------------------------
+# Проверка появления новых опционов в портфеле/заявках
+# ---------------------------------------------------------------------------
 def update_option_subscriptions_from_portfolio():
     """
     Проверяет, появились ли новые опционные символы в портфеле/заявках.
@@ -316,7 +391,7 @@ def update_option_subscriptions_from_portfolio():
         if symbol:
             current_orders.add(symbol)
 
-    # Если ничего не изменилось — выходим
+    # Если ничего не изменилось — выходим (быстрая проверка)
     if current_positions == _last_positions_symbols and current_orders == _last_orders_symbols:
         return
 
@@ -328,16 +403,6 @@ def update_option_subscriptions_from_portfolio():
     all_symbols = current_positions | current_orders
 
     # Исключаем базовые фьючерсы (они уже подписаны)
-    base_symbols = set()
-    for ticker in MAP.keys():
-        dataname = f'SPBFUT.{ticker}'
-        try:
-            finam_board, ticker_code = fp_provider.dataname_to_finam_board_ticker(dataname)
-            mic = fp_provider.get_mic(finam_board, ticker_code)
-            base_symbols.add(f'{ticker_code}@{mic}')
-        except Exception:
-            pass
-
     option_symbols = {s for s in all_symbols if s not in base_symbols}
 
     # Новые опционы — те, которых ещё нет в _known_symbols
@@ -352,7 +417,9 @@ def update_option_subscriptions_from_portfolio():
     subscribe_option_quotes(new_symbols)
 
 
-
+# ---------------------------------------------------------------------------
+# Загрузка цепочек опционов
+# ---------------------------------------------------------------------------
 def load_options_chains(fp_provider):
     """
     Однократно загружает цепочки опционов для всех базовых активов из MAP.
@@ -381,12 +448,6 @@ def load_options_chains(fp_provider):
                 continue
 
             for opt in response.options:
-                # Форматируем даты в строки YYYY-MM-DD
-                def fmt_date(d):
-                    if d is None:
-                        return None
-                    return f"{d.year:04d}-{d.month:02d}-{d.day:02d}"
-
                 # Тип опциона: CALL / PUT
                 try:
                     opt_type = assets_service.Option.Type.Name(opt.type)
@@ -396,11 +457,11 @@ def load_options_chains(fp_provider):
                 options_chains[opt.symbol] = {
                     'symbol': opt.symbol,
                     'type': opt_type,
-                    'contract_size': float(opt.contract_size.value) if opt.contract_size.value else 0.0,
+                    'contract_size': to_float(opt.contract_size),
                     'trade_first_day': fmt_date(opt.trade_first_day),
                     'trade_last_day': fmt_date(opt.trade_last_day),
-                    'strike': float(opt.strike.value) if opt.strike.value else 0.0,
-                    'multiplier': float(opt.multiplier.value) if opt.multiplier.value else 0.0,
+                    'strike': to_float(opt.strike),
+                    'multiplier': to_float(opt.multiplier),
                     'expiration_first_day': fmt_date(opt.expiration_first_day),
                     'expiration_last_day': fmt_date(opt.expiration_last_day),
                 }
@@ -414,6 +475,9 @@ def load_options_chains(fp_provider):
     return options_chains
 
 
+# ---------------------------------------------------------------------------
+# Обработчик информации об аккаунте
+# ---------------------------------------------------------------------------
 def _on_account_info(account_response):
     """Обработчик информации об аккаунте из стрим-подписки"""
     try:
@@ -435,10 +499,9 @@ def _on_account_info(account_response):
 
         # --- Equity и unrealized_profit ---
         if hasattr(account_response, 'equity') and account_response.equity:
-            data['equity'] = float(account_response.equity.value) if account_response.equity.value else 0.0
+            data['equity'] = to_float(account_response.equity)
         if hasattr(account_response, 'unrealized_profit') and account_response.unrealized_profit:
-            data['unrealized_profit'] = float(
-                account_response.unrealized_profit.value) if account_response.unrealized_profit.value else 0.0
+            data['unrealized_profit'] = to_float(account_response.unrealized_profit)
 
         # --- Денежные средства ---
         data['cash'] = {}
@@ -453,34 +516,35 @@ def _on_account_info(account_response):
                 }
 
         # --- Определяем тип портфеля ---
+        # Проверяем наличие поля через DESCRIPTOR, чтобы избежать ошибок HasField
         if 'portfolio_forts' in account_response.DESCRIPTOR.fields_by_name and account_response.HasField('portfolio_forts'):
             data['portfolio_type'] = 'FORTS'
             forts = account_response.portfolio_forts
             data['margin'] = {
-                'available_cash': float(forts.available_cash.value) if forts.available_cash else 0.0,
-                'money_reserved': float(forts.money_reserved.value) if forts.money_reserved else 0.0,
+                'available_cash': to_float(forts.available_cash),
+                'money_reserved': to_float(forts.money_reserved),
             }
             data['cash']['RUB'] = {
-                'balance': float(forts.available_cash.value) if forts.available_cash else 0.0,
-                'blocked': float(forts.money_reserved.value) if forts.money_reserved else 0.0,
-                'free': float(forts.available_cash.value) if forts.available_cash else 0.0,
-                'GM': (float(forts.money_reserved.value) / data['equity']) * 100 if data['equity'] else 0.0,
+                'balance': to_float(forts.available_cash),
+                'blocked': to_float(forts.money_reserved),
+                'free': to_float(forts.available_cash),
+                'GM': (to_float(forts.money_reserved) / data['equity']) * 100 if data['equity'] else 0.0,
             }
-        elif hasattr(account_response, 'portfolio_mc') and account_response.HasField('portfolio_mc'):
+        elif 'portfolio_mc' in account_response.DESCRIPTOR.fields_by_name and account_response.HasField('portfolio_mc'):
             data['portfolio_type'] = 'MC'
             mc = account_response.portfolio_mc
             data['margin'] = {
-                'available_cash': float(mc.available_cash.value) if mc.available_cash else 0.0,
-                'initial_margin': float(mc.initial_margin.value) if mc.initial_margin else 0.0,
-                'maintenance_margin': float(mc.maintenance_margin.value) if mc.maintenance_margin else 0.0,
+                'available_cash': to_float(mc.available_cash),
+                'initial_margin': to_float(mc.initial_margin),
+                'maintenance_margin': to_float(mc.maintenance_margin),
             }
-        elif hasattr(account_response, 'portfolio_mct') and account_response.HasField('portfolio_mct'):
+        elif 'portfolio_mct' in account_response.DESCRIPTOR.fields_by_name and account_response.HasField('portfolio_mct'):
             data['portfolio_type'] = 'MCT'
             mct = account_response.portfolio_mct
             data['margin'] = {
-                'available_cash': float(mct.available_cash.value) if mct.available_cash else 0.0,
-                'initial_margin': float(mct.initial_margin.value) if mct.initial_margin else 0.0,
-                'maintenance_margin': float(mct.maintenance_margin.value) if mct.maintenance_margin else 0.0,
+                'available_cash': to_float(mct.available_cash),
+                'initial_margin': to_float(mct.initial_margin),
+                'maintenance_margin': to_float(mct.maintenance_margin),
             }
 
         # --- Парсим позиции ---
@@ -490,31 +554,14 @@ def _on_account_info(account_response):
             try:
                 symbol = position.symbol if hasattr(position, 'symbol') else 'UNKNOWN'
                 if symbol == 'UNKNOWN':
-                    continue
+                    continue  # пропускаем позиции без символа
 
-                quantity = 0.0
-                if hasattr(position, 'quantity') and position.quantity and position.quantity.value:
-                    quantity = float(position.quantity.value)
-
-                current_price = 0.0
-                if hasattr(position, 'current_price') and position.current_price and position.current_price.value:
-                    current_price = float(position.current_price.value)
-
-                average_price = 0.0
-                if hasattr(position, 'average_price') and position.average_price and position.average_price.value:
-                    average_price = float(position.average_price.value)
-
-                maintenance_margin = 0.0
-                if hasattr(position, 'maintenance_margin') and position.maintenance_margin and position.maintenance_margin.value:
-                    maintenance_margin = float(position.maintenance_margin.value)
-
-                daily_pnl = 0.0
-                if hasattr(position, 'daily_pnl') and position.daily_pnl and position.daily_pnl.value:
-                    daily_pnl = float(position.daily_pnl.value)
-
-                unrealized_pnl = 0.0
-                if hasattr(position, 'unrealized_pnl') and position.unrealized_pnl and position.unrealized_pnl.value:
-                    unrealized_pnl = float(position.unrealized_pnl.value)
+                quantity = to_float(position.quantity) if hasattr(position, 'quantity') else 0.0
+                current_price = to_float(position.current_price) if hasattr(position, 'current_price') else 0.0
+                average_price = to_float(position.average_price) if hasattr(position, 'average_price') else 0.0
+                maintenance_margin = to_float(position.maintenance_margin) if hasattr(position, 'maintenance_margin') else 0.0
+                daily_pnl = to_float(position.daily_pnl) if hasattr(position, 'daily_pnl') else 0.0
+                unrealized_pnl = to_float(position.unrealized_pnl) if hasattr(position, 'unrealized_pnl') else 0.0
 
                 data['positions'][symbol] = {
                     'quantity': quantity,
@@ -527,21 +574,16 @@ def _on_account_info(account_response):
             except Exception as e:
                 logger.error(f"Ошибка при парсинге позиции: {e}")
 
-        # # Вывод в консоль (для отладки)
-        # print(data['positions'])
-        # print(data['cash'])
-        # print(data['margin'])
-        # print(f"equity: {data['equity']}")
-        # print(f"unrealized_profit: {data['unrealized_profit']}")
-        # rub_cash = data['cash'].get('RUB', {})
-        # print(f"GM: {rub_cash.get('GM', 0.0)}")
-
+        # Проверяем, не появились ли новые опционы в портфеле
         update_option_subscriptions_from_portfolio()
 
     except Exception as e:
         logger.error(f"Необработанная ошибка в _on_account_info: {e}\n{traceback.format_exc()}")
 
 
+# ---------------------------------------------------------------------------
+# Подписка на поток информации об аккаунте
+# ---------------------------------------------------------------------------
 def start_account_stream(fp_provider, account_id):
     """Запускает поток подписки на информацию об аккаунте"""
     fp_provider.on_account_info.subscribe(_on_account_info)
@@ -556,11 +598,9 @@ def start_account_stream(fp_provider, account_id):
     return stream_thread
 
 
-def get_market_now():
-    """Возвращает текущее время в часовой зоне биржи (Москва) как naive datetime."""
-    return datetime.now(schedule.market_timezone).replace(tzinfo=None)
-
-
+# ---------------------------------------------------------------------------
+# Ожидание торговой сессии
+# ---------------------------------------------------------------------------
 def wait_for_trading_session(stop_event):
     """Ожидает начала торговой сессии."""
     while not stop_event.is_set():
@@ -576,7 +616,9 @@ def wait_for_trading_session(stop_event):
         stop_event.wait(wait_seconds)
 
 
-# def run_subscription_loop(fp_provider, account_id, stop_event):
+# ---------------------------------------------------------------------------
+# Цикл контроля подписок и переподключения
+# ---------------------------------------------------------------------------
 def run_subscription_loop(stop_event):
     """
     Запускает подписку и контролирует её работу в течение текущей сессии.
@@ -618,10 +660,12 @@ def run_subscription_loop(stop_event):
                 _known_symbols.clear()
                 _last_positions_symbols.clear()
                 _last_orders_symbols.clear()
+                _options_chains_loaded = False
+
                 stream_thread = start_account_stream(fp_provider, account_id)
                 subscribe_base_assets(fp_provider)
-                load_options_chains(fp_provider)          # перезагружаем цепочки
-                update_option_subscriptions_from_portfolio()  # восстанавливаем подписки на опционы
+                load_options_chains(fp_provider)
+                update_option_subscriptions_from_portfolio()
                 subscribe_orders(fp_provider, account_id)
 
                 logger.info("Переподключение выполнено успешно")
@@ -635,15 +679,22 @@ def run_subscription_loop(stop_event):
     return False
 
 
+# ---------------------------------------------------------------------------
+# Отладочный вывод котировок опционов (периодический)
+# ---------------------------------------------------------------------------
 def print_option_quotes_periodically(stop_event):
     """Раз в 5 секунд выводит содержимое option_quotes."""
     while not stop_event.is_set():
-        sleep(5)
+        stop_event.wait(5)  # ждём 5 секунд или сигнал остановки
         if option_quotes:
             print(f"\n=== option_quotes ({len(option_quotes)} символов) ===")
             for symbol, quote in option_quotes.items():
                 print(f"{symbol}: {quote}")
 
+
+# ---------------------------------------------------------------------------
+# Основная функция
+# ---------------------------------------------------------------------------
 def main():
     """Основная функция: работает по расписанию биржи, восстанавливается при сбоях"""
     logger.info("Запуск программы мониторинга аккаунта по расписанию биржи")
@@ -693,9 +744,7 @@ def main():
                 subscribe_orders(fp_provider, account_id)
 
                 # Входим в цикл контроля сессии
-                # run_subscription_loop(fp_provider, account_id, stop_event)
                 run_subscription_loop(stop_event)
-
 
             except KeyboardInterrupt:
                 logger.info("Получен сигнал остановки. Завершаем работу...")
@@ -716,7 +765,9 @@ def main():
         logger.info("Программа остановлена")
 
 
-
+# ---------------------------------------------------------------------------
+# Точка входа
+# ---------------------------------------------------------------------------
 if __name__ == '__main__':
     logging.basicConfig(
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
