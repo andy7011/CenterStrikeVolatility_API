@@ -5,10 +5,18 @@ from time import sleep  # Функция для приостановки вып�
 import time as _time
 import signal
 import traceback  # Модуль для получения полной информации об ошибке
+import threading
+import random
+import math
+import numpy as np
+from scipy.stats import norm
+from scipy.optimize import brentq
 
+from moex_api import get_option_board, get_option_expirations
 from FinamPy import FinamPy  # Основной класс библиотеки FinamPy
 from FinamPy.grpc import orders_service_pb2 as orders_service
 from FinamPy.grpc import assets_service_pb2 as assets_service
+from FinamPy.grpc.assets_service_pb2 import ClockRequest, ClockResponse  # Время на сервере
 from FinamPy.grpc import marketdata_service_pb2 as marketdata_service
 from FinLabPy.Schedule.MOEX import Futures  # Расписание торгов
 from app.supported_base_asset import MAP  # Список базовых активов
@@ -16,14 +24,16 @@ from app.central_strike import get_list_of_strikes
 
 # Логгер на уровне модуля
 logger = logging.getLogger('FinamPy.Stream')
+# Константы
+DAYS_IN_YEAR = 365.0
+RISK_FREE_RATE = 0.0  # Безрисковая ставка (0 для фьючерсов)
 
 # ---------------------------------------------------------------------------
 # Глобальные переменные состояния
 # ---------------------------------------------------------------------------
 fp_provider = None  # Глобальный экземпляр FinamPy
 account_id = None   # Текущий идентификатор аккаунта
-
-_last_restart_time = 0.0
+_full_ticker_to_map = {}   # {полный_тикер: тикер_из_MAP}
 
 # Множество символов базовых фьючерсов, например {'RIZ6@RTSX', 'SiZ6@RTSX', ...}
 # Заполняется в subscribe_base_assets и используется для фильтрации опционов.
@@ -38,6 +48,14 @@ _last_orders_symbols = set()
 _subscribed_symbols = set()  # символы, на которые реально оформлена подписка
 _subscription_dirty = False       # флаг необходимости перезапуска
 _last_change_time = 0.0           # время последнего изменения состава
+# Флаг запроса переподключения от watchdog или упавших потоков
+_reconnect_requested = False
+
+# Список всех активных потоков подписок
+_stream_threads = []
+
+# Блокировка для защиты от одновременного переподключения
+_reconnect_lock = threading.Lock()
 
 
 # Глобальный список для хранения данных аккаунта
@@ -60,6 +78,114 @@ active_orders = {}
 # ---------------------------------------------------------------------------
 # Вспомогательные функции
 # ---------------------------------------------------------------------------
+def black_76_price(F, K, T, sigma, option_type='call'):
+    """Цена европейского опциона на фьючерс по модели Блэка-76."""
+    if sigma <= 0 or T <= 0:
+        return 0.0
+    d1 = (math.log(F / K) + 0.5 * sigma ** 2 * T) / (sigma * math.sqrt(T))
+    d2 = d1 - sigma * math.sqrt(T)
+    if option_type == 'call':
+        price = math.exp(-RISK_FREE_RATE * T) * (F * norm.cdf(d1) - K * norm.cdf(d2))
+    else:
+        price = math.exp(-RISK_FREE_RATE * T) * (K * norm.cdf(-d2) - F * norm.cdf(-d1))
+    return price
+
+def black_76_vega(F, K, T, sigma):
+    """Вега (производная цены по волатильности)."""
+    if sigma <= 0 or T <= 0:
+        return 0.0
+    d1 = (math.log(F / K) + 0.5 * sigma ** 2 * T) / (sigma * math.sqrt(T))
+    return F * math.exp(-RISK_FREE_RATE * T) * norm.pdf(d1) * math.sqrt(T)
+
+def initial_volatility_guess(F, K, T, price, option_type='call'):
+    """
+    Быстрое начальное приближение IV для метода Ньютона.
+    Использует формулу Бренера–Субраманьяна для ATM и корректировку для OTM.
+    """
+    if T <= 0 or price <= 0:
+        return 0.2  # дефолт
+    # Внутренняя стоимость
+    intrinsic = max(0, F - K) if option_type == 'call' else max(0, K - F)
+    if price <= intrinsic:
+        return 0.001  # минимум
+    # Для ATM опционов: sigma ≈ sqrt(2π/T) * (price / F) (приближение)
+    if abs(F - K) / F < 0.05:  # около денег
+        return math.sqrt(2 * math.pi) * price / (F * math.sqrt(T))
+    else:
+        # Для OTM используем бисекцию на 5 итерациях или возвращаем дефолт 0.2
+        # Простой вариант: стартовая 0.2
+        return 0.2
+
+def implied_volatility_newton(market_price, F, K, T, option_type='call',
+                              initial_guess=None, tolerance=1e-8, max_iter=100):
+    """
+    Вычисление IV методом Ньютона с аналитической вегой.
+    Возвращает sigma (десятичная дробь) или None при неудаче.
+    """
+    if T <= 0 or market_price <= 0:
+        return None
+    intrinsic = max(0, F - K) if option_type == 'call' else max(0, K - F)
+    if market_price < intrinsic:
+        return None
+
+    sigma = initial_guess if initial_guess is not None else initial_volatility_guess(F, K, T, market_price, option_type)
+    sigma = max(sigma, 1e-5)  # защита от нуля
+
+    for _ in range(max_iter):
+        price = black_76_price(F, K, T, sigma, option_type)
+        diff = price - market_price
+        if abs(diff) < tolerance:
+            return sigma
+        vega = black_76_vega(F, K, T, sigma)
+        if abs(vega) < 1e-12:
+            break  # вега слишком мала, дальнейшие шаги бесполезны
+        step = diff / vega
+        sigma_new = sigma - step
+        if sigma_new <= 0 or not math.isfinite(sigma_new):
+            break
+        sigma = sigma_new
+
+    # Если не сошлось — пробуем Brent как fallback
+    try:
+        sigma = brentq(lambda s: black_76_price(F, K, T, s, option_type) - market_price,
+                       1e-5, 10.0)
+        return sigma
+    except ValueError:
+        return None
+
+def calculate_greeks(F, K, T, sigma, option_type='call'):
+    """
+    Расчёт всех греков по модели Блэка-76 при r=0.
+    Возвращает словарь с delta, gamma, theta, vega, rho.
+    """
+    if sigma <= 0 or T <= 0:
+        return {'delta': None, 'gamma': None, 'theta': None, 'vega': None, 'rho': None}
+    sqrt_T = math.sqrt(T)
+    d1 = (math.log(F / K) + 0.5 * sigma ** 2 * T) / (sigma * sqrt_T)
+    d2 = d1 - sigma * sqrt_T
+    pdf_d1 = norm.pdf(d1)
+
+    if option_type == 'call':
+        delta = norm.cdf(d1)
+        theta = -(F * pdf_d1 * sigma) / (2 * sqrt_T)  # без r*F*... (r=0)
+        rho = 0.0  # при r=0 rho всегда 0
+    else:
+        delta = -norm.cdf(-d1)
+        theta = -(F * pdf_d1 * sigma) / (2 * sqrt_T)  # для put тоже (без r)
+        rho = 0.0
+
+    gamma = pdf_d1 / (F * sigma * sqrt_T)
+    vega = F * pdf_d1 * sqrt_T
+
+    return {
+        'delta': delta,
+        'gamma': gamma,
+        'theta': theta,
+        'vega': vega,
+        'rho': rho,
+    }
+
+
 def to_float(decimal_field):
     """Универсальное преобразование Decimal-поля protobuf в float."""
     if decimal_field and hasattr(decimal_field, 'value') and decimal_field.value:
@@ -217,6 +343,7 @@ def subscribe_orders(fp_provider, account_id):
         daemon=True
     )
     thread.start()
+    track_thread(thread)  # ← добавить
     logger.info(f"Подписка на собственные заявки аккаунта {account_id} запущена")
     return thread
 
@@ -269,6 +396,68 @@ def _set_timestamp(target, source):
     except (AttributeError, ValueError, TypeError):
         target['timestamp'] = None
 
+def update_iv_and_greeks(symbol):
+    """Вычисляет IV для ask/bid/last/theor и греки для опциона."""
+    # Получаем параметры из хранилищ
+    chain = options_chains.get(symbol)
+    if not chain:
+        return
+
+    base_ticker = chain.get('base_ticker')
+    if not base_ticker:
+        return
+    quote = base_asset_quotes.get(base_ticker)  # 'RIZ6' — совпадает с ключами хранилища
+    if not quote:
+        return
+    if not quote.get('last'):
+        bid = quote.get('bid')
+        ask = quote.get('ask')
+        F = (bid + ask) / 2 if bid and ask else None
+    else:
+        F = quote['last']
+    if not F or F <= 0:
+        return
+
+    K = chain['strike']
+    # Дата экспирации
+    exp_date_str = chain['expiration_last_day']
+    if not exp_date_str or exp_date_str == '0000-00-00':
+        return
+    exp_date = datetime.strptime(exp_date_str, '%Y-%m-%d').date()
+    today = datetime.now().date()
+    T = (exp_date - today).days / DAYS_IN_YEAR
+    if T <= 0:
+        return
+
+    option_type = 'call' if chain['type'] == 'TYPE_CALL' else 'put'
+
+    record = option_quotes.get(symbol)
+    if not record:
+        return
+
+    # Расчёт IV для каждой цены
+    for price_field, iv_field in [('ask', 'ask_iv'), ('bid', 'bid_iv'),
+                                  ('last', 'last_iv'), ('theoretical_price', 'theor_iv')]:
+        price = record.get(price_field)
+        if price is None:
+            record[iv_field] = None
+            continue
+        iv = implied_volatility_newton(price, F, K, T, option_type)
+        record[iv_field] = iv * 100 if iv is not None else None  # в процентах
+
+    # Для греков используем среднюю IV или IV от теоретической цены
+    # Возьмём IV от последней сделки, если есть, иначе от ask/bid
+    sigma_for_greeks = record.get('last_iv')
+    if sigma_for_greeks is None:
+        sigma_for_greeks = record.get('theor_iv') or record.get('ask_iv') or record.get('bid_iv')
+    if sigma_for_greeks is None:
+        sigma_for_greeks = record.get('implied_volatility')  # от биржи (если есть)
+    if sigma_for_greeks is None:
+        return
+    sigma = sigma_for_greeks / 100.0  # переводим в десятичную
+
+    greeks = calculate_greeks(F, K, T, sigma, option_type)
+    record.update(greeks)  # добавит delta, gamma, theta, vega, rho
 
 def process_single_quote(q):
     """Обрабатывает одну котировку (из подписки или запроса последней цены)."""
@@ -277,14 +466,15 @@ def process_single_quote(q):
 
     # --- Базовые активы (фьючерсы) ---
     if full_symbol in base_symbols or ticker in MAP:
-        if ticker not in base_asset_quotes:
-            base_asset_quotes[ticker] = {
+        map_ticker = _full_ticker_to_map.get(ticker, ticker)  # 'RIZ6' → 'RI'
+        if map_ticker not in base_asset_quotes:
+            base_asset_quotes[map_ticker] = {
                 'timestamp': None,
                 'ask': None, 'bid': None, 'last': None,
                 'ask_size': None, 'bid_size': None, 'last_size': None,
                 'time': None
             }
-        record = base_asset_quotes[ticker]
+        record = base_asset_quotes[map_ticker]
         _set_timestamp(record, q)
         for field in ('ask', 'bid', 'last', 'ask_size', 'bid_size', 'last_size'):
             _set_if_present(record, q, field)
@@ -295,11 +485,12 @@ def process_single_quote(q):
         if full_symbol not in option_quotes:
             option_quotes[full_symbol] = {
                 'timestamp': None,
-                'ask': None, 'ask_size': None, 'bid': None, 'bid_size': None,
-                'last': None, 'last_size': None,
+                'ask': None, 'ask_iv': None, 'ask_size': None, 'bid': None, 'bid_iv': None, 'bid_size': None,
+                'last': None, 'last_iv': None, 'last_size': None,
                 'open_interest': None, 'implied_volatility': None,
-                'theoretical_price': None, 'delta': None, 'gamma': None,
-                'theta': None, 'vega': None, 'rho': None,
+                'theoretical_price': None,
+                'theor_iv': None,
+                'delta': None, 'gamma': None, 'theta': None, 'vega': None, 'rho': None,
                 'time': None
             }
         record = option_quotes[full_symbol]
@@ -315,6 +506,10 @@ def process_single_quote(q):
                 _set_if_present(record, opt, field)
 
         record['time'] = datetime.now().strftime('%H:%M:%S')
+
+        # --- Расчёт IV и греков ---
+        update_iv_and_greeks(full_symbol)
+
 
 # ---------------------------------------------------------------------------
 # Обработчик котировок (базовые активы + опционы)
@@ -334,9 +529,9 @@ def _on_quote(quote):
 # Подписка на котировки базовых активов
 # ---------------------------------------------------------------------------
 def subscribe_base_assets(fp_provider):
-    """Только собирает символы базовых активов, НЕ запускает поток."""
-    global base_symbols
+    global base_symbols, _full_ticker_to_map
     base_symbols.clear()
+    _full_ticker_to_map.clear()
 
     for ticker in MAP.keys():
         dataname = f'SPBFUT.{ticker}'
@@ -345,6 +540,7 @@ def subscribe_base_assets(fp_provider):
             mic = fp_provider.get_mic(finam_board, ticker_code)
             symbol = f'{ticker_code}@{mic}'
             base_symbols.add(symbol)
+            _full_ticker_to_map[ticker_code] = ticker   # ← добавить
         except Exception as e:
             logger.error(f"Не удалось определить биржу для {ticker}: {e}")
 
@@ -429,18 +625,19 @@ _quotes_thread = None
 def restart_quotes_subscription():
     """Перезапускает подписку на котировки с актуальным списком символов."""
     global _quotes_threads
+
+    # Отписываемся от старого обработчика, чтобы старые события не дублировались
+    if fp_provider is not None:
+        fp_provider.on_quote.unsubscribe(_on_quote)
+
+    # Запускаем новый поток подписки (он сам подпишется заново)
     new_threads = start_quotes_subscription(fp_provider) or []
     _quotes_threads = new_threads
-
 
 # ---------------------------------------------------------------------------
 # Загрузка цепочек опционов
 # ---------------------------------------------------------------------------
 def load_options_chains(fp_provider):
-    """
-    Загружает цепочки опционов, оставляя только опционы с нужными страйками
-    (max_strikes_count вокруг центрального страйка).
-    """
     global _options_chains_loaded
     if _options_chains_loaded:
         return options_chains
@@ -451,76 +648,82 @@ def load_options_chains(fp_provider):
         strikes_count = params['max_strikes_count']
 
         try:
-            # --- Получаем цену базового актива из подписки ---
+            # Получаем список дат экспирации (уникальные, в формате 'YYYY-MM-DD')
+            expirations = get_option_expirations(ticker)
+            expiration_dates = sorted(set(exp['expiration_date'] for exp in expirations))
+            print(f'Даты экспирации опционов базового актива {ticker}: {expiration_dates}')
+
+            # Получаем цену базового актива
             quote = base_asset_quotes.get(ticker)
             if not quote or quote.get('last') is None:
                 logger.warning(f"Нет цены для {ticker}, пропускаем загрузку цепочки")
                 continue
             base_price = quote['last']
 
-            # --- Формируем список нужных страйков ---
+            # Формируем нужные страйки
             required_strikes = set(get_list_of_strikes(base_price, strike_step, strikes_count))
 
-            # --- Определяем символ базового актива для API ---
+            # Определяем символ для API
             dataname = f'SPBFUT.{ticker}'
             finam_board, ticker_code = fp_provider.dataname_to_finam_board_ticker(dataname)
             mic = fp_provider.get_mic(finam_board, ticker_code)
             underlying_symbol = f'{ticker_code}@{mic}'
 
-            # --- Запрашиваем полную цепочку опционов ---
-            request = assets_service.OptionsChainRequest(underlying_symbol=underlying_symbol)
-            response = fp_provider.call_function(fp_provider.assets_stub.OptionsChain, request)
+            # Перебираем все даты экспирации
+            for exp_date_str in expiration_dates:
+                year, month, day = map(int, exp_date_str.split('-'))
+                # Используем common_pb2.Date вместо assets_service.Date
+                expiration_date = common_pb2.Date(year=year, month=month, day=day)
 
-            if response is None:
-                logger.error(f"Не удалось получить цепочку опционов для {underlying_symbol}")
-                continue
+                request = assets_service.OptionsChainRequest(
+                    underlying_symbol=underlying_symbol,
+                    expiration_date=expiration_date
+                )
+                response = fp_provider.call_function(fp_provider.assets_stub.OptionsChain, request)
 
-            # --- Фильтруем опционы по страйкам ---
-            filtered_count = 0
-            for opt in response.options:
-                strike = to_float(opt.strike)
-                if strike not in required_strikes:
+                if response is None:
+                    logger.error(f"Не удалось получить цепочку опционов для {underlying_symbol} на {exp_date_str}")
                     continue
 
-                # Тип опциона: CALL / PUT
-                try:
-                    opt_type = assets_service.Option.Type.Name(opt.type)
-                except ValueError:
-                    opt_type = str(opt.type)
+                filtered_count = 0
+                for opt in response.options:
+                    strike = to_float(opt.strike)
+                    if strike not in required_strikes:
+                        continue
 
-                options_chains[opt.symbol] = {
-                    'symbol': opt.symbol,
-                    'type': opt_type,
-                    'contract_size': to_float(opt.contract_size),
-                    'trade_first_day': fmt_date(opt.trade_first_day),
-                    'trade_last_day': fmt_date(opt.trade_last_day),
-                    'strike': strike,
-                    'multiplier': to_float(opt.multiplier),
-                    'expiration_first_day': fmt_date(opt.expiration_first_day),
-                    'expiration_last_day': fmt_date(opt.expiration_last_day),
-                }
-                filtered_count += 1
+                    try:
+                        opt_type = assets_service.Option.Type.Name(opt.type)
+                    except ValueError:
+                        opt_type = str(opt.type)
 
-            logger.info(f"Цепочка опционов для {underlying_symbol}: "
-                        f"загружено {filtered_count} из {len(response.options)} опционов "
-                        f"(страйков: {len(required_strikes)})")
+                    options_chains[opt.symbol] = {
+                        'symbol': opt.symbol,
+                        'type': opt_type,
+                        'contract_size': to_float(opt.contract_size),
+                        'trade_first_day': fmt_date(opt.trade_first_day),
+                        'trade_last_day': fmt_date(opt.trade_last_day),
+                        'strike': strike,
+                        'multiplier': to_float(opt.multiplier),
+                        'expiration_first_day': fmt_date(opt.expiration_first_day),
+                        'expiration_last_day': fmt_date(opt.expiration_last_day),
+                        'base_ticker': ticker,
+                    }
+                    filtered_count += 1
+
+                logger.info(f"Цепочка опционов для {underlying_symbol} на {exp_date_str}: "
+                            f"загружено {filtered_count} из {len(response.options)} опционов "
+                            f"(страйков: {len(required_strikes)})")
 
         except Exception as e:
             logger.error(f"Ошибка при получении цепочки опционов для {ticker}: {e}")
 
     logger.info(f"Всего опционов загружено: {len(options_chains)}")
-    # === ВРЕМЕННЫЙ ВЫВОД ДЛЯ ПРОВЕРКИ ===
-    print(f"\n=== options_chains ({len(options_chains)} символов) ===")
-    for symbol, data in options_chains.items():
-        print(f"{symbol}: {data}")
-    print("=====================================\n")
     return options_chains
 
 def start_quotes_subscription(fp_provider):
     """Подписка на базовые активы + все опционы из subscribed_option_symbols."""
     global subscribed_option_symbols, _subscribed_symbols
 
-    # Формируем полный список символов
     all_symbols = set(base_symbols) | subscribed_option_symbols
 
     if not all_symbols:
@@ -529,7 +732,6 @@ def start_quotes_subscription(fp_provider):
 
     fp_provider.on_quote.subscribe(_on_quote)
 
-    # Запускаем ОДИН поток со всеми символами
     thread = Thread(
         target=fp_provider.subscribe_quote_thread,
         name='QuotesThread',
@@ -537,10 +739,9 @@ def start_quotes_subscription(fp_provider):
         daemon=True
     )
     thread.start()
+    track_thread(thread)  # ← ЭТА СТРОКА БЫЛА ПРОПУЩЕНА
 
-    # Запоминаем, на какие символы подписались
     _subscribed_symbols = set(all_symbols)
-
     logger.info(f"Запущен поток подписки на {len(all_symbols)} символов: {thread.name}")
     return [thread]
 
@@ -664,6 +865,7 @@ def start_account_stream(fp_provider, account_id):
         daemon=True
     )
     stream_thread.start()
+    track_thread(stream_thread)  # ← добавить
     logger.info(f"Подписка на аккаунт {account_id} запущена")
     return stream_thread
 
@@ -686,105 +888,6 @@ def wait_for_trading_session(stop_event):
         stop_event.wait(wait_seconds)
 
 
-# ---------------------------------------------------------------------------
-# Цикл контроля подписок и переподключения
-# ---------------------------------------------------------------------------
-def run_subscription_loop(stop_event):
-    """
-    Запускает подписку и контролирует её работу в течение текущей сессии.
-    Возвращает True, если подписка завершилась из-за ошибки (нужно перезапускать),
-    и False, если сессия закончилась и надо просто ждать следующей.
-    """
-    global fp_provider, account_id, _options_chains_loaded, _subscribed_symbols
-    global _subscription_dirty, _last_change_time
-
-    # --- Запускаем поток подписки на информацию об аккаунте ---
-    stream_thread = start_account_stream(fp_provider, account_id)
-
-    retry_delay = 5      # начальная задержка перед переподключением (сек)
-    max_delay = 60       # максимальная задержка (сек)
-
-    while not stop_event.is_set():
-        # --- Проверяем, активна ли торговая сессия ---
-        now = get_market_now()
-        if not schedule.trade_session(now):
-            logger.info("Торговая сессия закончилась.")
-            return False
-
-        # --- Если поток аккаунта умер, пытаемся переподключиться ---
-        if not stream_thread.is_alive():
-            logger.warning("Поток подписки завершился. Пытаемся переподключиться...")
-
-            # Закрываем старое соединение (если оно ещё открыто)
-            try:
-                fp_provider.close_channel()
-            except Exception:
-                pass
-
-            # Экспоненциальная задержка перед повторной попыткой
-            sleep(retry_delay)
-            retry_delay = min(retry_delay * 2, max_delay)
-
-            try:
-                # --- Пересоздаём подключение ---
-                fp_provider = FinamPy()
-                if not fp_provider.account_ids:
-                    fp_provider.account_ids = list(fp_provider.token_details().account_ids)
-                account_id = fp_provider.account_ids[0]
-
-                # --- Сбрасываем все состояния (важно!) ---
-                _options_chains_loaded = False
-                subscribed_option_symbols.clear()
-                option_quotes.clear()
-                base_symbols.clear()
-                options_chains.clear()
-                _known_symbols.clear()
-                _last_positions_symbols.clear()
-                _last_orders_symbols.clear()
-                active_orders.clear()
-                _subscribed_symbols.clear()   # ← обязательно сбрасываем и это
-
-                # --- Восстанавливаем подписки в том же порядке, что и в main() ---
-
-                # 1. Собираем символы базовых активов
-                subscribe_base_assets(fp_provider)
-
-                # 2. Подписываемся на базовые активы (пока без опционов)
-                start_quotes_subscription(fp_provider)
-
-                # 3. Ждём, пока по всем базовым активам придут первые котировки
-                wait_for_base_asset_prices(stop_event, timeout=30)
-
-                # 4. Загружаем цепочки опционов (использует цены из base_asset_quotes)
-                load_options_chains(fp_provider)
-
-                # 5. Перезапускаем подписку, чтобы добавить загруженные опционы
-                start_quotes_subscription(fp_provider)
-
-                # 6. Подписываемся на события по заявкам
-                subscribe_orders(fp_provider, account_id)
-
-                # --- Запускаем поток аккаунта заново ---
-                stream_thread = start_account_stream(fp_provider, account_id)
-
-                logger.info("Переподключение выполнено успешно")
-                retry_delay = 5  # сбрасываем задержку после успеха
-
-            except Exception as e:
-                logger.error(f"Ошибка при переподключении: {e}\n{traceback.format_exc()}")
-                continue  # переходим к следующей итерации while
-
-        # Если состав менялся и прошло >1 сек с последнего изменения — перезапускаем
-        if _subscription_dirty and _time.time() - _last_change_time >= 1.0:
-            _subscription_dirty = False
-            logger.info("Перезапуск подписки после накопления изменений")
-            restart_quotes_subscription()
-
-        # Ждём 1 секунду или сигнал остановки
-        stop_event.wait(1)
-
-    return False
-
 def wait_for_base_asset_prices(stop_event, timeout=30):
     """Ожидает появления котировок по всем базовым активам."""
     deadline = datetime.now().timestamp() + timeout
@@ -806,7 +909,7 @@ def wait_for_base_asset_prices(stop_event, timeout=30):
 def print_quotes_periodically(stop_event):
     """Раз в 5 секунд выводит содержимое base_asset_quotes и option_quotes."""
     while not stop_event.is_set():
-        stop_event.wait(5)
+        stop_event.wait(10)
 
         # --- Вывод котировок базовых активов ---
         if base_asset_quotes:
@@ -826,11 +929,158 @@ def print_quotes_periodically(stop_event):
 
 
 # ---------------------------------------------------------------------------
+# Управление соединением и переподключением
+# ---------------------------------------------------------------------------
+def close_provider():
+    global fp_provider
+    if fp_provider is not None:
+        try:
+            # Отписываемся от всех событий (как в вашем примере)
+            fp_provider.on_quote.unsubscribe(_on_quote)
+            fp_provider.on_order.unsubscribe(_on_order)
+            fp_provider.on_account_info.unsubscribe(_on_account_info)
+
+            # Закрываем канал
+            fp_provider.close_channel()
+        except Exception:
+            pass
+        finally:
+            fp_provider = None
+
+
+def reset_state():
+    """Сбрасывает все глобальные состояния перед переподключением."""
+    global base_symbols, _known_symbols, _last_positions_symbols, _last_orders_symbols
+    global _subscribed_symbols, _options_chains_loaded, subscribed_option_symbols
+    global _stream_threads, option_quotes, options_chains, active_orders, _subscription_dirty
+    global _full_ticker_to_map
+
+    base_symbols.clear()
+    _full_ticker_to_map.clear()
+    _known_symbols.clear()
+    _last_positions_symbols.clear()
+    _last_orders_symbols.clear()
+    _subscribed_symbols.clear()
+    subscribed_option_symbols.clear()
+    _stream_threads.clear()
+    option_quotes.clear()
+    options_chains.clear()
+    active_orders.clear()
+    _options_chains_loaded = False
+    _subscription_dirty = False
+
+
+def track_thread(thread):
+    """Добавляет поток в список отслеживаемых и чистит завершённые."""
+    _stream_threads.append(thread)
+    # Удаляем мёртвые потоки, чтобы список не разрастался
+    for t in _stream_threads[:]:
+        if not t.is_alive():
+            _stream_threads.remove(t)
+
+
+def get_backoff_delay(attempt):
+    """Экспоненциальная задержка с джиттером: 5с, 10с, 20с, 40с, ... до 300с."""
+    base = min(5 * (2 ** attempt), 300)
+    jitter = random.uniform(0, 0.3 * base)
+    return base + jitter
+
+
+def initialize_connection(stop_event):
+    """
+    Полная инициализация подключения: создание провайдера,
+    подписка на все потоки и загрузка данных.
+    """
+    global fp_provider, account_id, _options_chains_loaded
+
+    # 1. Закрываем старый канал
+    close_provider()
+
+    # 2. Создаём новый экземпляр FinamPy
+    fp_provider = FinamPy()
+    if not fp_provider.account_ids:
+        fp_provider.account_ids = list(fp_provider.token_details().account_ids)
+    if not fp_provider.account_ids:
+        raise RuntimeError("Не найдено ни одного торгового счёта")
+    account_id = fp_provider.account_ids[0]
+    logger.info(f"Инициализация: работа с аккаунтом {account_id}")
+
+    # 3. Сбрасываем все глобальные состояния
+    reset_state()
+
+    # 4. Последовательность подписок (как в исходном main)
+    subscribe_base_assets(fp_provider)          # заполняет base_symbols
+    start_quotes_subscription(fp_provider)      # базовые активы
+    wait_for_base_asset_prices(stop_event, timeout=30)
+    load_options_chains(fp_provider)            # загружает цепочки опционов
+    # start_quotes_subscription(fp_provider)      # перезапуск с опционами
+    subscribe_orders(fp_provider, account_id)   # заявки
+    start_account_stream(fp_provider, account_id)  # аккаунт
+
+    logger.info("Все подписки активны.")
+
+
+def perform_reconnect(stop_event):
+    """Выполняет переподключение с защитой от повторного входа."""
+    if not _reconnect_lock.acquire(blocking=False):
+        logger.info("Переподключение уже выполняется, пропускаем.")
+        return
+
+    try:
+        logger.warning("Начинаем процедуру переподключения...")
+        initialize_connection(stop_event)
+        logger.info("Переподключение выполнено успешно.")
+    except Exception as e:
+        logger.error(f"Ошибка при переподключении: {e}\n{traceback.format_exc()}")
+    finally:
+        _reconnect_lock.release()
+
+
+def watchdog(stop_event):
+    """
+    Периодически проверяет доступность API через запрос серверного времени.
+    Если запрос не проходит — инициирует переподключение.
+    """
+    global _reconnect_requested
+
+    while not stop_event.is_set():
+        if fp_provider is not None:
+            try:
+                # Проверка живости канала: получаем время на сервере
+                clock: ClockResponse = fp_provider.call_function(
+                    fp_provider.assets_stub.Clock,
+                    ClockRequest()
+                )
+
+                if clock is None:
+                    raise ConnectionError("ClockRequest вернул None — соединение потеряно")
+
+                # Дополнительно можно проверить, что время адекватное
+                dt_server = datetime.fromtimestamp(
+                    clock.timestamp.seconds + clock.timestamp.nanos / 1e9,
+                    fp_provider.tz_msk
+                )
+                logger.debug(f"Watchdog: серверное время {dt_server:%d.%m.%Y %H:%M:%S} — соединение живо")
+
+                if _reconnect_requested:
+                    logger.info("Соединение восстановлено (watchdog).")
+                _reconnect_requested = False
+
+            except Exception as e:
+                logger.error(f"Watchdog: соединение потеряно: {e}")
+                _reconnect_requested = True
+
+        stop_event.wait(10)  # проверка каждые 10 секунд
+
+
+
+# ---------------------------------------------------------------------------
 # Основная функция
 # ---------------------------------------------------------------------------
 def main():
     logger.info("Запуск программы мониторинга аккаунта по расписанию биржи")
-    global fp_provider, account_id
+    global fp_provider, account_id, _reconnect_requested, _subscription_dirty, _last_change_time
+
     stop_event = Event()
 
     def signal_handler(signum, frame):
@@ -841,52 +1091,58 @@ def main():
     signal.signal(signal.SIGTERM, signal_handler)
 
     Thread(target=print_quotes_periodically, args=(stop_event,), daemon=True).start()
+    Thread(target=watchdog, args=(stop_event,), daemon=True).start()
 
-    try:  # ← внешний try
+    try:
         while not stop_event.is_set():
             wait_for_trading_session(stop_event)
             if stop_event.is_set():
                 break
 
-            try:  # ← внутренний try
-                if fp_provider is not None:
-                    try:
-                        fp_provider.close_channel()
-                    except Exception:
-                        pass
+            # --- Подключение (первичное или после обрыва) ---
+            attempt = 0
+            while not stop_event.is_set():
+                try:
+                    initialize_connection(stop_event)
+                    logger.info(f"Соединение установлено. Аккаунт: {account_id}")
+                    attempt = 0
+                    break
+                except Exception as e:
+                    logger.error(f"Не удалось инициализировать соединение: {e}")
+                    delay = get_backoff_delay(attempt)
+                    attempt += 1
+                    logger.info(f"Повторная попытка через {delay:.1f} сек...")
+                    stop_event.wait(delay)
 
-                fp_provider = FinamPy()
-                if not fp_provider.account_ids:
-                    fp_provider.account_ids = list(fp_provider.token_details().account_ids)
+            if stop_event.is_set():
+                break
 
-                if not fp_provider.account_ids:
-                    logger.error("Не найдено ни одного торгового счёта")
-                    stop_event.wait(60)
-                    continue
+            # --- Основной цикл работы ---
+            while not stop_event.is_set():
+                now = get_market_now()
+                if not schedule.trade_session(now):
+                    logger.info("Торговая сессия закончилась.")
+                    break
 
-                account_id = fp_provider.account_ids[0]
-                logger.info(f"Начинаем работу с аккаунтом {account_id}")
+                # Обрыв соединения → выходим во внешний цикл для переподключения
+                if _reconnect_requested or not all(t.is_alive() for t in _stream_threads):
+                    logger.warning("Обнаружен обрыв соединения. Переподключаемся...")
+                    _reconnect_requested = False
+                    break
 
-                subscribe_base_assets(fp_provider)  # заполняет base_symbols
-                start_quotes_subscription(fp_provider)  # подписка на базовые активы (пока без опционов)
-                wait_for_base_asset_prices(stop_event, timeout=30)  # ждём цены
-                load_options_chains(fp_provider)  # загружает цепочки, добавляет опционы в subscribed_option_symbols
-                # НЕ вызываем start_quotes_subscription повторно — run_subscription_loop сам перезапустит
-                subscribe_orders(fp_provider, account_id)
+                # Изменение состава опционов → перезапуск подписки
+                if _subscription_dirty and _time.time() - _last_change_time >= 1.0:
+                    _subscription_dirty = False
+                    logger.info("Перезапуск подписки после накопления изменений")
+                    restart_quotes_subscription()
 
-                run_subscription_loop(stop_event)
+                stop_event.wait(1)
 
-            except Exception as e:  # ← внутренний except
-                logger.error(f"Ошибка в основном цикле: {e}\n{traceback.format_exc()}")
-                stop_event.wait(30)
-
-    finally:  # ← внешний finally
+    except Exception as e:
+        logger.error(f"Критическая ошибка в main: {e}\n{traceback.format_exc()}")
+    finally:
         stop_event.set()
-        if fp_provider is not None:
-            try:
-                fp_provider.close_channel()
-            except Exception:
-                pass
+        close_provider()
         logger.info("Программа остановлена")
 
 
