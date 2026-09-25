@@ -316,12 +316,12 @@ def _on_order(order_state):
                     'client_order_id': order.client_order_id if hasattr(order, 'client_order_id') else '',
                     'updated': datetime.now().strftime('%H:%M:%S')
                 }
-                logger.info(f"Активная заявка #{order_id}: {active_orders[order_id]}")
+                logger.debug(f"Активная заявка #{order_id}: {active_orders[order_id]}")
             else:
                 # Терминальный статус — удаляем заявку
                 if order_id in active_orders:
                     removed = active_orders.pop(order_id)
-                    logger.info(f"Заявка #{order_id} удалена (статус: {status}). Была: {removed}")
+                    logger.debug(f"Заявка #{order_id} удалена (статус: {status}). Была: {removed}")
 
         # Проверяем, не появились ли новые опционы в заявках
         update_option_subscriptions_from_portfolio()
@@ -566,8 +566,9 @@ def update_option_subscriptions_from_portfolio():
     global subscribed_option_symbols, _last_positions_symbols, _last_orders_symbols
     global _subscription_dirty, _last_change_time
 
-    # Текущие символы из позиций
-    positions = _account_data[0].get('positions', {})
+    # Текущие символы из позиций портфеля с ненулевым количеством
+    raw_positions = _account_data[0].get('positions', {})
+    positions = {sym: pos for sym, pos in raw_positions.items() if float(pos['quantity']) != 0}
     current_positions = set(positions.keys())
 
     # Текущие символы из активных заявок
@@ -671,13 +672,14 @@ def load_options_chains(fp_provider):
 
             # Перебираем все даты экспирации
             for exp_date_str in expiration_dates:
-                year, month, day = map(int, exp_date_str.split('-'))
-                # Используем common_pb2.Date вместо assets_service.Date
-                expiration_date = common_pb2.Date(year=year, month=month, day=day)
-
+                expiration_date_obj = datetime.strptime(exp_date_str, "%Y-%m-%d").date()
+                year = expiration_date_obj.year
+                month = expiration_date_obj.month
+                day = expiration_date_obj.day
+                # --- Запрашиваем полную цепочку опционов ---
                 request = assets_service.OptionsChainRequest(
                     underlying_symbol=underlying_symbol,
-                    expiration_date=expiration_date
+                    expiration_date={"year": year, "month": month, "day": day}
                 )
                 response = fp_provider.call_function(fp_provider.assets_stub.OptionsChain, request)
 
@@ -718,6 +720,11 @@ def load_options_chains(fp_provider):
             logger.error(f"Ошибка при получении цепочки опционов для {ticker}: {e}")
 
     logger.info(f"Всего опционов загружено: {len(options_chains)}")
+    # === ВРЕМЕННЫЙ ВЫВОД ДЛЯ ПРОВЕРКИ ===
+    # print(f"\n=== options_chains ({len(options_chains)} символов) ===")
+    # for symbol, data in options_chains.items():
+        # print(f"{symbol}: {data}")
+    # print("=====================================\n")
     return options_chains
 
 def start_quotes_subscription(fp_provider):
