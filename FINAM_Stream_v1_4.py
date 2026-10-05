@@ -34,6 +34,8 @@ RISK_FREE_RATE = 0.0  # Безрисковая ставка (0 для фьюче
 fp_provider = None  # Глобальный экземпляр FinamPy
 account_id = None   # Текущий идентификатор аккаунта
 _full_ticker_to_map = {}   # {полный_тикер: тикер_из_MAP}
+# Время последнего появления символа в портфеле/заявках: {symbol: timestamp}
+_symbol_last_seen = {}
 
 # Множество символов базовых фьючерсов, например {'RIZ6@RTSX', 'SiZ6@RTSX', ...}
 # Заполняется в subscribe_base_assets и используется для фильтрации опционов.
@@ -46,8 +48,13 @@ _known_symbols = set()
 _last_positions_symbols = set()
 _last_orders_symbols = set()
 _subscribed_symbols = set()  # символы, на которые реально оформлена подписка
-_subscription_dirty = False       # флаг необходимости перезапуска
+# Хранилище устаревших опционов для логирования
+_previous_obsolete = set()
+_subscription_dirty = False       # флаг необходимости немедленного перезапуска (для новых опционов)
+_cleanup_dirty = False            # флаг необходимости отложенной очистки (для старых опционов)
+_last_cleanup_check = 0.0   # время последней попытки очистки
 _last_change_time = 0.0           # время последнего изменения состава
+
 # Флаг запроса переподключения от watchdog или упавших потоков
 _reconnect_requested = False
 
@@ -73,6 +80,57 @@ schedule = Futures()
 
 # Хранилище активных заявок: {order_id: { ... }}
 active_orders = {}
+
+# Хранилище сделок: {trade_id: { ... }}
+trades = {}
+
+class QuoteSubscription:
+    """Управляемая подписка на котировки с возможностью остановки."""
+
+    def __init__(self, fp_provider, symbols, name='QuotesThread'):
+        self.fp_provider = fp_provider
+        self.symbols = symbols
+        self.name = name
+        self.stream = None
+        self.stop_event = threading.Event()
+        self.thread = None
+
+    def _run(self):
+        """Основной цикл подписки."""
+        while not self.stop_event.is_set():
+            try:
+                self.stream = self.fp_provider.marketdata_stub.SubscribeQuote(
+                    request=marketdata_service.SubscribeQuoteRequest(symbols=self.symbols),
+                    metadata=(self.fp_provider.metadata,)
+                )
+                # Читаем события, пока не запрошена остановка
+                while not self.stop_event.is_set():
+                    event = next(self.stream)
+                    self.fp_provider.on_quote.trigger(event)
+            except ValueError:
+                # Канал закрыт
+                break
+            except Exception as e:
+                if self.stop_event.is_set():
+                    break
+                logger.error(f"Ошибка подписки на котировки ({self.name}): {e}")
+                sleep(5)  # повторная попытка через 5 секунд
+
+    def start(self):
+        """Запускает поток подписки."""
+        self.thread = Thread(target=self._run, name=self.name, daemon=True)
+        self.thread.start()
+
+    def stop(self):
+        """Останавливает поток и отменяет gRPC-стрим."""
+        self.stop_event.set()
+        if self.stream is not None:
+            try:
+                self.stream.cancel()
+            except Exception:
+                pass
+        if self.thread is not None:
+            self.thread.join(timeout=10)
 
 
 # ---------------------------------------------------------------------------
@@ -331,6 +389,76 @@ def _on_order(order_state):
 
 
 # ---------------------------------------------------------------------------
+# Обработчик событий по собственным сделкам
+# ---------------------------------------------------------------------------
+def _on_trade(trade_response):
+    """
+    Обработчик событий по собственным сделкам.
+    Поддерживает ответ с полем trades (список AccountTrade).
+    Сохраняет каждую сделку в глобальный словарь trades по trade_id.
+    """
+    try:
+
+        if not trade_response:
+            logger.warning("Получен пустой ответ по сделкам")
+            return
+
+        if not hasattr(trade_response, 'trades') or not trade_response.trades:
+            return  # просто нет сделок — не ошибка
+
+        for trade in trade_response.trades:
+            trade_id = trade.trade_id if hasattr(trade, 'trade_id') else None
+            if not trade_id:
+                continue
+
+            # --- Сторона сделки (side) ---
+            side = ''
+            if hasattr(trade, 'side'):
+                side_raw = trade.side
+                if isinstance(side_raw, int):
+                    # Пытаемся найти enum Side в orders_service
+                    enum_class = getattr(orders_service, 'Side', None)
+                    if enum_class is not None:
+                        try:
+                            side = enum_class.Name(side_raw)
+                        except ValueError:
+                            side = str(side_raw)
+                    else:
+                        side = str(side_raw)
+                else:
+                    side = str(side_raw)
+
+            # --- Метка времени ---
+            timestamp_str = None
+            if hasattr(trade, 'timestamp') and trade.timestamp:
+                try:
+                    ts = trade.timestamp
+                    dt_msk = fp_provider.timestamp_to_msk_datetime(ts.seconds)
+                    timestamp_str = dt_msk.strftime('%Y-%m-%d %H:%M:%S')
+                except (AttributeError, ValueError, TypeError):
+                    timestamp_str = None
+
+            # --- Сохраняем сделку ---
+            trades[trade_id] = {
+                'trade_id': trade_id,
+                'symbol': trade.symbol if hasattr(trade, 'symbol') else '',
+                'price': to_float(trade.price) if hasattr(trade, 'price') else 0.0,
+                'size': to_float(trade.size) if hasattr(trade, 'size') else 0.0,
+                'side': side,
+                'timestamp': timestamp_str,
+                'order_id': trade.order_id if hasattr(trade, 'order_id') else '',
+                'account_id': trade.account_id if hasattr(trade, 'account_id') else '',
+                'comment': trade.comment if hasattr(trade, 'comment') else '',
+                'accrued_interest': to_float(trade.accrued_interest) if hasattr(trade, 'accrued_interest') else 0.0,
+                'currency': trade.currency if hasattr(trade, 'currency') else '',
+            }
+            logger.debug(f"Сделка {trade_id}: {trades[trade_id]}")
+
+    except Exception as e:
+        logger.error(f"Ошибка в _on_trade: {e}\n{traceback.format_exc()}")
+
+
+# ---------------------------------------------------------------------------
 # Подписка на события по заявкам
 # ---------------------------------------------------------------------------
 def subscribe_orders(fp_provider, account_id):
@@ -345,6 +473,20 @@ def subscribe_orders(fp_provider, account_id):
     thread.start()
     track_thread(thread)  # ← добавить
     logger.info(f"Подписка на собственные заявки аккаунта {account_id} запущена")
+    return thread
+
+def subscribe_trades(fp_provider, account_id):
+    """Подписка на события по собственным сделкам"""
+    fp_provider.on_trade.subscribe(_on_trade)
+    thread = Thread(
+        target=fp_provider.subscribe_trades_thread,
+        name='TradesThread',
+        args=(account_id,),
+        daemon=True
+    )
+    thread.start()
+    track_thread(thread)
+    logger.info(f"Подписка на собственные сделки аккаунта {account_id} запущена")
     return thread
 
 
@@ -409,7 +551,7 @@ def update_iv_and_greeks(symbol):
     quote = base_asset_quotes.get(base_ticker)  # 'RIZ6' — совпадает с ключами хранилища
     if not quote:
         return
-    if not quote.get('last'):
+    if quote.get('last') is None:
         bid = quote.get('bid')
         ask = quote.get('ask')
         F = (bid + ask) / 2 if bid and ask else None
@@ -551,20 +693,20 @@ def subscribe_base_assets(fp_provider):
 # ---------------------------------------------------------------------------
 # Проверка появления новых опционов в портфеле/заявках
 # ---------------------------------------------------------------------------
-# Глобальная переменная для debounce
-_last_restart_time = 0.0
 
 # Хранилище активных потоков подписки
-_quotes_threads = []
+_quote_subscriptions = []  # список активных QuoteSubscription
+
 
 def update_option_subscriptions_from_portfolio():
     """
     Обновляет subscribed_option_symbols новыми опционами из портфеля/заявок.
-    Исключает фьючерсы (инструменты из MAP и base_symbols).
-    Устанавливает флаг _subscription_dirty для отложенного перезапуска подписки.
+    Новые опционы добавляются немедленно (перезапуск подписки).
+    Устаревшие (не появлялись >30 сек) помечаются для отложенной очистки.
     """
     global subscribed_option_symbols, _last_positions_symbols, _last_orders_symbols
-    global _subscription_dirty, _last_change_time
+    global _subscription_dirty, _last_change_time, _cleanup_dirty, _symbol_last_seen
+    global _previous_obsolete
 
     # Текущие символы из позиций портфеля с ненулевым количеством
     raw_positions = _account_data[0].get('positions', {})
@@ -589,51 +731,142 @@ def update_option_subscriptions_from_portfolio():
     # Все символы из портфеля и заявок
     all_symbols = current_positions | current_orders
 
-    # Оставляем только опционы:
-    # 1) исключаем символы, которые есть в base_symbols (полные символы фьючерсов)
-    # 2) исключаем тикеры, которые есть в MAP (тикеры фьючерсов, например RIZ6, SiZ6)
+    # Оставляем только опционы
     option_symbols = set()
     for s in all_symbols:
         if s in base_symbols:
             continue
-        ticker = s.split('@')[0]  # берём часть до @
+        ticker = s.split('@')[0]
         if ticker in MAP:
             continue
         option_symbols.add(s)
 
-    # Новые опционы, которых ещё нет в подписке
+    # Обновляем время последнего появления для всех актуальных опционов
+    now = _time.time()
+    for sym in option_symbols:
+        _symbol_last_seen[sym] = now
+
+    # --- Новые опционы — добавляем и перезапускаем подписку НЕМЕДЛЕННО ---
     new_symbols = option_symbols - subscribed_option_symbols
-    if not new_symbols:
-        return
+    if new_symbols:
+        subscribed_option_symbols.update(new_symbols)
+        logger.info(f"Добавлены новые опционы в отслеживание: {new_symbols}")
+
+        # Предзаполняем котировки
+        for symbol in new_symbols:
+            fetch_last_quote_for_symbol(symbol)
+
+        # Помечаем, что нужно перезапустить подписку (сделаем это в main сразу)
+        _subscription_dirty = True
+        _last_change_time = now
+
+    # --- Устаревшие опционы (не появлялись >30 сек) — помечаем для очистки ---
+    # Опционы, которых нет в текущем составе и которые не появлялись более 30 секунд
+    obsolete_symbols = {
+        sym for sym in subscribed_option_symbols
+        if sym not in option_symbols and now - _symbol_last_seen.get(sym, 0) > 30
+    }
+    if obsolete_symbols:
+        _cleanup_dirty = True
+        # Логируем только новые устаревшие
+        new_obsolete = obsolete_symbols - _previous_obsolete
+        if new_obsolete:
+            logger.info(f"Обнаружены устаревшие опционы (очистка через 30 сек): {new_obsolete}")
+        _previous_obsolete = obsolete_symbols
 
 
-
-    # Добавляем новые символы в отслеживание
-    subscribed_option_symbols.update(new_symbols)
-    logger.info(f"Добавлены новые опционы в отслеживание: {new_symbols}")
-    # Предзаполняем котировки новым опционам (особенно важно для малоликвидных)
-    for symbol in new_symbols:
-        fetch_last_quote_for_symbol(symbol)
-
-    # Помечаем, что подписку нужно перезапустить (отложенно)
-    _subscription_dirty = True
-    _last_change_time = _time.time()
-
-
-
-_quotes_thread = None
+_restart_lock = threading.Lock()
 
 def restart_quotes_subscription():
-    """Перезапускает подписку на котировки с актуальным списком символов."""
-    global _quotes_threads
+    global _quote_subscriptions, _stream_threads
 
-    # Отписываемся от старого обработчика, чтобы старые события не дублировались
-    if fp_provider is not None:
-        fp_provider.on_quote.unsubscribe(_on_quote)
+    if not _restart_lock.acquire(blocking=False):
+        logger.info("Перезапуск подписки уже выполняется, пропускаем.")
+        return
 
-    # Запускаем новый поток подписки (он сам подпишется заново)
-    new_threads = start_quotes_subscription(fp_provider) or []
-    _quotes_threads = new_threads
+    try:
+        # Останавливаем все старые подписки
+        for sub in _quote_subscriptions:
+            sub.stop()
+        _quote_subscriptions = []
+        logger.info("Все старые подписки остановлены")
+
+        # Дожидаемся завершения всех потоков подписки (до 10 сек)
+        for thread in list(_stream_threads):
+            if thread.is_alive() and thread.name.startswith('QuotesThread'):
+                thread.join(timeout=10)
+
+        # Убираем мёртвые потоки из списка
+        _stream_threads[:] = [t for t in _stream_threads if t.is_alive()]
+
+        # Даём серверу время освободить символы
+        sleep(1)
+
+        # Отписываемся от обработчика
+        if fp_provider is not None:
+            fp_provider.on_quote.unsubscribe(_on_quote)
+
+        # Запускаем новые подписки
+        start_quotes_subscription(fp_provider)
+    finally:
+        _restart_lock.release()
+
+
+
+def cleanup_obsolete_subscriptions():
+    """Удаляет опционы, отсутствующие в портфеле/заявках более 30 секунд, и перезапускает подписку."""
+    global subscribed_option_symbols, _cleanup_dirty, _symbol_last_seen, _previous_obsolete
+
+    # Пересчитываем актуальные символы
+    raw_positions = _account_data[0].get('positions', {})
+    positions = {sym: pos for sym, pos in raw_positions.items() if float(pos['quantity']) != 0}
+    current_positions = set(positions.keys())
+
+    current_orders = set()
+    for order in active_orders.values():
+        symbol = order.get('symbol', '')
+        if symbol:
+            current_orders.add(symbol)
+
+    all_symbols = current_positions | current_orders
+    option_symbols = set()
+    for s in all_symbols:
+        if s in base_symbols:
+            continue
+        ticker = s.split('@')[0]
+        if ticker in MAP:
+            continue
+        option_symbols.add(s)
+
+    # Обновляем время последнего появления для актуальных
+    now = _time.time()
+    for sym in option_symbols:
+        _symbol_last_seen[sym] = now
+
+    # Находим действительно устаревшие
+    obsolete = {
+        sym for sym in subscribed_option_symbols
+        if sym not in option_symbols and now - _symbol_last_seen.get(sym, 0) > 30
+    }
+
+    if obsolete:
+        # Удаляем из отслеживания, котировок и last_seen
+        for sym in obsolete:
+            subscribed_option_symbols.discard(sym)
+            option_quotes.pop(sym, None)
+            _symbol_last_seen.pop(sym, None)
+        logger.info(f"Очистка: удалены устаревшие опционы: {obsolete}")
+
+        # Перезапускаем подписку без устаревших
+        restart_quotes_subscription()
+    else:
+        logger.debug("Очистка: устаревших опционов нет")
+
+    _previous_obsolete.clear()
+
+    _cleanup_dirty = False
+
+
 
 # ---------------------------------------------------------------------------
 # Загрузка цепочек опционов
@@ -727,30 +960,34 @@ def load_options_chains(fp_provider):
     # print("=====================================\n")
     return options_chains
 
+
 def start_quotes_subscription(fp_provider):
     """Подписка на базовые активы + все опционы из subscribed_option_symbols."""
-    global subscribed_option_symbols, _subscribed_symbols
+    global subscribed_option_symbols, _subscribed_symbols, _quote_subscriptions
 
-    all_symbols = set(base_symbols) | subscribed_option_symbols
-
+    all_symbols = list(set(base_symbols) | subscribed_option_symbols)
     if not all_symbols:
         logger.warning("Нет символов для подписки на котировки")
         return []
 
+    # Защита от дублирования обработчика
+    fp_provider.on_quote.unsubscribe(_on_quote)
     fp_provider.on_quote.subscribe(_on_quote)
 
-    thread = Thread(
-        target=fp_provider.subscribe_quote_thread,
-        name='QuotesThread',
-        args=(list(all_symbols),),
-        daemon=True
-    )
-    thread.start()
-    track_thread(thread)  # ← ЭТА СТРОКА БЫЛА ПРОПУЩЕНА
+    subscriptions = []
+    chunk_size = 10  # уменьшите до 10, чтобы точно не превысить лимит
 
+    for i in range(0, len(all_symbols), chunk_size):
+        chunk = all_symbols[i:i+chunk_size]
+        sub = QuoteSubscription(fp_provider, chunk, name=f'QuotesThread-{i // chunk_size}')
+        sub.start()
+        track_thread(sub.thread)
+        subscriptions.append(sub)
+
+    _quote_subscriptions = subscriptions
     _subscribed_symbols = set(all_symbols)
-    logger.info(f"Запущен поток подписки на {len(all_symbols)} символов: {thread.name}")
-    return [thread]
+    logger.info(f"Запущено {len(subscriptions)} потоков подписки на {len(all_symbols)} символов")
+    return subscriptions
 
 
 # ---------------------------------------------------------------------------
@@ -918,21 +1155,21 @@ def print_quotes_periodically(stop_event):
     while not stop_event.is_set():
         stop_event.wait(10)
 
-        # --- Вывод котировок базовых активов ---
-        if base_asset_quotes:
-            print(f"\n=== base_asset_quotes ({len(base_asset_quotes)} тикеров) ===")
-            for ticker, quote in base_asset_quotes.items():
-                print(f"{ticker}: {quote}")
-        else:
-            print("\n=== base_asset_quotes пуст ===")
+        # # --- Вывод котировок базовых активов ---
+        # if base_asset_quotes:
+        #     print(f"\n=== base_asset_quotes ({len(base_asset_quotes)} тикеров) ===")
+        #     for ticker, quote in base_asset_quotes.items():
+        #         print(f"{ticker}: {quote}")
+        # else:
+        #     print("\n=== base_asset_quotes пуст ===")
 
-        # --- Вывод котировок опционов ---
-        if option_quotes:
-            print(f"\n=== option_quotes ({len(option_quotes)} символов) ===")
-            for symbol, quote in option_quotes.items():
-                print(f"{symbol}: {quote}")
-        else:
-            print("\n=== option_quotes пуст ===")
+        # # --- Вывод котировок опционов ---
+        # if option_quotes:
+        #     print(f"\n=== option_quotes ({len(option_quotes)} символов) ===")
+        #     for symbol, quote in option_quotes.items():
+        #         print(f"{symbol}: {quote}")
+        # else:
+        #     print("\n=== option_quotes пуст ===")
 
 
 # ---------------------------------------------------------------------------
@@ -942,9 +1179,15 @@ def close_provider():
     global fp_provider
     if fp_provider is not None:
         try:
-            # Отписываемся от всех событий (как в вашем примере)
+            # Останавливаем все подписки на котировки
+            for sub in _quote_subscriptions:
+                sub.stop()
+            _quote_subscriptions.clear()
+
+            # Отписываемся от всех событий
             fp_provider.on_quote.unsubscribe(_on_quote)
             fp_provider.on_order.unsubscribe(_on_order)
+            fp_provider.on_trade.unsubscribe(_on_trade)
             fp_provider.on_account_info.unsubscribe(_on_account_info)
 
             # Закрываем канал
@@ -955,13 +1198,15 @@ def close_provider():
             fp_provider = None
 
 
+
 def reset_state():
-    """Сбрасывает все глобальные состояния перед переподключением."""
     global base_symbols, _known_symbols, _last_positions_symbols, _last_orders_symbols
     global _subscribed_symbols, _options_chains_loaded, subscribed_option_symbols
     global _stream_threads, option_quotes, options_chains, active_orders, _subscription_dirty
-    global _full_ticker_to_map
+    global _full_ticker_to_map, _quote_subscriptions, _cleanup_dirty, _symbol_last_seen
 
+    _quote_subscriptions.clear()
+    _symbol_last_seen.clear()
     base_symbols.clear()
     _full_ticker_to_map.clear()
     _known_symbols.clear()
@@ -973,8 +1218,11 @@ def reset_state():
     option_quotes.clear()
     options_chains.clear()
     active_orders.clear()
+    trades.clear()
     _options_chains_loaded = False
     _subscription_dirty = False
+    _cleanup_dirty = False
+    _last_cleanup_check = 0.0
 
 
 def track_thread(thread):
@@ -1000,7 +1248,7 @@ def initialize_connection(stop_event):
     """
     global fp_provider, account_id, _options_chains_loaded
 
-    # 1. Закрываем старый канал
+    # 1. Закрываем старый канал (внутри уже остановит и очистит подписки)
     close_provider()
 
     # 2. Создаём новый экземпляр FinamPy
@@ -1022,6 +1270,7 @@ def initialize_connection(stop_event):
     load_options_chains(fp_provider)            # загружает цепочки опционов
     # start_quotes_subscription(fp_provider)      # перезапуск с опционами
     subscribe_orders(fp_provider, account_id)   # заявки
+    subscribe_trades(fp_provider, account_id)  # сделки
     start_account_stream(fp_provider, account_id)  # аккаунт
 
     logger.info("Все подписки активны.")
@@ -1087,6 +1336,7 @@ def watchdog(stop_event):
 def main():
     logger.info("Запуск программы мониторинга аккаунта по расписанию биржи")
     global fp_provider, account_id, _reconnect_requested, _subscription_dirty, _last_change_time
+    global _last_cleanup_check
 
     stop_event = Event()
 
@@ -1137,11 +1387,17 @@ def main():
                     _reconnect_requested = False
                     break
 
-                # Изменение состава опционов → перезапуск подписки
-                if _subscription_dirty and _time.time() - _last_change_time >= 1.0:
+                # Немедленный перезапуск при появлении новых опционов
+                if _subscription_dirty:
                     _subscription_dirty = False
-                    logger.info("Перезапуск подписки после накопления изменений")
+                    logger.info("Перезапуск подписки после добавления новых опционов")
                     restart_quotes_subscription()
+
+                # Отложенная очистка устаревших опционов (проверяем не чаще раза в 5 секунд)
+                if _cleanup_dirty and _time.time() - _last_cleanup_check >= 5.0:
+                    _last_cleanup_check = _time.time()
+                    logger.info("Периодическая очистка устаревших опционов")
+                    cleanup_obsolete_subscriptions()
 
                 stop_event.wait(1)
 
