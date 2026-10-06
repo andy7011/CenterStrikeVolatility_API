@@ -8,7 +8,8 @@ import traceback  # Модуль для получения полной инфо
 import threading
 import random
 import math
-import numpy as np
+import csv
+import os
 from scipy.stats import norm
 from scipy.optimize import brentq
 
@@ -44,6 +45,10 @@ base_symbols = set()
 # Все опционные символы, которые уже были обработаны (чтобы не подписываться повторно)
 _known_symbols = set()
 
+# Множества для хранения уже записанных trade_id (для каждого файла csv)
+_trades_csv_ids = set()
+_trades_all_csv_ids = set()
+
 # Последние наборы символов из позиций и заявок (для быстрой проверки изменений)
 _last_positions_symbols = set()
 _last_orders_symbols = set()
@@ -63,6 +68,8 @@ _stream_threads = []
 
 # Блокировка для защиты от одновременного переподключения
 _reconnect_lock = threading.Lock()
+# Блокировка для синхронизации доступа к CSV-файлам сделок
+_trades_csv_lock = threading.Lock()
 
 
 # Глобальный список для хранения данных аккаунта
@@ -243,6 +250,63 @@ def calculate_greeks(F, K, T, sigma, option_type='call'):
         'rho': rho,
     }
 
+def calculate_order_iv(symbol, price):
+    """
+    Рассчитывает подразумеваемую волатильность (IV) для опциона по цене заявки.
+    Возвращает IV в процентах или None, если расчёт невозможен.
+    """
+    if not symbol or price is None or price <= 0:
+        return None
+
+    # Проверяем, что символ является опционом (есть в options_chains)
+    chain = options_chains.get(symbol)
+    if not chain:
+        return None
+
+    base_ticker = chain.get('base_ticker')
+    if not base_ticker:
+        return None
+
+    # Получаем цену базового актива
+    base_quote = base_asset_quotes.get(base_ticker)
+    if not base_quote:
+        return None
+
+    # Берём последнюю цену, иначе среднее bid/ask
+    F = base_quote.get('last')
+    if F is None:
+        bid = base_quote.get('bid')
+        ask = base_quote.get('ask')
+        if bid and ask:
+            F = (bid + ask) / 2
+        else:
+            return None
+    if not F or F <= 0:
+        return None
+
+    # Параметры опциона
+    K = chain['strike']
+    exp_date_str = chain.get('expiration_last_day')
+    if not exp_date_str or exp_date_str == '0000-00-00':
+        return None
+
+    try:
+        exp_date = datetime.strptime(exp_date_str, '%Y-%m-%d').date()
+    except ValueError:
+        return None
+
+    today = datetime.now().date()
+    T = (exp_date - today).days / DAYS_IN_YEAR
+    if T <= 0:
+        return None
+
+    option_type = 'call' if chain['type'] == 'TYPE_CALL' else 'put'
+
+    # Расчёт IV
+    iv = implied_volatility_newton(price, F, K, T, option_type)
+    if iv is None:
+        return None
+    return iv * 100  # в процентах
 
 def to_float(decimal_field):
     """Универсальное преобразование Decimal-поля protobuf в float."""
@@ -293,6 +357,19 @@ def get_market_now():
 # ---------------------------------------------------------------------------
 # Обработчик событий по собственным заявкам
 # ---------------------------------------------------------------------------
+def _format_timestamp(ts):
+    if ts is None:
+        return None
+    try:
+        # Проверяем, что timestamp не нулевой (секунды и наносекунды равны 0)
+        if ts.seconds == 0 and ts.nanos == 0:
+            return None
+        dt_msk = fp_provider.timestamp_to_msk_datetime(ts.seconds)
+        return dt_msk.strftime('%Y-%m-%d %H:%M:%S')
+    except (AttributeError, ValueError, TypeError):
+        return None
+
+
 def _on_order(order_state):
     """
     Обработчик событий по собственным заявкам.
@@ -339,28 +416,51 @@ def _on_order(order_state):
                 remaining_quantity = to_float(order_state_item.remaining_quantity) if hasattr(order_state_item,
                                                                                                 'remaining_quantity') else 0.0
 
-                # --- Сторона (side) — универсально, т.к. enum Side может отсутствовать ---
+                # --- Сторона (side) ---
                 side = ''
                 if hasattr(order, 'side'):
                     side_raw = order.side
                     if isinstance(side_raw, int):
-                        # Ищем подходящий enum в модуле orders_service
-                        enum_class = None
-                        for enum_name in ('Side', 'OrderSide', 'SideType', 'OrderOperation'):
-                            if hasattr(orders_service, enum_name):
-                                enum_class = getattr(orders_service, enum_name)
-                                break
-
+                        enum_class = getattr(orders_service, 'Side', None)
                         if enum_class is not None:
                             try:
                                 side = enum_class.Name(side_raw)
                             except ValueError:
                                 side = str(side_raw)
                         else:
-                            # Если enum не найден — просто сохраняем число
                             side = str(side_raw)
                     else:
                         side = str(side_raw)
+
+                # --- Тип заявки (type) ---
+                order_type = ''
+                if hasattr(order, 'type'):
+                    type_raw = order.type
+                    if isinstance(type_raw, int):
+                        enum_class = getattr(orders_service, 'OrderType', None)
+                        if enum_class is not None:
+                            try:
+                                order_type = enum_class.Name(type_raw)
+                            except ValueError:
+                                order_type = str(type_raw)
+                        else:
+                            order_type = str(type_raw)
+                    else:
+                        order_type = str(type_raw)
+
+                # --- Временные метки (transact_at, accept_at) ---
+                transact_at = None
+                accept_at = None
+                # Пытаемся взять из order_state_item (как в структуре ответа)
+                if hasattr(order_state_item, 'transact_at'):
+                    transact_at = _format_timestamp(order_state_item.transact_at)
+                if hasattr(order_state_item, 'accept_at'):
+                    accept_at = _format_timestamp(order_state_item.accept_at)
+                # Если не нашли, пробуем из order (на случай другого формата)
+                if transact_at is None and hasattr(order, 'transact_at'):
+                    transact_at = _format_timestamp(order.transact_at)
+                if accept_at is None and hasattr(order, 'accept_at'):
+                    accept_at = _format_timestamp(order.accept_at)
 
                 # --- Сохраняем заявку ---
                 active_orders[order_id] = {
@@ -368,12 +468,18 @@ def _on_order(order_state):
                     'quantity': quantity,
                     'price': price,
                     'side': side,
+                    'type': order_type,
                     'status': status,
                     'executed_quantity': executed_quantity,
                     'remaining_quantity': remaining_quantity,
                     'client_order_id': order.client_order_id if hasattr(order, 'client_order_id') else '',
+                    'transact_at': transact_at,
+                    'accept_at': accept_at,
                     'updated': datetime.now().strftime('%H:%M:%S')
                 }
+                # Добавляем расчёт IV (если это опцион)
+                order_iv = calculate_order_iv(symbol, price)
+                active_orders[order_id]['order_iv'] = order_iv
                 logger.debug(f"Активная заявка #{order_id}: {active_orders[order_id]}")
             else:
                 # Терминальный статус — удаляем заявку
@@ -388,27 +494,77 @@ def _on_order(order_state):
         logger.error(f"Ошибка в _on_order: {e}\n{traceback.format_exc()}")
 
 
+def _load_existing_ids(file_path):
+    """Загружает все trade_id из существующего CSV-файла."""
+    ids = set()
+    if os.path.exists(file_path):
+        with open(file_path, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f, delimiter=';')
+            for row in reader:
+                tid = row.get('trade_id')
+                if tid:
+                    ids.add(tid)
+    return ids
+
+def append_trade_to_csv(trade_data, filename):
+    global _trades_csv_ids, _trades_all_csv_ids
+
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    file_path = os.path.join(base_dir, 'data', 'Finam', filename)
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
+    if filename == 'Finam_Stream_Trades.csv':
+        existing_ids = _trades_csv_ids
+    elif filename == 'Finam_Stream_Trades_ALL.csv':
+        existing_ids = _trades_all_csv_ids
+    else:
+        raise ValueError(f"Неизвестное имя файла: {filename}")
+
+    # Загружаем существующие ID при первом обращении
+    if not existing_ids and os.path.exists(file_path):
+        with _trades_csv_lock:
+            existing_ids.update(_load_existing_ids(file_path))
+
+    trade_id = trade_data.get('trade_id')
+    if trade_id in existing_ids:
+        return
+
+    headers = [
+        'trade_id', 'symbol', 'price', 'size', 'side', 'timestamp',
+        'order_id', 'account_id', 'comment', 'accrued_interest',
+        'currency', 'trade_iv'
+    ]
+
+    # Блокируем доступ к файлу на время записи
+    with _trades_csv_lock:
+        write_header = not os.path.exists(file_path) or os.path.getsize(file_path) == 0
+        with open(file_path, 'a', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=headers, delimiter=';')
+            if write_header:
+                writer.writeheader()
+            row = {k: ('' if v is None else v) for k, v in trade_data.items() if k in headers}
+            writer.writerow(row)
+        existing_ids.add(trade_id)
+
 # ---------------------------------------------------------------------------
 # Обработчик событий по собственным сделкам
 # ---------------------------------------------------------------------------
 def _on_trade(trade_response):
-    """
-    Обработчик событий по собственным сделкам.
-    Поддерживает ответ с полем trades (список AccountTrade).
-    Сохраняет каждую сделку в глобальный словарь trades по trade_id.
-    """
     try:
-
         if not trade_response:
             logger.warning("Получен пустой ответ по сделкам")
             return
 
-        if not hasattr(trade_response, 'trades') or not trade_response.trades:
-            return  # просто нет сделок — не ошибка
+        # Определяем список сделок (поддержка одиночного объекта и списка)
+        if hasattr(trade_response, 'trades') and trade_response.trades:
+            trade_list = trade_response.trades
+        else:
+            trade_list = [trade_response]  # одиночная сделка
 
-        for trade in trade_response.trades:
+        for trade in trade_list:
             trade_id = trade.trade_id if hasattr(trade, 'trade_id') else None
             if not trade_id:
+                logger.warning("Сделка без trade_id, пропускаем")
                 continue
 
             # --- Сторона сделки (side) ---
@@ -416,7 +572,6 @@ def _on_trade(trade_response):
             if hasattr(trade, 'side'):
                 side_raw = trade.side
                 if isinstance(side_raw, int):
-                    # Пытаемся найти enum Side в orders_service
                     enum_class = getattr(orders_service, 'Side', None)
                     if enum_class is not None:
                         try:
@@ -438,11 +593,14 @@ def _on_trade(trade_response):
                 except (AttributeError, ValueError, TypeError):
                     timestamp_str = None
 
+            # --- Цена сделки (для расчёта IV) ---
+            price = to_float(trade.price) if hasattr(trade, 'price') else 0.0
+
             # --- Сохраняем сделку ---
             trades[trade_id] = {
                 'trade_id': trade_id,
                 'symbol': trade.symbol if hasattr(trade, 'symbol') else '',
-                'price': to_float(trade.price) if hasattr(trade, 'price') else 0.0,
+                'price': price,
                 'size': to_float(trade.size) if hasattr(trade, 'size') else 0.0,
                 'side': side,
                 'timestamp': timestamp_str,
@@ -452,6 +610,15 @@ def _on_trade(trade_response):
                 'accrued_interest': to_float(trade.accrued_interest) if hasattr(trade, 'accrued_interest') else 0.0,
                 'currency': trade.currency if hasattr(trade, 'currency') else '',
             }
+
+            # --- Расчёт IV для опциона ---
+            trade_iv = calculate_order_iv(trade.symbol, price)
+            trades[trade_id]['trade_iv'] = trade_iv
+
+            # Запись в оба CSV-файла (уникальные по trade_id)
+            append_trade_to_csv(trades[trade_id], 'Finam_Stream_Trades.csv')
+            append_trade_to_csv(trades[trade_id], 'Finam_Stream_Trades_ALL.csv')
+
             logger.debug(f"Сделка {trade_id}: {trades[trade_id]}")
 
     except Exception as e:
@@ -697,13 +864,43 @@ def subscribe_base_assets(fp_provider):
 # Хранилище активных потоков подписки
 _quote_subscriptions = []  # список активных QuoteSubscription
 
+# функция очистки Finam_Stream_Trades.csv
+def cleanup_trades_csv(current_symbols):
+    """
+    Удаляет из Finam_Stream_Trades.csv записи, символ которых отсутствует в current_symbols.
+    """
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    file_path = os.path.join(base_dir, 'data', 'Finam', 'Finam_Stream_Trades.csv')
+    if not os.path.exists(file_path):
+        return
+
+    with _trades_csv_lock:
+        # Читаем все строки
+        with open(file_path, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f, delimiter=';')
+            rows = list(reader)
+
+        # Фильтруем: оставляем только те, где символ есть в current_symbols
+        filtered_rows = [row for row in rows if row.get('symbol') in current_symbols]
+
+        if len(filtered_rows) != len(rows):
+            # Определяем заголовки (из первой строки или фиксированные)
+            headers = rows[0].keys() if rows else [
+                'trade_id', 'symbol', 'price', 'size', 'side', 'timestamp',
+                'order_id', 'account_id', 'comment', 'accrued_interest',
+                'currency', 'trade_iv'
+            ]
+            # Перезаписываем файл
+            with open(file_path, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.DictWriter(f, fieldnames=headers, delimiter=';')
+                writer.writeheader()
+                writer.writerows(filtered_rows)
+
+            # Обновляем множество _trades_csv_ids (удаляем удалённые ID)
+            global _trades_csv_ids
+            _trades_csv_ids = {row['trade_id'] for row in filtered_rows}
 
 def update_option_subscriptions_from_portfolio():
-    """
-    Обновляет subscribed_option_symbols новыми опционами из портфеля/заявок.
-    Новые опционы добавляются немедленно (перезапуск подписки).
-    Устаревшие (не появлялись >30 сек) помечаются для отложенной очистки.
-    """
     global subscribed_option_symbols, _last_positions_symbols, _last_orders_symbols
     global _subscription_dirty, _last_change_time, _cleanup_dirty, _symbol_last_seen
     global _previous_obsolete
@@ -724,9 +921,16 @@ def update_option_subscriptions_from_portfolio():
     if current_positions == _last_positions_symbols and current_orders == _last_orders_symbols:
         return
 
+    # Проверяем, изменились ли позиции (для очистки CSV)
+    positions_changed = (current_positions != _last_positions_symbols)
+
     # Обновляем сохранённые множества
     _last_positions_symbols = current_positions
     _last_orders_symbols = current_orders
+
+    # Если позиции изменились — удаляем из CSV сделки по инструментам, которых больше нет в портфеле
+    if positions_changed:
+        cleanup_trades_csv(current_positions)
 
     # Все символы из портфеля и заявок
     all_symbols = current_positions | current_orders
@@ -1008,15 +1212,15 @@ def _on_account_info(account_response):
 
         # --- Сохраняем базовую информацию ---
         if hasattr(account_response, 'account_id'):
-            data['account_id'] = account_response.account_id
+            data['account_id'] = account_response.account_id # Идентификатор аккаунта
         if hasattr(account_response, 'status'):
-            data['status'] = account_response.status
+            data['status'] = account_response.status # Статус аккаунта
 
         # --- Equity и unrealized_profit ---
         if hasattr(account_response, 'equity') and account_response.equity:
-            data['equity'] = to_float(account_response.equity)
+            data['equity'] = to_float(account_response.equity) # Доступные средства плюс стоимость открытых позиций
         if hasattr(account_response, 'unrealized_profit') and account_response.unrealized_profit:
-            data['unrealized_profit'] = to_float(account_response.unrealized_profit)
+            data['unrealized_profit'] = to_float(account_response.unrealized_profit) # Нереализованная прибыль
 
         # --- Денежные средства ---
         data['cash'] = {}
@@ -1033,11 +1237,11 @@ def _on_account_info(account_response):
         # --- Определяем тип портфеля ---
         # Проверяем наличие поля через DESCRIPTOR, чтобы избежать ошибок HasField
         if 'portfolio_forts' in account_response.DESCRIPTOR.fields_by_name and account_response.HasField('portfolio_forts'):
-            data['portfolio_type'] = 'FORTS'
+            data['portfolio_type'] = 'FORTS' # Тип портфеля для торговли на срочном рынке Московской Биржи.
             forts = account_response.portfolio_forts
             data['margin'] = {
-                'available_cash': to_float(forts.available_cash),
-                'money_reserved': to_float(forts.money_reserved),
+                'available_cash': to_float(forts.available_cash), # Сумма собственных денежных средств на счете, доступная для торговли. Включает маржинальные средства.
+                'money_reserved': to_float(forts.money_reserved), # Минимальная маржа (необходимая сумма обеспечения под открытые позиции)
             }
             data['cash']['RUB'] = {
                 'balance': to_float(forts.available_cash),
@@ -1151,25 +1355,47 @@ def wait_for_base_asset_prices(stop_event, timeout=30):
 # Отладочный вывод котировок (периодический)
 # ---------------------------------------------------------------------------
 def print_quotes_periodically(stop_event):
-    """Раз в 5 секунд выводит содержимое base_asset_quotes и option_quotes."""
+    """Раз в 10 секунд выводит содержимое base_asset_quotes, option_quotes, active_orders и trades."""
     while not stop_event.is_set():
-        stop_event.wait(10)
+        stop_event.wait(30)
 
-        # # --- Вывод котировок базовых активов ---
-        # if base_asset_quotes:
-        #     print(f"\n=== base_asset_quotes ({len(base_asset_quotes)} тикеров) ===")
+        # --- Вывод котировок базовых активов ---
+        if base_asset_quotes:
+            print(f"\n=== base_asset_quotes ({len(base_asset_quotes)} тикеров) ===")
         #     for ticker, quote in base_asset_quotes.items():
         #         print(f"{ticker}: {quote}")
         # else:
         #     print("\n=== base_asset_quotes пуст ===")
 
-        # # --- Вывод котировок опционов ---
-        # if option_quotes:
-        #     print(f"\n=== option_quotes ({len(option_quotes)} символов) ===")
+        # --- Вывод котировок опционов ---
+        if option_quotes:
+            print(f"\n=== option_quotes ({len(option_quotes)} символов) ===")
         #     for symbol, quote in option_quotes.items():
         #         print(f"{symbol}: {quote}")
         # else:
         #     print("\n=== option_quotes пуст ===")
+
+        # --- Вывод заявок active_orders ---
+        if active_orders:
+            print(f"\n=== active_orders ({len(active_orders)} заявок) ===")
+            # for order_id, order_data in active_orders.items():
+            #     print(f"Заявка ID: {order_id}")
+            #     for field, value in order_data.items():
+            #         print(f"  {field}: {value}")
+            #     print("-" * 40)  # разделитель между заявками
+        else:
+            print("\n=== active_orders пуст ===")
+
+        # --- Вывод сделок trades ---
+        if trades:
+            print(f"\n=== trades ({len(trades)} сделок) ===")
+            # for trade_id, trade_data in list(trades.items()):
+            #     print(f"Сделка ID: {trade_id}")
+            #     for field, value in trade_data.items():
+            #         print(f"  {field}: {value}")
+            #     print("-" * 40)
+        else:
+            print("\n=== trades пуст ===")
 
 
 # ---------------------------------------------------------------------------
