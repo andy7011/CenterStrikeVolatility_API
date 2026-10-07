@@ -928,8 +928,8 @@ def update_option_subscriptions_from_portfolio():
     _last_positions_symbols = current_positions
     _last_orders_symbols = current_orders
 
-    # Если позиции изменились — удаляем из CSV сделки по инструментам, которых больше нет в портфеле
-    if positions_changed:
+    # Если позиции изменились и сейчас торговая сессия — удаляем из CSV сделки по инструментам, которых больше нет в портфеле
+    if positions_changed and schedule.trade_session(get_market_now()):
         cleanup_trades_csv(current_positions)
 
     # Все символы из портфеля и заявок
