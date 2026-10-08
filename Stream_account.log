@@ -1,0 +1,86 @@
+21.09.2026 10:59:58 - FinamPy.Stream - INFO - Запуск программы мониторинга аккаунта по расписанию биржи
+21.09.2026 10:59:58 - FinamPy.Stream - INFO - Торговая сессия активна. Начинаем работу.
+21.09.2026 10:59:59 - FinamPy.Stream - INFO - Начинаем работу с аккаунтом 1218884
+21.09.2026 10:59:59 - FinamPy.Stream - INFO - Подписка на аккаунт 1218884 запущена
+21.09.2026 11:00:18 - FinamPy.Stream - INFO - Получен сигнал остановки. Завершаем работу...
+21.09.2026 11:00:18 - FinamPy.Stream - INFO - Программа остановлена
+21.09.2026 14:07:08 - FinamPy.Stream - INFO - Запуск программы мониторинга аккаунта по расписанию биржи
+21.09.2026 14:07:08 - FinamPy.Stream - INFO - Торговая сессия активна. Начинаем работу.
+21.09.2026 14:07:09 - FinamPy.Stream - INFO - Начинаем работу с аккаунтом 1218884
+21.09.2026 14:07:09 - FinamPy.Stream - INFO - Подписка на аккаунт 1218884 запущена
+21.09.2026 14:07:09 - FinamPy.Stream - ERROR - Необработанная ошибка в _on_account_info: name 'GM' is not defined
+Traceback (most recent call last):
+  File "C:\Users\шадрин\PycharmProjects\CenterStrikeVolatility_API\FINAM_Stream_v1_1.py", line 155, in _on_account_info
+    print(f"GM: {GM}")
+                 ^^
+NameError: name 'GM' is not defined
+
+21.09.2026 14:07:25 - FinamPy.Stream - ERROR - Необработанная ошибка в _on_account_info: name 'GM' is not defined
+Traceback (most recent call last):
+  File "C:\Users\шадрин\PycharmProjects\CenterStrikeVolatility_API\FINAM_Stream_v1_1.py", line 155, in _on_account_info
+    print(f"GM: {GM}")
+                 ^^
+NameError: name 'GM' is not defined
+
+21.09.2026 14:07:26 - FinamPy.Stream - ERROR - Необработанная ошибка в _on_account_info: name 'GM' is not defined
+Traceback (most recent call last):
+  File "C:\Users\шадрин\PycharmProjects\CenterStrikeVolatility_API\FINAM_Stream_v1_1.py", line 155, in _on_account_info
+    print(f"GM: {GM}")
+                 ^^
+NameError: name 'GM' is not defined
+
+21.09.2026 14:07:26 - FinamPy.Stream - ERROR - Необработанная ошибка в _on_account_info: name 'GM' is not defined
+Traceback (most recent call last):
+  File "C:\Users\шадрин\PycharmProjects\CenterStrikeVolatility_API\FINAM_Stream_v1_1.py", line 155, in _on_account_info
+    print(f"GM: {GM}")
+                 ^^
+NameError: name 'GM' is not defined
+
+21.09.2026 14:07:26 - FinamPy.Stream - ERROR - Необработанная ошибка в _on_account_info: name 'GM' is not defined
+Traceback (most recent call last):
+  File "C:\Users\шадрин\PycharmProjects\CenterStrikeVolatility_API\FINAM_Stream_v1_1.py", line 155, in _on_account_info
+    print(f"GM: {GM}")
+                 ^^
+NameError: name 'GM' is not defined
+
+21.09.2026 14:07:27 - FinamPy.Stream - ERROR - Необработанная ошибка в _on_account_info: name 'GM' is not defined
+Traceback (most recent call last):
+  File "C:\Users\шадрин\PycharmProjects\CenterStrikeVolatility_API\FINAM_Stream_v1_1.py", line 155, in _on_account_info
+    print(f"GM: {GM}")
+                 ^^
+NameError: name 'GM' is not defined
+
+21.09.2026 14:07:27 - FinamPy.Stream - ERROR - Необработанная ошибка в _on_account_info: name 'GM' is not defined
+Traceback (most recent call last):
+  File "C:\Users\шадрин\PycharmProjects\CenterStrikeVolatility_API\FINAM_Stream_v1_1.py", line 155, in _on_account_info
+    print(f"GM: {GM}")
+                 ^^
+NameError: name 'GM' is not defined
+
+21.09.2026 14:07:28 - FinamPy.Stream - INFO - Получен сигнал остановки. Завершаем работу...
+21.09.2026 14:07:28 - FinamPy.Stream - INFO - Программа остановлена
+21.09.2026 14:13:40 - FinamPy.Stream - INFO - Запуск программы мониторинга аккаунта по расписанию биржи
+21.09.2026 14:13:40 - FinamPy.Stream - INFO - Торговая сессия активна. Начинаем работу.
+21.09.2026 14:13:41 - FinamPy.Stream - INFO - Начинаем работу с аккаунтом 1218884
+21.09.2026 14:13:41 - FinamPy.Stream - INFO - Подписка на аккаунт 1218884 запущена
+21.09.2026 14:13:41 - FinamPy.Stream - ERROR - Необработанная ошибка в _on_account_info: name 'GM' is not defined
+Traceback (most recent call last):
+  File "C:\Users\шадрин\PycharmProjects\CenterStrikeVolatility_API\FINAM_Stream_v1_1.py", line 155, in _on_account_info
+    print(f"GM: {GM}")
+                 ^^
+NameError: name 'GM' is not defined
+
+21.09.2026 14:13:54 - FinamPy.Stream - INFO - Получен сигнал остановки. Завершаем работу...
+21.09.2026 14:13:54 - FinamPy.Stream - INFO - Программа остановлена
+21.09.2026 14:16:07 - FinamPy.Stream - INFO - Запуск программы мониторинга аккаунта по расписанию биржи
+21.09.2026 14:16:07 - FinamPy.Stream - INFO - Торговая сессия активна. Начинаем работу.
+21.09.2026 14:16:07 - FinamPy.Stream - INFO - Начинаем работу с аккаунтом 1218884
+21.09.2026 14:16:07 - FinamPy.Stream - INFO - Подписка на аккаунт 1218884 запущена
+21.09.2026 14:23:55 - FinamPy.Stream - INFO - Получен сигнал остановки. Завершаем работу...
+21.09.2026 14:23:55 - FinamPy.Stream - INFO - Программа остановлена
+21.09.2026 14:26:30 - FinamPy.Stream - INFO - Запуск программы мониторинга аккаунта по расписанию биржи
+21.09.2026 14:26:30 - FinamPy.Stream - INFO - Торговая сессия активна. Начинаем работу.
+21.09.2026 14:26:31 - FinamPy.Stream - INFO - Начинаем работу с аккаунтом 1218884
+21.09.2026 14:26:31 - FinamPy.Stream - INFO - Подписка на аккаунт 1218884 запущена
+21.09.2026 14:34:12 - FinamPy.Stream - INFO - Получен сигнал остановки. Завершаем работу...
+21.09.2026 14:34:12 - FinamPy.Stream - INFO - Программа остановлена

@@ -1,0 +1,11 @@
+18.11.2025 08:52:08 - QuikPy.Accounts - INFO - Учетная запись #0, Код клиента не задан, Фирма SPBFUT, Счет 7669008 ()
+18.11.2025 08:52:08 - QuikPy.Accounts - INFO - Режимы торгов: ['OPTSPOT', 'SPBFUT', 'OPTIDX', 'OPTCURNCY', 'FUTSPREAD', 'SPBOPT', 'OPTCOMDTY']
+18.11.2025 08:52:09 - QuikPy.Accounts - INFO - - Позиции 138836.90 + Свободные средства 580356.09 = 719192.99 SUR
+18.11.2025 09:01:15 - QuikPy.Accounts - INFO - Учетная запись #0, Код клиента не задан, Фирма SPBFUT, Счет 7669008 ()
+18.11.2025 09:01:15 - QuikPy.Accounts - INFO - Режимы торгов: ['OPTSPOT', 'SPBOPT', 'OPTIDX', 'SPBFUT', 'OPTCOMDTY', 'OPTCURNCY', 'FUTSPREAD']
+18.11.2025 09:01:15 - QuikPy.Accounts - INFO - - Позиции 138836.90 + Свободные средства 580810.43 = 719647.33 SUR
+18.11.2025 09:01:15 - QuikPy.Accounts - INFO - - Заявка номер 1925039320281002114 Продажа SPBOPT.RI115000BL5 1.0 @ 210.0
+18.11.2025 09:01:15 - QuikPy.Accounts - INFO - - Заявка номер 1925039320281002427 Купля SPBOPT.RI87500BX5 1.0 @ 710.0
+18.11.2025 09:01:15 - QuikPy.Accounts - INFO - - Заявка номер 1925039320281002512 Купля SPBOPT.RI90000BX5 5.0 @ 1030.0
+18.11.2025 09:55:51 - QuikPy.Accounts - INFO - Учетная запись #0, Код клиента не задан, Фирма SPBFUT, Счет 7669008 ()
+18.11.2025 09:55:51 - QuikPy.Accounts - INFO - Режимы торгов: ['OPTCOMDTY', 'OPTIDX', 'FUTSPREAD', 'SPBOPT', 'SPBFUT', 'OPTSPOT', 'OPTCURNCY']

@@ -1,0 +1,17 @@
+14.11.2025 09:16:28 - QuikPy.MultiScripts - INFO - Запускаем 1-ый скрипт в отдельном потоке
+14.11.2025 09:16:28 - QuikPy.MultiScripts - INFO - Запускаем 2-й скрипт в отдельном потоке
+14.11.2025 09:16:28 - QuikPy.MultiScripts - INFO - Терминал QUIK подключен к серверу: True
+14.11.2025 09:16:28 - QuikPy.MultiScripts - INFO - Подписка на мои сделки SPBFUT.RIZ5
+14.11.2025 09:16:28 - QuikPy.MultiScripts - INFO - Подписка на мои заявки SPBFUT.RIZ5
+14.11.2025 09:16:28 - QuikPy.MultiScripts - INFO - Завершение 1-го скрипта
+14.11.2025 09:16:28 - QuikPy.MultiScripts - INFO - script2/0: Отправка сообщения в QUIK: Hello from Python!
+14.11.2025 09:16:28 - QuikPy.MultiScripts - INFO - script2/1: Отправка сообщения в QUIK: Hello from Python!
+14.11.2025 09:16:28 - QuikPy.MultiScripts - INFO - script2/2: Отправка сообщения в QUIK: Hello from Python!
+14.11.2025 09:16:28 - QuikPy.MultiScripts - INFO - script2/3: Отправка сообщения в QUIK: Hello from Python!
+14.11.2025 09:16:28 - QuikPy.MultiScripts - INFO - script2/4: Отправка сообщения в QUIK: Hello from Python!
+14.11.2025 09:16:28 - QuikPy.MultiScripts - INFO - script2/5: Отправка сообщения в QUIK: Hello from Python!
+14.11.2025 09:16:28 - QuikPy.MultiScripts - INFO - script2/6: Отправка сообщения в QUIK: Hello from Python!
+14.11.2025 09:16:28 - QuikPy.MultiScripts - INFO - script2/7: Отправка сообщения в QUIK: Hello from Python!
+14.11.2025 09:16:28 - QuikPy.MultiScripts - INFO - script2/8: Отправка сообщения в QUIK: Hello from Python!
+14.11.2025 09:16:28 - QuikPy.MultiScripts - INFO - script2/9: Отправка сообщения в QUIK: Hello from Python!
+14.11.2025 09:16:28 - QuikPy.MultiScripts - INFO - Завершение 2-го скрипта
