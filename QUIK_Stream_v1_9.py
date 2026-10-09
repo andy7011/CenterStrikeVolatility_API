@@ -544,7 +544,10 @@ def save_mypos_history():
             total_weight = weights.sum()
 
             # Заменяем нулевые значения 'lastIV' на 'QuikVola' (theor)
-            lastIV_corrected = positions['lastIV'].replace(0, pd.NA).fillna(positions['QuikVola']).infer_objects()
+            lastIV_numeric = pd.to_numeric(positions['lastIV'], errors='coerce')
+            lastIV_numeric = lastIV_numeric.mask(lastIV_numeric == 0)
+            quik_vola_numeric = pd.to_numeric(positions['QuikVola'], errors='coerce')
+            lastIV_corrected = lastIV_numeric.fillna(quik_vola_numeric)
 
             rows_to_write.append({
                 'DateTime': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
@@ -566,9 +569,9 @@ def save_mypos_history():
                 file_exists = True
         except FileNotFoundError:
             file_exists = False
-        # Записываем в файл (добавляем или создаем новый)
+        # Записываем в файл (добавляем или создаем новый; заголовок - только при создании файла)
         with open(filename, 'a', newline='', encoding='utf-8') as f:
-            df_history.to_csv(f, index=False, sep=';', header=file_exists)
+            df_history.to_csv(f, index=False, sep=';', header=not file_exists)
 
 
 def calculate_open_data_open_price_open_iv(sec_code, net_pos, trades_df=None):

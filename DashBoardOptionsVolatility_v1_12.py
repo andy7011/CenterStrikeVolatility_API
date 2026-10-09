@@ -20,6 +20,7 @@ from string import Template
 import time
 import random
 import inspect
+import threading
 
 from FinLabPy.Config import brokers, default_broker  # Все брокеры и брокер по умолчанию
 from FinLabPy.Core import bars_to_df  # Перевод бар в pandas DataFrame
@@ -27,14 +28,36 @@ from AlorPy import AlorPy  # Работа с Alor OpenAPI V2
 
 ap_provider = AlorPy()  # Подключаемся ко всем торговым счетам
 
-# temp_str = 'C:\\Users\\sftpuser\\Position\\$name_file'
-temp_str = 'C:\\Users\\шадрин\\YandexDisk\\_ИИС\\Position\\$name_file'
+temp_str = 'C:\\Users\\sftpuser\\Position\\$name_file'
 temp_obj = Template(temp_str)
+
+_csv_cache = {}
+
+
+def read_csv_cached(name_file, sep=';', encoding=None):
+    """Читает CSV с кэшированием по времени изменения файла (mtime).
+    При ошибке чтения (файл перезаписывается внешним процессом) возвращает последнюю успешную версию"""
+    path = temp_obj.substitute(name_file=name_file)
+    mtime = os.path.getmtime(path)
+    key = (name_file, sep, (encoding or '').lower())
+    cached = _csv_cache.get(key)
+    if cached and cached[0] == mtime:
+        return cached[1].copy()
+    try:
+        df = pd.read_csv(path, sep=sep, encoding=encoding, low_memory=False)
+        _csv_cache[key] = (mtime, df)
+    except Exception as e:
+        if cached:
+            print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} Ошибка чтения {name_file} ({e}), используются предыдущие данные")
+            return cached[1].copy()
+        raise
+    return df.copy()
 
 # Глобальные переменные для хранения данных
 model_from_api = None
 base_asset_list = None
 option_list = None
+option_df = None
 central_strike = None
 global df_candles
 
@@ -68,7 +91,7 @@ def utc_timestamp_to_msk_datetime(seconds) -> datetime:
 # Функция для получения данных с API при первом запуске приложения, далее каждые 10 секунд по запуску функции обратного вызова update_time(n)
 def fetch_api_data():
     """Функция для получения данных с API"""
-    global model_from_api, base_asset_list, option_list
+    global model_from_api, base_asset_list, option_list, option_df
     model_from_api = get_object_from_json_endpoint_with_retry('https://option-volatility-dashboard.ru/dump_model')
 
     # Список базовых активов
@@ -77,6 +100,12 @@ def fetch_api_data():
 
     # Список опционов
     option_list = model_from_api[1]
+
+    # Предварительно подготовленный DataFrame опционов (строится один раз за обновление)
+    option_df = pd.DataFrame.from_dict(option_list, orient='columns')
+    option_df = option_df.loc[option_df['_volatility'] > 0]
+    option_df['_expiration_datetime'] = pd.to_datetime(option_df['_expiration_datetime'], format='%a, %d %b %Y %H:%M:%S GMT')
+    option_df['expiration_date'] = option_df['_expiration_datetime'].dt.strftime('%d.%m.%Y')
 
     # Вычисление и добавление в словарь центрального страйка
     for asset in base_asset_list:
@@ -137,6 +166,20 @@ def get_object_from_json_endpoint_with_retry(url, method='GET', params={}, max_d
 # Выполняем запрос при запуске
 fetch_api_data()
 
+
+# Фоновый поток обновления данных с API каждые 10 секунд
+def fetch_api_data_loop(interval=10):
+    while True:
+        time.sleep(interval)
+        try:
+            fetch_api_data()
+        except Exception as e:
+            print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} Ошибка фоновой загрузки данных: {e}")
+
+
+fetch_thread = threading.Thread(target=fetch_api_data_loop, daemon=True)
+fetch_thread.start()
+
 # Список базовых активов
 base_asset_ticker_list = {}
 for i in range(len(base_asset_list)):
@@ -175,7 +218,7 @@ file.close()
 
 # My orders data
 with open(temp_obj.substitute(name_file='QUIK_Stream_Orders.csv'), 'r', encoding='utf-8') as file:
-    df_orders = pd.read_csv(file, sep=';')
+    df_orders = pd.read_csv(file, sep=';', low_memory=False)
     df_orders = df_orders[(df_orders.option_base == first_key)]
     df_orders_buy = df_orders[(df_orders.option_base == first_key) & (df_orders.operation == 'Купля')]
     df_orders_sell = df_orders[(df_orders.option_base == first_key) & (df_orders.operation == 'Продажа')]
@@ -184,12 +227,12 @@ with open(temp_obj.substitute(name_file='QUIK_Stream_Orders.csv'), 'r', encoding
 
 # My trades data
 with open(temp_obj.substitute(name_file='QUIK_Stream_Trades.csv'), 'r', encoding='UTF-8') as file:
-    df_trades = pd.read_csv(file, sep=';')
+    df_trades = pd.read_csv(file, sep=';', low_memory=False)
 file.close()
 
 # My positions history data
 with open(temp_obj.substitute(name_file='MyPosHistory.csv'), 'r', encoding='UTF-8') as file:
-    df_MyPosTilt = pd.read_csv(file, sep=';')
+    df_MyPosTilt = pd.read_csv(file, sep=';', low_memory=False)
 file.close()
 
 # MyEquity
@@ -255,7 +298,10 @@ def get_candles_request(dataname, time_frame, dt_from):
     global df_candles
     broker = brokers['АС']  # Брокер по ключу из Config.py словаря brokers
     symbol = broker.get_symbol_by_dataname(dataname)  # Тикер по названию
-    bars = broker.get_history(symbol, time_frame, dt_from=dt_from)  # Получаем историю тикера за 140 дней
+    bars = broker.get_history(symbol, time_frame, dt_from=dt_from)
+    if bars is None:
+        # Если данные не получены, возвращаем пустой DataFrame
+        return pd.DataFrame(columns=['datetime', 'open', 'high', 'low', 'close', 'volume'])
     print(f"Запрос свечей: {dataname} {time_frame} начиная с даты {dt_from}")
     # print(f"Первый бар: {bars[0]}")  # Первый бар
     # print(f"Последний бар: {bars[-1]}")  # Последний бар
@@ -271,7 +317,7 @@ df_candles = get_candles_request(dataname, time_frame, dt_from)
 # Сборка основного файла истории
 try:
     with open(temp_obj.substitute(name_file='MyEquity.CSV'), 'r') as file:
-        df_myequity = pd.read_csv(file, sep=',')
+        df_myequity = pd.read_csv(file, sep=',', low_memory=False)
         df_myequity['Date'] = pd.to_datetime(df_myequity['Date'], format='%Y-%m-%d %H:%M:%S')
         df_myequity = df_myequity.sort_values('Date').reset_index(drop=True)
 except pd.errors.EmptyDataError:
@@ -573,7 +619,7 @@ app.layout = html.Div(children=[
                     ),
                     dcc.Dropdown(  # Селектор выбора количества страйков
                         options=[{'label': str(i), 'value': i} for i in range(3, 16)],
-                        value=9,
+                        value=11,
                         id='num_srikes_selection',
                         style={
                             'backgroundColor': '#2d2d2d',
@@ -628,21 +674,21 @@ app.layout = html.Div(children=[
 
     html.Div(children=[
 
-        dbc.Tabs([
-            dbc.Tab(tab1_content, label='MyPos history'),
-            dbc.Tab(tab2_content, label='Наклон улыбки'),
-            dbc.Tab(tab3_content, label='IV ATM history'),
-            dbc.Tab(tab4_content, label='MyPos table'),
-            dbc.Tab(tab5_content, label='MyTrades table'),
-            dbc.Tab(tab6_content, label='MyOrders table'),
-            dbc.Tab(tab7_content, label='MyEquity'),
-            dbc.Tab(tab8_content, label='MyQuoteRobot'),
+        dbc.Tabs(id='main-tabs', active_tab='tab-1', children=[
+            dbc.Tab(tab1_content, label='MyPos history', tab_id='tab-1'),
+            dbc.Tab(tab2_content, label='Наклон улыбки', tab_id='tab-2'),
+            dbc.Tab(tab3_content, label='IV ATM history', tab_id='tab-3'),
+            dbc.Tab(tab4_content, label='MyPos table', tab_id='tab-4'),
+            dbc.Tab(tab5_content, label='MyTrades table', tab_id='tab-5'),
+            dbc.Tab(tab6_content, label='MyOrders table', tab_id='tab-6'),
+            dbc.Tab(tab7_content, label='MyEquity', tab_id='tab-7'),
+            dbc.Tab(tab8_content, label='MyQuoteRobot', tab_id='tab-8'),
         ]),
 
-        # Интервал обновления данных
+        # Интервал обновления данных - 5 секунд
         dcc.Interval(
             id='interval-component',
-            interval=1000 * 10,
+            interval=1000 * 5,
             n_intervals=0),
         # Интервал обновления данных - 10 секунд
         dcc.Interval(
@@ -698,19 +744,11 @@ app.layout = html.Div(children=[
 
 # --- CALLBACKS ---
 
-# Колбэк для очистки данных после каждого обновления данных с периодичностью 10 секунд
-@app.callback(Output('intermediate-value', 'children'),
-              [Input('interval-component', 'n_intervals')],
-              [State('intermediate-value', 'children')])
-def clean_data(value, dff):
-    pass
-
-
 # Колбэк для обновления времени последнего обновления данных с периодичностью 10 секунд
 @app.callback(Output('last_update_time', 'children'),
               [Input('interval-component', 'n_intervals')])
 def update_time(n):
-    fetch_api_data() # вызов функции для обновления данных
+    # Данные обновляются в фоновом потоке fetch_api_data_loop
     # My portfoloio info data
     with open(temp_obj.substitute(name_file='QUIK_MyPortfolioInfo.csv'), 'r') as file:
         info = file.read()
@@ -726,23 +764,17 @@ def update_time(n):
     Output('plot_smile', 'figure', allow_duplicate=True),
     [
         Input('dropdown-selection', 'value'),
-        Input('num_srikes_selection', 'value'),   # <-- добавили Input
+        Input('num_srikes_selection', 'value'),  # <-- добавили Input
         Input('interval-component', 'n_intervals')
     ],
     prevent_initial_call=True
 )
-def update_output_smile(value, num_strikes, n):   # <-- новый параметр num_strikes
+def update_output_smile(value, num_strikes, n):  # <-- новый параметр num_strikes
     try:
         # Список базовых активов
-        base_asset_ticker_list = {}
-        for i in range(len(base_asset_list)):
-            base_asset_ticker_list.update({base_asset_list[i]['_ticker']: base_asset_list[i]['_base_asset_code']})
 
-        # Список опционов
-        df = pd.DataFrame.from_dict(option_list, orient='columns')
-        df = df.loc[df['_volatility'] > 0]
-        df['_expiration_datetime'] = pd.to_datetime(df['_expiration_datetime'], format='%a, %d %b %Y %H:%M:%S GMT')
-        df['expiration_date'] = df['_expiration_datetime'].dt.strftime('%d.%m.%Y')
+        # Список опционов (предрасчитанный DataFrame из fetch_api_data)
+        df = option_df
 
         dff = df[(df._base_asset_ticker == value)]
 
@@ -753,10 +785,14 @@ def update_output_smile(value, num_strikes, n):   # <-- новый параме�
                 # Используем значение из Dropdown вместо фиксированного max_strikes_count
                 strikes_count = num_strikes
 
+        if base_asset_last_price is None or strike_step is None:
+            print(f"update_output_smile: тикер {value} не найден в base_asset_list/MAP")
+            raise PreventUpdate
+
         strikes = get_list_of_strikes(base_asset_last_price, strike_step, strikes_count)
         # print(strikes)
 
-        # Фильтруем данные по выбранному количеству страйков
+        # Фильтруем данные по выбранному количеству страйков в селекторе по умолчанию
         dff = dff[dff['_strike'].isin(strikes)]
 
         dff_call = dff[(dff._type == 'C')]  # оставим только коллы
@@ -769,27 +805,23 @@ def update_output_smile(value, num_strikes, n):   # <-- новый параме�
         expdate_colors = dict(zip(exp_dates, colors))
 
         # My positions data
-        with open(temp_obj.substitute(name_file='QUIK_MyPos.csv'), 'r') as file:
-            df_table = pd.read_csv(file, sep=';')
-            df_table_buy = df_table[(df_table.option_base == value) & (df_table.net_pos > 0) & (df_table.OpenIV > 0)]
-            df_table_sell = df_table[(df_table.option_base == value) & (df_table.net_pos < 0) & (df_table.OpenIV > 0)]
-            MyPos_ticker_list = []
-            for i in range(len(df_table)):
-                MyPos_ticker_list.append(df_table['ticker'][i])
-            # DataFrame для отрисовки баланса TrueVega
-            df_table_base = df_table
-            df_table_base = df_table_base[df_table_base.option_base == value]
-        # Close the file explicitly file.close()
-        file.close()
+        df_table = read_csv_cached('QUIK_MyPos.csv', sep=';')
+        df_table_buy = df_table[(df_table.option_base == value) & (df_table.net_pos > 0) & (df_table.OpenIV > 0)]
+        df_table_sell = df_table[(df_table.option_base == value) & (df_table.net_pos < 0) & (df_table.OpenIV > 0)]
+        MyPos_ticker_list = []
+        for i in range(len(df_table)):
+            MyPos_ticker_list.append(df_table['ticker'][i])
+        # DataFrame для отрисовки баланса TrueVega
+        df_table_base = df_table
+        df_table_base = df_table_base[df_table_base.option_base == value]
 
         # My orders data
-        with open(temp_obj.substitute(name_file='QUIK_Stream_Orders.csv'), 'r', encoding='utf-8') as file:
-            df_orders = pd.read_csv(file, sep=';')
-            df_orders = df_orders[(df_orders.option_base == value)]
-            df_orders_buy = df_orders[(df_orders.option_base == value) & (df_orders.operation == 'Купля')]
-            df_orders_sell = df_orders[(df_orders.option_base == value) & (df_orders.operation == 'Продажа')]
-            # Converting DataFrame "df_orders" to a list "tikers" containing all the rows of column 'ticker'
-            tikers = df_orders['ticker'].tolist()
+        df_orders = read_csv_cached('QUIK_Stream_Orders.csv', sep=';', encoding='utf-8')
+        df_orders = df_orders[(df_orders.option_base == value)]
+        df_orders_buy = df_orders[(df_orders.option_base == value) & (df_orders.operation == 'Купля')]
+        df_orders_sell = df_orders[(df_orders.option_base == value) & (df_orders.operation == 'Продажа')]
+        # Converting DataFrame "df_orders" to a list "tikers" containing all the rows of column 'ticker'
+        tikers = df_orders['ticker'].tolist()
 
         # Create figure with secondary y-axis
         fig = make_subplots(specs=[[{"secondary_y": True}]])
@@ -802,7 +834,7 @@ def update_output_smile(value, num_strikes, n):   # <-- новый параме�
                 y=dff_smile['_volatility'],
                 mode='lines+text',
                 name=exp_day,
-                line=dict(color=expdate_colors[exp_day])
+                line=dict(color=get_exp_color(exp_day))
             ), secondary_y=False)
 
         # Мои позиции BUY
@@ -817,7 +849,7 @@ def update_output_smile(value, num_strikes, n):   # <-- новый параме�
                 marker=dict(
                     size=11,
                     symbol="star-triangle-up-open",
-                    color=expdate_colors[exp_day]
+                    color=get_exp_color(exp_day)
                 ),
                 name=f'My Pos Buy {exp_day}',
                 customdata=df_buy[['option_type', 'net_pos', 'expdate', 'ticker']],
@@ -836,7 +868,7 @@ def update_output_smile(value, num_strikes, n):   # <-- новый параме�
                 marker=dict(
                     size=11,
                     symbol="star-triangle-down-open",
-                    color=expdate_colors[exp_day]
+                    color=get_exp_color(exp_day)
                 ),
                 name=f'My Pos Sell {exp_day}',
                 customdata=df_sell[['option_type', 'net_pos', 'expdate', 'ticker']],
@@ -855,7 +887,7 @@ def update_output_smile(value, num_strikes, n):   # <-- новый параме�
                 marker=dict(
                     size=8,
                     symbol="cross-thin",
-                    line=dict(width=1, color=expdate_colors[exp_day])
+                    line=dict(width=1, color=get_exp_color(exp_day))
                 ),
                 name=f'My Orders BUY {exp_day}',
                 customdata=df_order_buy[['operation', 'option_type', 'expdate', 'price', 'ticker']],
@@ -874,7 +906,7 @@ def update_output_smile(value, num_strikes, n):   # <-- новый параме�
                 marker=dict(
                     size=8,
                     symbol="cross-thin",
-                    line=dict(width=1, color=expdate_colors[exp_day])
+                    line=dict(width=1, color=get_exp_color(exp_day))
                 ),
                 name=f'My Orders SELL {exp_day}',
                 customdata=df_order_sell[['operation', 'option_type', 'expdate', 'price', 'ticker']],
@@ -884,7 +916,7 @@ def update_output_smile(value, num_strikes, n):   # <-- новый параме�
         # Last Bid Ask for MyPos and MyOrders
         favorites_list = MyPos_ticker_list + tikers  # слияние списков
         favorites_ticker_list = set(favorites_list)
-        dff_MyPosOrders = df[(df._base_asset_ticker == value) & (df._ticker.isin(favorites_ticker_list))]
+        dff_MyPosOrders = df[(df._base_asset_ticker == value) & (df._ticker.isin(favorites_ticker_list))].copy()
         # dff_MyPosOrders = dff_MyPosOrders.apply(lambda x: round(x, 2))
         # Применяем округление только к числовым столбцам
         numeric_columns = dff_MyPosOrders.select_dtypes(include=['number']).columns
@@ -951,7 +983,7 @@ def update_output_smile(value, num_strikes, n):   # <-- новый параме�
                     text=df_filtered['TrueVega'],
                     textposition='auto',
                     name=f'TrueVega {exp_day}',
-                    marker_color=expdate_colors[exp_day],
+                    marker_color=get_exp_color(exp_day),
                     opacity=0.1
                 ),
                 secondary_y=True
@@ -967,7 +999,7 @@ def update_output_smile(value, num_strikes, n):   # <-- новый параме�
         fig.add_vline(x=base_asset_last_price, line_dash='dash', line_color='firebrick')
 
         fig.update_layout(height=450,
-                          title_text=f"Volatility smile, series <b>{value}<b>", uirevision="Don't change"
+                          title_text=f"Volatility smile, series <b>{value}<b>"
                           )
 
         # Легенда справа по центру
@@ -1030,6 +1062,8 @@ def update_output_smile(value, num_strikes, n):   # <-- новый параме�
             )
         )
 
+        fig.update_layout(uirevision=f'smile-{value}-{num_strikes}')
+
         return fig
 
     except Exception as e:
@@ -1043,29 +1077,40 @@ def update_output_smile(value, num_strikes, n):   # <-- новый параме�
                Input('my_slider', 'value'),
                Input('my-radio-buttons-final', 'value'),
                Input('interval-component', 'n_intervals'),
+               Input('main-tabs', 'active_tab'),
                ],
               prevent_initial_call=True)
-def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
+def update_output_history(dropdown_value, slider_value, radiobutton_value, n, active_tab):
+    if active_tab != 'tab-3':
+        raise PreventUpdate
     global df_candles  # Добавляем объявление глобальной переменной
     limit_time = datetime.now() - timedelta(hours=12 * slider_value)
     # Сброс индекса с сохранением datetime как столбца
-    df_candles = df_candles.reset_index()
+    # df_candles = df_candles.reset_index()
+    # Проверка на пустой DataFrame
+    if df_candles is None or df_candles.empty:
+        return dash.no_update  # или вернуть пустой график/данные
+
+    # Создаём колонку datetime из индекса, если её нет
+    if 'datetime' not in df_candles.columns:
+        df_candles['datetime'] = df_candles.index
+    # Сбрасываем индекс, удаляя его
+    df_candles = df_candles.reset_index(drop=True)
+
+    # Фильтрация по времени
     df_candles = df_candles[(df_candles.datetime > limit_time)]
 
     # ДАННЫЕ ИЗ DAMP/csv
     # OptionsVolaHistoryDamp.csv history data options volatility
-    with open(temp_obj.substitute(name_file='OptionsVolaHistoryDamp.csv'), 'r') as file:
-        df_vol_history = pd.read_csv(file, sep=';')
-        df_vol_history = df_vol_history[(df_vol_history.base_asset_ticker == dropdown_value)]
-        # df_vol_history = df_vol_history.tail(limit * len(df_vol_history['expiration_datetime'].unique()) * 2) # глубина истории по количеству серий
+    df_vol_history = read_csv_cached('OptionsVolaHistoryDamp.csv', sep=';')
+    df_vol_history = df_vol_history[(df_vol_history.base_asset_ticker == dropdown_value)]
+    # df_vol_history = df_vol_history.tail(limit * len(df_vol_history['expiration_datetime'].unique()) * 2) # глубина истории по количеству серий
 
-        df_vol_history['DateTime'] = pd.to_datetime(df_vol_history['DateTime'], format='%Y-%m-%d %H:%M:%S')
-        df_vol_history.index = pd.DatetimeIndex(df_vol_history['DateTime'])
-        df_vol_history = df_vol_history[(df_vol_history.type == radiobutton_value)]
-        df_vol_history = df_vol_history[(df_vol_history.DateTime > limit_time)]
-        # print(df_vol_history)
-    # Close the file
-    file.close()
+    df_vol_history['DateTime'] = pd.to_datetime(df_vol_history['DateTime'], format='%Y-%m-%d %H:%M:%S')
+    df_vol_history.index = pd.DatetimeIndex(df_vol_history['DateTime'])
+    df_vol_history = df_vol_history[(df_vol_history.type == radiobutton_value)]
+    df_vol_history = df_vol_history[(df_vol_history.DateTime > limit_time)]
+    # print(df_vol_history)
 
     # Create figure with secondary y-axis
     fig = make_subplots(specs=[[{"secondary_y": True}]])
@@ -1212,6 +1257,8 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
         )
     )
 
+    fig.update_layout(uirevision=f'mypos-{dropdown_value}-{slider_value}')
+
     return fig
 
 
@@ -1220,9 +1267,12 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n):
               [Input('dropdown-selection', 'value'),
                Input('my_slider', 'value'),
                Input('interval-component', 'n_intervals'),
+               Input('main-tabs', 'active_tab'),
                ],
               prevent_initial_call=True)
-def update_output_MyPosHistory(dropdown_value, slider_value, n):
+def update_output_MyPosHistory(dropdown_value, slider_value, n, active_tab):
+    if active_tab != 'tab-1':
+        raise PreventUpdate
     global df_candles  # Добавляем объявление глобальной переменной
 
     limit_time = datetime.now() - timedelta(hours=12 * slider_value)
@@ -1236,40 +1286,57 @@ def update_output_MyPosHistory(dropdown_value, slider_value, n):
     df_candles = get_candles_request(dataname, time_frame, dt_from)
 
     # Сброс индекса с сохранением datetime как столбца
-    df_candles = df_candles.reset_index()
+    # df_candles = df_candles.reset_index()
+    # Проверка на пустой DataFrame
+    if df_candles is None or df_candles.empty:
+        return dash.no_update  # или вернуть пустой график/данные
+
+    # Создаём колонку datetime из индекса, если её нет
+    if 'datetime' not in df_candles.columns:
+        df_candles['datetime'] = df_candles.index
+    # Сбрасываем индекс, удаляя его
+    df_candles = df_candles.reset_index(drop=True)
+
+    # Фильтрация по времени
     df_candles = df_candles[(df_candles.datetime > limit_time)]
 
     # ДАННЫЕ ИЗ csv
     # MyPosHistory.csv history data options volatility
-    with open(temp_obj.substitute(name_file='MyPosHistory.csv'), 'r') as file:
-        df_MyPosHistory = pd.read_csv(file, sep=';')
-        df_MyPosHistory = df_MyPosHistory[(df_MyPosHistory.option_base == dropdown_value)]
+    df_MyPosHistory = read_csv_cached('MyPosHistory.csv', sep=';')
+    df_MyPosHistory = df_MyPosHistory[(df_MyPosHistory.option_base == dropdown_value)]
 
-        df_MyPosHistory['DateTime'] = pd.to_datetime(df_MyPosHistory['DateTime'],
-                                                     format='%Y-%m-%d %H:%M:%S')
-        df_MyPosHistory.index = pd.DatetimeIndex(df_MyPosHistory['DateTime'])
-        # df_MyPosHistory = df_MyPosHistory[(df_vol_history.type == radiobutton_value)]
-        df_MyPosHistory = df_MyPosHistory[(df_MyPosHistory.DateTime > limit_time)]
-        # print(df_MyPosHistory)
-    # Close the file
-    file.close()
+    df_MyPosHistory['DateTime'] = pd.to_datetime(df_MyPosHistory['DateTime'],
+                                                 format='%Y-%m-%d %H:%M:%S')
+    df_MyPosHistory.index = pd.DatetimeIndex(df_MyPosHistory['DateTime'])
+    # df_MyPosHistory = df_MyPosHistory[(df_vol_history.type == radiobutton_value)]
+    df_MyPosHistory = df_MyPosHistory[(df_MyPosHistory.DateTime > limit_time)]
+    # Сортировка по времени (индексу) для корректного порядка точек на линиях
+    df_MyPosHistory = df_MyPosHistory.sort_index()
+
+    # Фильтрация аномальных значений market (пустой стакан на границах сессии):
+    # market отбрасывается, если превышает theor более чем на 200% или неположительный
+    df_MyPosHistory['market'] = pd.to_numeric(df_MyPosHistory['market'], errors='coerce')
+    df_MyPosHistory['theor'] = pd.to_numeric(df_MyPosHistory['theor'], errors='coerce')
+    market_mask = (df_MyPosHistory['market'] > df_MyPosHistory['theor'] * 3) | (df_MyPosHistory['market'] <= 0)
+    df_MyPosHistory.loc[market_mask, 'market'] = None
+    # print(df_MyPosHistory)
 
     # Данные о сделках
     # My trades data
-    with open(temp_obj.substitute(name_file='QUIK_Stream_Trades.csv'), 'r', encoding='UTF-8') as file:
-        df_trades = pd.read_csv(file, sep=';')
-        df_trades = df_trades[(df_trades.option_base == dropdown_value)]
-        df_trades['datetime'] = pd.to_datetime(df_trades['datetime'],
-                                               format='%d.%m.%Y %H:%M:%S')
-        df_trades.index = pd.DatetimeIndex(df_trades['datetime'])
-        df_trades = df_trades[(df_trades.datetime > limit_time)]
-        # print(df_table)
-        # Создаем столбец 'pos' в df_trades на основе значений из df_table
-        df_table['pos'] = df_table['net_pos'].apply(lambda x: 'long' if x > 0 else 'short')
-        df_trades = df_trades.merge(df_table[['ticker', 'pos']], on='ticker', how='left')
-        # Удаляем строки, где 'pos' равен NaN
-        df_trades = df_trades.dropna(subset=['pos'])
-    file.close()
+    df_trades = read_csv_cached('QUIK_Stream_Trades.csv', sep=';', encoding='UTF-8')
+    df_trades = df_trades[(df_trades.option_base == dropdown_value)]
+    df_trades['datetime'] = pd.to_datetime(df_trades['datetime'],
+                                           format='%d.%m.%Y %H:%M:%S')
+    df_trades.index = pd.DatetimeIndex(df_trades['datetime'])
+    df_trades = df_trades[(df_trades.datetime > limit_time)]
+    # Сортировка по времени (индексу) для корректного порядка точек на линиях
+    df_trades = df_trades.sort_index()
+    # print(df_table)
+    # Создаем столбец 'pos' в df_trades на основе значений из df_table
+    df_table['pos'] = df_table['net_pos'].apply(lambda x: 'long' if x > 0 else 'short')
+    df_trades = df_trades.merge(df_table[['ticker', 'pos']], on='ticker', how='left')
+    # Удаляем строки, где 'pos' равен NaN
+    df_trades = df_trades.dropna(subset=['pos'])
 
     # Create figure with secondary y-axis
     fig = make_subplots(specs=[[{"secondary_y": True}]])
@@ -1387,7 +1454,6 @@ def update_output_MyPosHistory(dropdown_value, slider_value, n):
     # fig.update_layout(
     #     title_text=f'История моей позиции, option series <b>{dropdown_value}<b>', uirevision="Don't change"
     # )
-    fig.update_layout(uirevision="Don't change")
     fig.update_layout(
         margin=dict(l=3, r=3, t=0, b=0),
     )
@@ -1438,6 +1504,10 @@ def update_output_MyPosHistory(dropdown_value, slider_value, n):
         )
     )
 
+    # Сохранение зума и выбора в легенде между обновлениями;
+    # сброс только при смене инструмента или глубины истории
+    fig.update_layout(uirevision=f'mypos-{dropdown_value}-{slider_value}')
+
     return fig
 
 
@@ -1446,30 +1516,42 @@ def update_output_MyPosHistory(dropdown_value, slider_value, n):
               [Input('dropdown-selection', 'value'),
                Input('my_slider', 'value'),
                Input('interval-component', 'n_intervals'),
+               Input('main-tabs', 'active_tab'),
                ],
               prevent_initial_call=True)
-def update_output_history_naklon(dropdown_value, slider_value, n):
+def update_output_history_naklon(dropdown_value, slider_value, n, active_tab):
+    if active_tab != 'tab-2':
+        raise PreventUpdate
     global df_candles  # Добавляем объявление глобальной переменной
     limit_time = datetime.now() - timedelta(hours=12 * slider_value)
     # Сброс индекса с сохранением datetime как столбца
-    df_candles = df_candles.reset_index()
+    # df_candles = df_candles.reset_index()
+
+    # Проверка на пустой DataFrame
+    if df_candles is None or df_candles.empty:
+        return dash.no_update  # или вернуть пустой график/данные
+
+    # Создаём колонку datetime из индекса, если её нет
+    if 'datetime' not in df_candles.columns:
+        df_candles['datetime'] = df_candles.index
+    # Сбрасываем индекс, удаляя его
+    df_candles = df_candles.reset_index(drop=True)
+
+    # Фильтрация по времени
     df_candles = df_candles[(df_candles.datetime > limit_time)]
 
     # ДАННЫЕ ИЗ DAMP/csv
     # OptionsSmileNaklonHistory.csv history data options volatility
-    with open(temp_obj.substitute(name_file='OptionsSmileNaklonHistory.csv'), 'r') as file:
-        df_vol_history_naklon = pd.read_csv(file, sep=';')
-        df_vol_history_naklon = df_vol_history_naklon[(df_vol_history_naklon.base_asset_ticker == dropdown_value)]
-        # df_vol_history_naklon = df_vol_history_naklon.tail(limit * len(df_vol_history_naklon['expiration_datetime'].unique()) * 2) # глубина истории по количеству серий
+    df_vol_history_naklon = read_csv_cached('OptionsSmileNaklonHistory.csv', sep=';')
+    df_vol_history_naklon = df_vol_history_naklon[(df_vol_history_naklon.base_asset_ticker == dropdown_value)]
+    # df_vol_history_naklon = df_vol_history_naklon.tail(limit * len(df_vol_history_naklon['expiration_datetime'].unique()) * 2) # глубина истории по количеству серий
 
-        df_vol_history_naklon['DateTime'] = pd.to_datetime(df_vol_history_naklon['DateTime'],
-                                                           format='%Y-%m-%d %H:%M:%S')
-        df_vol_history_naklon.index = pd.DatetimeIndex(df_vol_history_naklon['DateTime'])
-        # df_vol_history_naklon = df_vol_history_naklon[(df_vol_history.type == radiobutton_value)]
-        df_vol_history_naklon = df_vol_history_naklon[(df_vol_history_naklon.DateTime > limit_time)]
-        # print(df_vol_history_naklon)
-    # Close the file
-    file.close()
+    df_vol_history_naklon['DateTime'] = pd.to_datetime(df_vol_history_naklon['DateTime'],
+                                                       format='%Y-%m-%d %H:%M:%S')
+    df_vol_history_naklon.index = pd.DatetimeIndex(df_vol_history_naklon['DateTime'])
+    # df_vol_history_naklon = df_vol_history_naklon[(df_vol_history.type == radiobutton_value)]
+    df_vol_history_naklon = df_vol_history_naklon[(df_vol_history_naklon.DateTime > limit_time)]
+    # print(df_vol_history_naklon)
 
     # Create figure with secondary y-axis
     fig = make_subplots(specs=[[{"secondary_y": True}]])
@@ -1618,6 +1700,8 @@ def update_output_history_naklon(dropdown_value, slider_value, n):
     # Убрать сетку левой оси
     fig['layout']['yaxis']['showgrid'] = False
 
+    fig.update_layout(uirevision=f'naklon-{dropdown_value}-{slider_value}')
+
     return fig
 
 
@@ -1625,9 +1709,12 @@ def update_output_history_naklon(dropdown_value, slider_value, n):
 @app.callback(Output('MyEquityHistory', 'figure'),
               [Input('dropdown-selection', 'value'),
                Input('my_slider', 'value'),
-               Input('interval-component', 'interval-60min')],
+               Input('interval-component', 'interval-60min'),
+               Input('main-tabs', 'active_tab')],
               prevent_initial_call=True)
-def update_equity_history(dropdown_value, slider_value, n):
+def update_equity_history(dropdown_value, slider_value, n, active_tab):
+    if active_tab != 'tab-7':
+        raise PreventUpdate
     global df_combined
     limit_time = datetime.now() - timedelta(hours=10 * 12 * slider_value)
     # Создаем копию для избежания предупреждения
@@ -1778,6 +1865,8 @@ def update_equity_history(dropdown_value, slider_value, n):
         font_color='white'
     )
 
+    fig.update_layout(uirevision=f'equity-{dropdown_value}-{slider_value}')
+
     return fig
 
 
@@ -1824,10 +1913,13 @@ def change_stop_color(n_clicks):
 @app.callback(
     Output('table', 'data', allow_duplicate=True),
     [Input('interval-component', 'n_intervals'),
-     Input('dropdown-selection', 'value')],
+     Input('dropdown-selection', 'value'),
+     Input('main-tabs', 'active_tab')],
     prevent_initial_call=True)
-def updateTable(n, value):
-    df_pos = pd.read_csv(temp_obj.substitute(name_file='QUIK_MyPos.csv'), sep=';')
+def updateTable(n, value, active_tab):
+    if active_tab != 'tab-4':
+        raise PreventUpdate
+    df_pos = read_csv_cached('QUIK_MyPos.csv', sep=';')
     # Фильтрация строк по базовому активу
     df_pos = df_pos[df_pos['option_base'] == value]
 
@@ -1910,14 +2002,17 @@ def updateTable(n, value):
 @app.callback(
     Output('trades', 'data', allow_duplicate=True),
     [Input('interval-component', 'n_intervals'),
-     Input('dropdown-selection', 'value')],
+     Input('dropdown-selection', 'value'),
+     Input('main-tabs', 'active_tab')],
     prevent_initial_call=True)
-def updateTrades(n, value):
-    df_trades = pd.read_csv(temp_obj.substitute(name_file='QUIK_Stream_Trades.csv'), encoding='UTF-8', sep=';')
+def updateTrades(n, value, active_tab):
+    if active_tab != 'tab-5':
+        raise PreventUpdate
+    df_trades = read_csv_cached('QUIK_Stream_Trades.csv', encoding='UTF-8', sep=';')
     # Добавляем столбец с порядковым номером строки, начиная с 1
     df_trades['num'] = range(1, len(df_trades) + 1)
     # Переставляем столбец 'num' в начало
-    cols = ['num'] + [col for col in df_orders.columns if col != 'num']
+    cols = ['num'] + [col for col in df_trades.columns if col != 'num']
     df_trades = df_trades[cols]
     # Преобразование столбца order_num в строку
     df_trades['order_num'] = df_trades['order_num'].astype(str)
@@ -1931,10 +2026,13 @@ def updateTrades(n, value):
 @app.callback(
     Output('orders', 'data', allow_duplicate=True),
     [Input('interval-component', 'n_intervals'),
-     Input('dropdown-selection', 'value')],
+     Input('dropdown-selection', 'value'),
+     Input('main-tabs', 'active_tab')],
     prevent_initial_call=True)
-def updateOrders(n, value):
-    df_orders = pd.read_csv(temp_obj.substitute(name_file='QUIK_Stream_Orders.csv'), encoding='UTF-8', sep=';')
+def updateOrders(n, value, active_tab):
+    if active_tab != 'tab-6':
+        raise PreventUpdate
+    df_orders = read_csv_cached('QUIK_Stream_Orders.csv', encoding='UTF-8', sep=';')
     # Добавляем столбец с порядковым номером строки, начиная с 1
     df_orders['num'] = range(1, len(df_orders) + 1)
     # Переставляем столбец 'num' в начало
@@ -1956,7 +2054,7 @@ def updateOrders(n, value):
     prevent_initial_call=True
 )
 def updateGauge(n, value):
-    df_pos = pd.read_csv(temp_obj.substitute(name_file='QUIK_MyPos.csv'), sep=';')
+    df_pos = read_csv_cached('QUIK_MyPos.csv', sep=';')
     # Фильтрация строк по базовому активу
     df_pos = df_pos[df_pos['option_base'] == value]
 

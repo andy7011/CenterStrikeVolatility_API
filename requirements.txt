@@ -15,12 +15,12 @@ PyJWT~=2.11.0
 urllib3~=2.6.3
 websockets~=16.0
 PyQt6~=6.10.2
-dash~=4.0.0
+dash~=4.4.1
 plotly~=6.5.2
 Flask~=3.1.2
 Werkzeug~=3.1.5
 keyring~=25.7.0
-AlorPy~=2026.1.2
+AlorPy @ file:./AlorPy
 setuptools~=80.10.2
 pip~=26.0.1
 attrs~=25.4.0
@@ -35,8 +35,8 @@ typing_extensions~=4.15.0
 more-itertools~=10.8.0
 pywin32-ctypes~=0.2.3
 cffi~=2.0.0
-pywin32~=311
-FinamPy~=2026.2.2
+pywin32>=311
+FinamPy @ file:./FinamPy
 dash_daq~=0.6.0
 accfifo~=0.2.0
 dash-bootstrap-components~=2.0.4
