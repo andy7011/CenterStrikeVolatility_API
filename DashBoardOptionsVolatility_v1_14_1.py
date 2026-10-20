@@ -6,9 +6,9 @@ from dash import html
 import dash_bootstrap_components as dbc
 import dash_daq as daq
 from dash.exceptions import PreventUpdate
-from datetime import datetime, timedelta, UTC, timezone  # Дата и время
+from datetime import datetime, timedelta, UTC  # Дата и время
 from datetime import timedelta
-from zoneinfo import ZoneInfo  # Часовой пояс
+from pytz import utc
 import requests
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -26,13 +26,18 @@ import atexit
 from FinamPy.grpc.marketdata_service_pb2 import SubscribeBarsResponse, TimeFrame  # Подписка на бары Финама
 from FinLabPy.Config import brokers, default_broker  # Все брокеры и брокер по умолчанию
 from FinLabPy.Core import Bar, bars_to_df  # Бар, перевод бар в pandas DataFrame
+from AlorPy import AlorPy  # Работа с Alor OpenAPI V2
 
 # temp_str = 'C:\\Users\\sftpuser\\Position\\$name_file' # виртуальная машина
 # temp_str = 'C:\\Users\\ashad\\Yandex.Disk\\_ИИС\\Position\\$name_file' # домашний компьютер
 temp_str = 'C:\\Users\\шадрин\\YandexDisk\\_ИИС\\Position\\$name_file' # ноутбук
 temp_obj = Template(temp_str)
+# Каталог data/Finam с CSV-файлами
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR_FINAM = os.path.join(BASE_DIR, "data", "Finam")
 
 _csv_cache = {}
+
 
 def read_csv_cached(name_file, sep=';', encoding=None):
     """Читает CSV с кэшированием по времени изменения файла (mtime).
@@ -64,18 +69,27 @@ central_strike = None
 first_key = next(iter(MAP))
 
 
-tz_msk = ZoneInfo('Europe/Moscow')  # Часовой пояс МСК
+def utc_to_msk_datetime(dt, tzinfo=False):
+    """Перевод времени из UTC в московское
+
+    :param datetime dt: Время UTC
+    :param bool tzinfo: Отображать временнУю зону
+    :return: Московское время
+    """
+    dt_utc = utc.localize(dt)  # Задаем временнУю зону UTC
+    # dt_msk = dt_utc.astimezone(tz_msk)  # Переводим в МСК
+    dt_msk = dt_utc  # Не требуется перевод в МСК
+    return dt_msk if tzinfo else dt_msk.replace(tzinfo=None)
 
 
-def timestamp_to_msk_datetime(seconds) -> datetime:
-    """Перевод кол-ва секунд, прошедших с 01.01.1970 00:00 UTC, в московское время
+def utc_timestamp_to_msk_datetime(seconds) -> datetime:
+    """Перевод кол-ва секунд, прошедших с 01.01.1970 00:00 UTC в московское время
 
     :param int seconds: Кол-во секунд, прошедших с 01.01.1970 00:00 UTC
     :return: Московское время без временнОй зоны
-    :rtype: datetime
     """
-    dt_utc = datetime.fromtimestamp(seconds, timezone.utc)  # Переводим кол-во секунд, прошедших с 01.01.1970 в UTC
-    return dt_utc.astimezone(tz_msk).replace(tzinfo=None)  # Переводим в МСК. Убираем временнУю зону
+    dt_utc = datetime.fromtimestamp(seconds)  # Переводим кол-во секунд, прошедших с 01.01.1970 в UTC
+    return utc_to_msk_datetime(dt_utc)  # Переводим время из UTC в московское
 
 
 # Функция для получения данных с API при первом запуске приложения, далее каждые 10 секунд по запуску функции обратного вызова update_time(n)
@@ -86,6 +100,7 @@ def fetch_api_data():
 
     # Список базовых активов
     base_asset_list = model_from_api[0]
+    # print(f'base_asset_list: {base_asset_list}')
 
     # Список опционов
     option_list = model_from_api[1]
@@ -272,39 +287,9 @@ def update_bars_history():
                 df = df[df.index >= dt_from].sort_index()  # Оставляем только нужную глубину истории
                 df.to_csv(filename, sep=broker.storage.delimiter, date_format=broker.storage.dt_format)  # Сохраняем историю в файл
                 print(f"Сохранено баров: {len(df)} в {filename}")
-            if time_frame == 'M15':  # Обновляем словарь bars свежими (включая пропущенные) барами
-                fresh_bars = broker.storage.get_bars(symbol, 'M15')  # Бары из только что обновлённого файла
-                if fresh_bars:  # Если бары получены
-                    for bar in fresh_bars:  # Пробегаемся по всем барам
-                        upsert_bar(ticker, bar)  # Записываем бар в словарь bars
 
-def load_candles_from_files():
-    """Быстрая загрузка имеющихся в текстовых файлах свечей M15 в словарь bars,
-    чтобы графики отрисовались сразу, не дожидаясь фоновой закачки пропущенных свечей.
-
-    Читаем те же файлы, что обновляет update_bars_history (storage.get_bars), и через
-    upsert_bar кладём бары в словарь bars. Вызывается после настройки подписок,
-    до старта приложения: локальное чтение с диска, поэтому быстро.
-    Загружаем ТОЛЬКО тикеры, для которых файл свечей уже существует на диске —
-    сетевых запросов к брокеру при этом не делаем.
-    """
-    broker = brokers['Ф']  # Брокер по ключу из Config.py словаря brokers
-    loaded = 0  # Счётчик загруженных баров
-    for ticker in iter(MAP):  # Пробегаемся по всем базовым активам из MAP
-        dataname = f'SPBFUT.{ticker}'  # Название тикера
-        filename = f'{broker.storage.datapath}{dataname}_M15.txt'  # Полное имя файла истории
-        if not os.path.isfile(filename):  # Если файла свечей нет на диске — не грузим и не делаем сетевых запросов
-            continue  # переходим к следующему активу, дальше не продолжаем
-        symbol = broker.get_symbol_by_dataname(dataname)  # Тикер по названию (уже известен, т.к. файл есть)
-        if symbol is None:  # Если тикер не найден у брокера
-            continue  # переходим к следующему активу, дальше не продолжаем
-        file_bars = broker.storage.get_bars(symbol, 'M15')  # Бары из файла истории
-        if not file_bars:  # Если в файле баров нет
-            continue  # переходим к следующему активу, дальше не продолжаем
-        for bar in file_bars:  # Пробегаемся по всем барам из файла
-            upsert_bar(ticker, bar)  # Записываем бар в словарь bars
-        loaded += len(file_bars)  # Увеличиваем счётчик
-    print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} Загружено свечей из файлов: {loaded}")
+# Обновление истории свечей всех базовых активов из MAP в файлы data/Finam
+update_bars_history()
 
 # Подписка на бары (свечи) всех используемых базовых активов из MAP и ведение единого словаря
 # bars: <тикер> -> список баров в порядке поступления по времени. В конце списка всегда лежит
@@ -316,7 +301,7 @@ def load_candles_from_files():
 # в broker.last_bars. Чтобы ловить каждое обновление незавершённого бара, подписываемся на событие
 # ПРОВАЙДЕРА broker.provider.on_new_bar и читаем из broker.last_bars уже готовый объект Bar.
 
-broker = brokers['Ф']  # Брокер Финам
+bar_subscription_broker = brokers['Ф']  # Брокер Финам для подписки на бары
 bar_subscription_time_frame = 'M15'  # Таймфрейм подписки на бары
 bars = {}  # Словарь баров: <тикер> -> [завершённые бары по порядку, незавершённый бар (всегда последний)]
 
@@ -350,66 +335,52 @@ def on_unfinished_bar(response: SubscribeBarsResponse, finam_tf: TimeFrame.Value
     """Обработчик обновления незавершённого бара по подписке провайдера (срабатывает на каждое обновление свечи)"""
     ticker = response.symbol.split('@')[0]  # Тикер из тикера Финама ('RIZ6@RTSX')
     key = (f'SPBFUT.{ticker}', bar_subscription_time_frame)  # Ключ в справочнике последних бар брокера
-    unfinished = broker.last_bars.get(key)  # Незавершённый бар (обёртка уже перевела его в Bar)
+    unfinished = bar_subscription_broker.last_bars.get(key)  # Незавершённый бар (обёртка уже перевела его в Bar)
     if unfinished is None:  # Если бара ещё нет
         return  # то выходим, дальше не продолжаем
     upsert_bar(ticker, unfinished)  # Обновляем незавершённый бар (всегда последний в списке)
 
 
 def get_candles_df(ticker, limit_time):
-    """Построение DataFrame свечей M15 по словарю баров bars (фильтр по базовому активу и времени)"""
-    bar_bars = bars.get(ticker, [])  # Список баров базового актива из словаря
-    if not bar_bars:  # Если баров ещё нет
+    """Построение DataFrame свечей M15 по истории из файла + живым барам подписки (фильтр по базовому активу и времени)"""
+    all_bars = []
+    symbol = bar_subscription_broker.get_symbol_by_dataname(f'SPBFUT.{ticker}')  # Спецификация тикера
+    if symbol is not None:  # Если тикер найден
+        file_bars = bar_subscription_broker.storage.get_bars(symbol, bar_subscription_time_frame)  # История из файла data/Finam
+        if file_bars:  # Если в файле есть бары
+            all_bars.extend(file_bars)  # то добавляем их
+    all_bars.extend(bars.get(ticker, []))  # Живые бары подписки (последний - незавершённый бар)
+    if not all_bars:  # Если баров нет совсем
         return pd.DataFrame(columns=['datetime', 'open', 'high', 'low', 'close', 'volume'])
-    df_candles = pd.DataFrame([bar.to_dict() for bar in bar_bars])  # Бары словаря в DataFrame
+    df_candles = pd.DataFrame([bar.to_dict() for bar in all_bars])  # Бары в DataFrame
     df_candles = df_candles.drop_duplicates(subset=['datetime'], keep='last').sort_values('datetime')  # Убираем дубликаты по времени, сортируем
     df_candles['datetime'] = pd.to_datetime(df_candles['datetime'])  # Дата и время бара
     return df_candles[(df_candles.datetime > limit_time)]  # Фильтр по времени
 
 
 # Подписка на бары всех базовых активов из MAP
-broker = brokers['Ф']  # Брокер по ключу из Config.py словаря brokers
-broker.on_new_bar.subscribe(on_completed_bar)  # Обработчик завершённых бар
-broker.provider.on_new_bar.subscribe(on_unfinished_bar)  # Обработчик незавершённых бар
+bar_subscription_broker.on_new_bar.subscribe(on_completed_bar)  # Обработчик завершённых бар
+bar_subscription_broker.provider.on_new_bar.subscribe(on_unfinished_bar)  # Обработчик незавершённых бар
 for ticker in iter(MAP):  # Пробегаемся по всем базовым активам из MAP
     dataname = f'SPBFUT.{ticker}'  # Название тикера
-    symbol = broker.get_symbol_by_dataname(dataname)  # Тикер по названию
-    print(dataname, symbol, ticker)
+    symbol = bar_subscription_broker.get_symbol_by_dataname(dataname)  # Тикер по названию
     if symbol is None:  # Если тикер не найден у брокера
         print(f'Тикер {dataname} не найден у брокера Финам, пропускаем подписку')
         continue  # переходим к следующему активу, дальше не продолжаем
-    broker.subscribe_history(symbol, bar_subscription_time_frame)  # Подписка на бары
-
-
-# Быстрая загрузка имеющихся в текстовых файлах свечей M15 в словарь bars,
-# чтобы графики отрисовались сразу на имеющихся данных (без ожидания закачки)
-load_candles_from_files()
-
-# Фоновая закачка пропущенных свечей всех базовых активов из MAP.
-# Запускаем в отдельном потоке, чтобы не блокировать старт приложения и отрисовку графиков:
-# графики уже отрисованы на данных из файлов, а пропущенные свечи скачиваются в фоне
-def update_bars_history_loop():
-    try:
-        update_bars_history()
-    except Exception as e:
-        print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} Ошибка фоновой закачки истории баров: {e}")
-
-
-bars_history_thread = threading.Thread(target=update_bars_history_loop, daemon=True)
-bars_history_thread.start()
+    bar_subscription_broker.subscribe_history(symbol, bar_subscription_time_frame)  # Подписка на бары
 
 
 # Корректное закрытие брокера перед завершением работы программы
 def shutdown_bars_subscription():
     """Отписка от баров и корректное закрытие брокера перед завершением работы программы"""
     try:  # Пытаемся
-        broker.provider.on_new_bar.unsubscribe(on_unfinished_bar)  # отписаться от незавершённых бар
-        broker.on_new_bar.unsubscribe(on_completed_bar)  # отписаться от завершённых бар
-        broker.unsubscribe_all_history()  # отменить все подписки на историю
+        bar_subscription_broker.provider.on_new_bar.unsubscribe(on_unfinished_bar)  # отписаться от незавершённых бар
+        bar_subscription_broker.on_new_bar.unsubscribe(on_completed_bar)  # отписаться от завершённых бар
+        bar_subscription_broker.unsubscribe_all_history()  # отменить все подписки на историю
     except Exception as e:  # При ошибке отписки
         print(f'Ошибка при отписке от баров: {e}')
     try:  # Пытаемся
-        broker.close()  # корректно закрыть брокера (закрывает канал, потоки подписки завершаются)
+        bar_subscription_broker.close()  # корректно закрыть брокера (закрывает канал, потоки подписки завершаются)
         print('Брокер корректно закрыт')
     except Exception as e:  # При ошибке закрытия
         print(f'Ошибка при закрытии брокера: {e}')
@@ -843,7 +814,6 @@ def update_output_smile(value, num_strikes, n):  # <-- новый парамет
                 x=dff_smile['_strike'],
                 y=dff_smile['_volatility'],
                 mode='lines+text',
-                uid=f'smile-{exp_day}',
                 name=exp_day,
                 line=dict(color=get_exp_color(exp_day))
             ), secondary_y=False)
@@ -863,7 +833,6 @@ def update_output_smile(value, num_strikes, n):  # <-- новый парамет
                     color=get_exp_color(exp_day)
                 ),
                 name=f'My Pos Buy {exp_day}',
-                uid=f'myposbuy-{exp_day}',
                 customdata=df_buy[['option_type', 'net_pos', 'expdate', 'ticker']],
                 hovertemplate="<b>%{customdata}</b>"
             ))
@@ -883,7 +852,6 @@ def update_output_smile(value, num_strikes, n):  # <-- новый парамет
                     color=get_exp_color(exp_day)
                 ),
                 name=f'My Pos Sell {exp_day}',
-                uid=f'mypossell-{exp_day}',
                 customdata=df_sell[['option_type', 'net_pos', 'expdate', 'ticker']],
                 hovertemplate="<b>%{customdata}</b><br>"
             ))
@@ -903,7 +871,6 @@ def update_output_smile(value, num_strikes, n):  # <-- новый парамет
                     line=dict(width=1, color=get_exp_color(exp_day))
                 ),
                 name=f'My Orders BUY {exp_day}',
-                uid=f'myordersbuy-{exp_day}',
                 customdata=df_order_buy[['operation', 'option_type', 'expdate', 'price', 'ticker']],
                 hovertemplate="<b>%{customdata}</b><br>"
             ))
@@ -923,7 +890,6 @@ def update_output_smile(value, num_strikes, n):  # <-- новый парамет
                     line=dict(width=1, color=get_exp_color(exp_day))
                 ),
                 name=f'My Orders SELL {exp_day}',
-                uid=f'myorderssell-{exp_day}',
                 customdata=df_order_sell[['operation', 'option_type', 'expdate', 'price', 'ticker']],
                 hovertemplate="<b>%{customdata}</b><br>"
             ))
@@ -944,7 +910,7 @@ def update_output_smile(value, num_strikes, n):  # <-- новый парамет
         for i in dff_MyPosOrders['_last_price_timestamp']:
             if not isnan(i):  # Проверяем, что значение не NaN
                 UTC_seconds = i
-                MSK_time = timestamp_to_msk_datetime(UTC_seconds)
+                MSK_time = utc_timestamp_to_msk_datetime(UTC_seconds)
                 MSK_time_str = MSK_time.strftime('%H:%M:%S')
 
                 # Обновляем соответствующую строку в DataFrame
@@ -957,7 +923,6 @@ def update_output_smile(value, num_strikes, n):  # <-- новый парамет
                                  mode='markers', text=dff_MyPosOrders['_ask_iv'], textposition='top left',
                                  marker=dict(size=8, symbol="triangle-down", color='red'),
                                  name='Ask',
-                                 uid=f'ask-{value}',
                                  customdata=dff_MyPosOrders[
                                      ['_type', '_ask', '_ask_iv', 'expiration_date', '_ticker']],
                                  hovertemplate="<b>%{customdata}</b><br>"
@@ -968,7 +933,6 @@ def update_output_smile(value, num_strikes, n):  # <-- новый парамет
                                  mode='markers', text=dff_MyPosOrders['_bid_iv'], textposition='top left',
                                  marker=dict(size=8, symbol="triangle-up", color='green'),
                                  name='Bid',
-                                 uid=f'bid-{value}',
                                  customdata=dff_MyPosOrders[
                                      ['_type', '_bid', '_bid_iv', 'expiration_date', '_ticker']],
                                  hovertemplate="<b>%{customdata}</b><br>"
@@ -980,7 +944,6 @@ def update_output_smile(value, num_strikes, n):  # <-- новый парамет
                        mode='markers', text=dff_MyPosOrders['_last_price_iv'], textposition='top left',
                        marker=dict(size=8, color='goldenrod'),
                        name='Last',
-                       uid=f'last-{value}',
                        customdata=dff_MyPosOrders[
                            ['_type', '_last_price', '_last_price_iv', 'expiration_date', '_ticker',
                             'converted_time']],
@@ -1102,7 +1065,8 @@ def update_output_MyPosHistory(dropdown_value, slider_value, n, active_tab):
     limit_time = datetime.now() - timedelta(hours=12 * slider_value)
     time_frame = 'M15'
     df_candles = get_candles_df(dropdown_value, limit_time)  # Свечи M15 из словаря баров bars
-
+    # print(df_candles)
+    # print(limit_time)
     # ДАННЫЕ ИЗ csv
     # MyPosHistory.csv history data options volatility
     df_MyPosHistory = read_csv_cached('MyPosHistory.csv', sep=';')
@@ -1149,7 +1113,6 @@ def update_output_MyPosHistory(dropdown_value, slider_value, n, active_tab):
         dff = df_MyPosHistory[df_MyPosHistory.pos == pos]
         color = 'red' if pos == "short" else 'green'
         fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['mypos'], visible='legendonly',
-                                 uid=f'MyPos-{pos}',
                                  legendgroup=pos,
                                  legendgrouptitle_text=pos,
                                  mode='lines+text',
@@ -1160,8 +1123,7 @@ def update_output_MyPosHistory(dropdown_value, slider_value, n, active_tab):
     for pos in sorted(df_MyPosHistory['pos'].unique()):
         dff = df_MyPosHistory[df_MyPosHistory.pos == pos]
         color = 'red' if pos == "short" else 'green'
-        fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['last'], visible='legendonly',
-                                 uid=f'Last-{pos}',
+        fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['last'],
                                  legendgroup=pos,
                                  legendgrouptitle_text=pos,
                                  mode='lines+text',
@@ -1173,7 +1135,6 @@ def update_output_MyPosHistory(dropdown_value, slider_value, n, active_tab):
         dff = df_MyPosHistory[df_MyPosHistory.pos == pos]
         color = 'red' if pos == "short" else 'green'
         fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['theor'],
-                                 uid=f'Theor-{pos}',
                                  legendgroup=pos,
                                  legendgrouptitle_text=pos,
                                  mode='lines+text',
@@ -1185,7 +1146,6 @@ def update_output_MyPosHistory(dropdown_value, slider_value, n, active_tab):
         dff = df_MyPosHistory[df_MyPosHistory.pos == pos]
         color = 'red' if pos == "short" else 'green'
         fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['market'], visible='legendonly',
-                                 uid=f'Market-{pos}',
                                  legendgroup=pos,
                                  legendgrouptitle_text=pos,
                                  mode='lines+text',
@@ -1202,7 +1162,6 @@ def update_output_MyPosHistory(dropdown_value, slider_value, n, active_tab):
         if not df_buy.empty:
             pos = df_buy['pos'].iloc[0]
             fig.add_trace(go.Scatter(x=df_buy['datetime'], y=df_buy['volatility'], visible='legendonly',
-                                     uid=f'{opt}-купля',
                                      legendgroup=pos,
                                      legendgrouptitle_text=pos,
                                      mode='markers', text=df_buy['volatility'], textposition='top left',
@@ -1216,7 +1175,6 @@ def update_output_MyPosHistory(dropdown_value, slider_value, n, active_tab):
         if not df_sell.empty:
             pos = df_sell['pos'].iloc[0]
             fig.add_trace(go.Scatter(x=df_sell['datetime'], y=df_sell['volatility'], visible='legendonly',
-                                     uid=f'{opt}-продажа',
                                      legendgroup=pos,
                                      legendgrouptitle_text=pos,
                                      mode='markers', text=df_sell['volatility'], textposition='top left',
@@ -1235,7 +1193,6 @@ def update_output_MyPosHistory(dropdown_value, slider_value, n, active_tab):
                                  high=df_candles['high'],
                                  low=df_candles['low'],
                                  close=df_candles['close'],
-                                 uid=f'candles-{dropdown_value}',
                                  name=f"{dropdown_value} {time_frame}",
                                  increasing_line=dict(width=1),
                                  decreasing_line=dict(width=1)),
@@ -1384,7 +1341,6 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n, ac
             color = active_colors[d_exp]
 
         fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['Real_vol'], visible='legendonly',
-                                 uid=f'RealVol-{d_exp}',
                                  legendgroup="group",
                                  legendgrouptitle_text="RealVol",
                                  mode='lines+text',
@@ -1402,7 +1358,6 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n, ac
             color = active_colors[d_exp]
 
         fig.add_trace(go.Scatter(x=dff['DateTime'], y=dff['Quik_vol'], visible='legendonly',
-                                 uid=f'QuikVol-{d_exp}',
                                  legendgroup="group2",
                                  legendgrouptitle_text="QuikVol",
                                  mode='lines+text',
@@ -1417,7 +1372,6 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n, ac
                                  high=df_candles['high'],
                                  low=df_candles['low'],
                                  close=df_candles['close'],
-                                 uid=f'candles-{dropdown_value}',
                                  name=f"{dropdown_value} {time_frame}",
                                  increasing_line=dict(width=1),
                                  decreasing_line=dict(width=1)),
@@ -1496,7 +1450,7 @@ def update_output_history(dropdown_value, slider_value, radiobutton_value, n, ac
         )
     )
 
-    fig.update_layout(uirevision=f'hist-{dropdown_value}-{slider_value}')
+    fig.update_layout(uirevision=f'mypos-{dropdown_value}-{slider_value}')
 
     return fig
 
@@ -1571,7 +1525,6 @@ def update_output_history_naklon(dropdown_value, slider_value, n, active_tab):
             x=dff['DateTime'],
             y=dff['Real'],
             visible='legendonly',
-            uid=f'Real-{d_exp}',
             legendgroup="group",
             legendgrouptitle_text="Real",
             mode='lines+text',
@@ -1589,7 +1542,6 @@ def update_output_history_naklon(dropdown_value, slider_value, n, active_tab):
             y=dff['Quik'],
             line=dict(width=1, dash='dashdot', color=color),
             name=d_exp,
-            uid=f'Quik-{d_exp}',
             legendgroup="group2",
             legendgrouptitle_text="Quik",
             mode='lines+text',
@@ -1603,7 +1555,6 @@ def update_output_history_naklon(dropdown_value, slider_value, n, active_tab):
                                  high=df_candles['high'],
                                  low=df_candles['low'],
                                  close=df_candles['close'],
-                                 uid=f'candles-{dropdown_value}',
                                  name=f"{dropdown_value} {time_frame}",
                                  increasing_line=dict(width=1),
                                  decreasing_line=dict(width=1)),
@@ -1861,7 +1812,10 @@ def update_equity_history(dropdown_value, slider_value, n, active_tab):
 def updateTable(n, value, active_tab):
     if active_tab != 'tab-4':
         raise PreventUpdate
-    df_pos = read_csv_cached('QUIK_MyPos.csv', sep=';')
+    df_pos = pd.read_csv(
+        os.path.join(DATA_DIR_FINAM, "Finam_MyPos.csv"),
+        sep=";"
+    )
     # Фильтрация строк по базовому активу
     df_pos = df_pos[df_pos['option_base'] == value]
 
