@@ -1117,6 +1117,7 @@ def cleanup_trades_csv(current_symbols):
     Удаляет из Finam_Stream_Trades.csv записи, символ которых отсутствует в current_symbols.
     Вызывается из фонового потока io_worker через очередь _io_task_queue.
     """
+    print(f'Запуск функции очистки файла сделок Finam_Stream_Trades.csv')
     file_path = TRADES_CSV_PATH
     if not os.path.exists(file_path):
         return
@@ -1132,15 +1133,13 @@ def cleanup_trades_csv(current_symbols):
         # print(f'base_tickers {base_tickers}')
 
         # Фильтруем: оставляем только сделки по инструментам, которые есть
-        # в актуальных (и нулевых) позициях. Поле option_base (базовый актив)
-        # НЕ используется для сохранения: закрытие одного опциона не должно
-        # оставлять сделки других опционов по тому же базовому активу.
+        # в актуальных позициях.
         filtered_rows = [
             row
             for row in rows
             if row.get("ticker") in base_tickers
         ]
-
+        # print(f'filtered_rows {filtered_rows}')
         if len(filtered_rows) != len(rows):
             # Определяем заголовки (из первой строки или фиксированные)
             headers = (
@@ -1190,10 +1189,18 @@ def update_option_subscriptions_from_portfolio():
         for sym, pos in positions.items()
         if _safe_float(pos.get("quantity", pos.get("net_pos"))) == 0
     }
-    # Только ненулевые позиции — их сделки должны остаться в CSV
+    # Только ненулевые позиции — их сделки должны остаться в CSV (Finam_Stream_Trades.csv)
     active_positions = {
         sym for sym in positions if sym not in zero_positions
     }
+
+    # Нулевые позиции чистим из CSV (Finam_Stream_Trades.csv) немедленно (операция ставится в очередь
+    # фонового потока io_worker, чтобы не блокировать gRPC-поток событий)
+    if zero_positions and schedule.trade_session(get_market_now()):
+        # logger.info(f"Закрыты позиции (нулевые): {zero_positions}")
+        _io_task_queue.put(
+            lambda positions=set(active_positions): cleanup_trades_csv(positions)
+        )
 
     # Текущие символы из активных заявок
     current_orders = set()
@@ -1746,168 +1753,168 @@ def _on_account_info(account_response):
                 "maintenance_margin": to_float(mct.maintenance_margin),
             }
 
-        # --- Парсим позиции ---
-        # Накопительное обновление: не очищаем data["positions"] на каждом событии,
-        # а обновляем записи по символам, пришедшим в текущем событии.
-        # Позиции, отсутствующие в событии, остаются без изменений.
-        # Даже при quantity == 0 запись сохраняется (для Finam_MyPos.csv).
+            # --- Парсим позиции ---
+            # Накопительное обновление: не очищаем data["positions"] на каждом событии,
+            # а обновляем записи по символам, пришедшим в текущем событии.
+            # Позиции, отсутствующие в событии, остаются без изменений.
+            # Даже при quantity == 0 запись сохраняется (для Finam_MyPos.csv).
 
-        for position in account_response.positions:
-            try:
-                symbol = position.symbol if hasattr(position, "symbol") else "UNKNOWN"
-                if symbol == "UNKNOWN":
-                    continue  # пропускаем позиции без символа
-                chain = options_chains.get(symbol)
+            for position in account_response.positions:
+                try:
+                    symbol = position.symbol if hasattr(position, "symbol") else "UNKNOWN"
+                    if symbol == "UNKNOWN":
+                        continue  # пропускаем позиции без символа
+                    chain = options_chains.get(symbol)
 
-                quantity = (
-                    to_float(position.quantity)
-                    if hasattr(position, "quantity")
-                    else 0.0
-                )
-                current_price = (
-                    to_float(position.current_price)
-                    if hasattr(position, "current_price")
-                    else 0.0
-                )
-                average_price = (
-                    to_float(position.average_price)
-                    if hasattr(position, "average_price")
-                    else 0.0
-                )
-                maintenance_margin = (
-                    to_float(position.maintenance_margin)
-                    if hasattr(position, "maintenance_margin")
-                    else 0.0
-                )
-                daily_pnl = (
-                    to_float(position.daily_pnl)
-                    if hasattr(position, "daily_pnl")
-                    else 0.0
-                )
-                unrealized_pnl = (
-                    to_float(position.unrealized_pnl)
-                    if hasattr(position, "unrealized_pnl")
-                    else 0.0
-                )
+                    quantity = (
+                        to_float(position.quantity)
+                        if hasattr(position, "quantity")
+                        else 0.0
+                    )
+                    current_price = (
+                        to_float(position.current_price)
+                        if hasattr(position, "current_price")
+                        else 0.0
+                    )
+                    average_price = (
+                        to_float(position.average_price)
+                        if hasattr(position, "average_price")
+                        else 0.0
+                    )
+                    maintenance_margin = (
+                        to_float(position.maintenance_margin)
+                        if hasattr(position, "maintenance_margin")
+                        else 0.0
+                    )
+                    daily_pnl = (
+                        to_float(position.daily_pnl)
+                        if hasattr(position, "daily_pnl")
+                        else 0.0
+                    )
+                    unrealized_pnl = (
+                        to_float(position.unrealized_pnl)
+                        if hasattr(position, "unrealized_pnl")
+                        else 0.0
+                    )
 
-                # Тикер без суффикса биржи (например RIZ6@RTSX -> RIZ6)
-                ticker = symbol.split("@")[0] if symbol else ""
+                    # Тикер без суффикса биржи (например RIZ6@RTSX -> RIZ6)
+                    ticker = symbol.split("@")[0] if symbol else ""
 
-                strike_price = chain.get("strike") if chain else ""
-                opt_type_raw = chain.get("type") if chain else ""
-                opt_type = "Put" if "PUT" in opt_type_raw.upper() else (
-                    "Call" if "CALL" in opt_type_raw.upper() else opt_type_raw
-                )
-                opt_expdate = fmt_ru_date(chain.get("expiration_last_day")) if chain else ""
-                option_base = chain.get("base_ticker") if chain else ""
+                    strike_price = chain.get("strike") if chain else ""
+                    opt_type_raw = chain.get("type") if chain else ""
+                    opt_type = "Put" if "PUT" in opt_type_raw.upper() else (
+                        "Call" if "CALL" in opt_type_raw.upper() else opt_type_raw
+                    )
+                    opt_expdate = fmt_ru_date(chain.get("expiration_last_day")) if chain else ""
+                    option_base = chain.get("base_ticker") if chain else ""
 
-                # Если позиция не нулевая производим расчёт
-                if quantity != 0:
-                    # Вычисление даты, цены и волатильности открытия позиции
-                    open_data_result = calculate_open_data_open_price_open_iv(ticker, quantity)
-                    # Проверяем, что функция вернула корректные данные
-                    if open_data_result is not None and len(open_data_result) > 2:
-                        open_datetime = open_data_result[0]
-                        open_price = open_data_result[1] if open_data_result[1] is not None else 0.0
-                        open_iv = open_data_result[2] if open_data_result[2] is not None else 0.0
+                    # Если позиция не нулевая производим расчёт
+                    if quantity != 0:
+                        # Вычисление даты, цены и волатильности открытия позиции
+                        open_data_result = calculate_open_data_open_price_open_iv(ticker, quantity)
+                        # Проверяем, что функция вернула корректные данные
+                        if open_data_result is not None and len(open_data_result) > 2:
+                            open_datetime = open_data_result[0]
+                            open_price = open_data_result[1] if open_data_result[1] is not None else 0.0
+                            open_iv = open_data_result[2] if open_data_result[2] is not None else 0.0
+                        else:
+                            open_datetime = ""
+                            open_price = 0.0
+                            open_iv = 0.0
                     else:
                         open_datetime = ""
                         open_price = 0.0
                         open_iv = 0.0
-                else:
-                    open_datetime = ""
-                    open_price = 0.0
-                    open_iv = 0.0
 
-                # Безопасное обращение к котировкам: позиция могла быть по символу,
-                # которого ещё нет в option_quotes (фьючерс или ещё неподписанный опцион)
-                q = option_quotes.get(symbol, {}) if option_quotes else {}
-                ts = q.get("timestamp")
-                if ts:
-                    dt = datetime.fromisoformat(ts)  # or datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
-                    last_time = dt.time()
-                else:
-                    last_time = None
-                bid_price = q.get("bid")
-                last = q.get("last")
-                ask = q.get("ask")
-                theoretical_price = q.get("theoretical_price")
-                volatility = q.get("implied_volatility")
-                bid_iv = q.get("bid_iv")
-                last_iv = q.get("last_iv")
-                ask_iv = q.get("ask_iv")
-                delta = _safe_float(q.get("delta"))
-                gamma = _safe_float(q.get("gamma"))
-                theta = _safe_float(q.get("theta"))
-                vega = _safe_float(q.get("vega"))
-                volatility_f = _safe_float(volatility)
-                bid_iv_f = _safe_float(bid_iv)
-                last_iv_f = _safe_float(last_iv)
-                ask_iv_f = _safe_float(ask_iv)
-                # Вычисление TrueVega
-                # opt_expdate в формате DD.MM.YYYY (см. fmt_ru_date)
-                try:
-                    exp_date = datetime.strptime(opt_expdate, "%d.%m.%Y").date()
-                except (ValueError, TypeError):
-                    exp_date = None
-                DAYS_TO_MAT_DATE = (exp_date - datetime.now().date()).days if exp_date else 0
-                TrueVega = 0 if DAYS_TO_MAT_DATE <= 0 else vega / (DAYS_TO_MAT_DATE ** 0.5)
+                    # Безопасное обращение к котировкам: позиция могла быть по символу,
+                    # которого ещё нет в option_quotes (фьючерс или ещё неподписанный опцион)
+                    q = option_quotes.get(symbol, {}) if option_quotes else {}
+                    ts = q.get("timestamp")
+                    if ts:
+                        dt = datetime.fromisoformat(ts)  # or datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
+                        last_time = dt.time()
+                    else:
+                        last_time = None
+                    bid_price = q.get("bid")
+                    last = q.get("last")
+                    ask = q.get("ask")
+                    theoretical_price = q.get("theoretical_price")
+                    volatility = q.get("implied_volatility")
+                    bid_iv = q.get("bid_iv")
+                    last_iv = q.get("last_iv")
+                    ask_iv = q.get("ask_iv")
+                    delta = _safe_float(q.get("delta"))
+                    gamma = _safe_float(q.get("gamma"))
+                    theta = _safe_float(q.get("theta"))
+                    vega = _safe_float(q.get("vega"))
+                    volatility_f = _safe_float(volatility)
+                    bid_iv_f = _safe_float(bid_iv)
+                    last_iv_f = _safe_float(last_iv)
+                    ask_iv_f = _safe_float(ask_iv)
+                    # Вычисление TrueVega
+                    # opt_expdate в формате DD.MM.YYYY (см. fmt_ru_date)
+                    try:
+                        exp_date = datetime.strptime(opt_expdate, "%d.%m.%Y").date()
+                    except (ValueError, TypeError):
+                        exp_date = None
+                    DAYS_TO_MAT_DATE = (exp_date - datetime.now().date()).days if exp_date else 0
+                    TrueVega = 0 if DAYS_TO_MAT_DATE <= 0 else vega / (DAYS_TO_MAT_DATE ** 0.5)
 
-                data["positions"][symbol] = {
-                    'ticker': ticker,
-                    'net_pos': quantity,
-                    'strike': strike_price,
-                    'opt_type': opt_type,
-                    'expdate': opt_expdate,
-                    'option_base': option_base,
-                    'OpenDateTime': open_datetime,
-                    'OpenPrice': round(open_price, 2) if open_price is not None else open_price,
-                    'OpenIV': round(open_iv, 2) if open_iv is not None else open_iv,
-                    'time_last': last_time,
-                    'bid': bid_price,
-                    'last': last,
-                    'ask': ask,
-                    'theor': theoretical_price,
-                    'QuikVola': volatility,
-                    'bidIV': round(bid_iv_f, 2),
-                    'lastIV': round(last_iv_f, 2),
-                    'askIV': round(ask_iv_f, 2),
-                    'P/L theor': round(volatility_f - open_iv, 2) if quantity > 0 else round(
-                        open_iv - volatility_f, 2),
-                    'P/L last': 0 if last_iv_f == 0 else (
-                        round(last_iv_f - open_iv, 2) if quantity > 0 else round(
-                            open_iv - last_iv_f, 2)),
-                    'P/L market': round(bid_iv_f - open_iv, 2) if (
-                            quantity > 0 and bid_iv is not None) else round(
-                        open_iv - ask_iv_f, 2) if ask_iv is not None else None,
-                    'Delta': round(delta * quantity, 2),
-                    'Gamma': round(gamma * quantity, 2),
-                    'Theta': round(theta * quantity, 2),
-                    'Vega': round(vega * quantity, 2),
-                    'TrueVega': round(TrueVega * quantity, 2),
-                    "u_pnl": round(unrealized_pnl, 2), # unrealized_pnl
-                }
+                    data["positions"][symbol] = {
+                        'ticker': ticker,
+                        'net_pos': quantity,
+                        'strike': strike_price,
+                        'opt_type': opt_type,
+                        'expdate': opt_expdate,
+                        'option_base': option_base,
+                        'OpenDateTime': open_datetime,
+                        'OpenPrice': round(open_price, 2) if open_price is not None else open_price,
+                        'OpenIV': round(open_iv, 2) if open_iv is not None else open_iv,
+                        'time_last': last_time,
+                        'bid': bid_price,
+                        'last': last,
+                        'ask': ask,
+                        'theor': theoretical_price,
+                        'QuikVola': volatility,
+                        'bidIV': round(bid_iv_f, 2),
+                        'lastIV': round(last_iv_f, 2),
+                        'askIV': round(ask_iv_f, 2),
+                        'P/L theor': round(volatility_f - open_iv, 2) if quantity > 0 else round(
+                            open_iv - volatility_f, 2),
+                        'P/L last': 0 if last_iv_f == 0 else (
+                            round(last_iv_f - open_iv, 2) if quantity > 0 else round(
+                                open_iv - last_iv_f, 2)),
+                        'P/L market': round(bid_iv_f - open_iv, 2) if (
+                                quantity > 0 and bid_iv is not None) else round(
+                            open_iv - ask_iv_f, 2) if ask_iv is not None else None,
+                        'Delta': round(delta * quantity, 2),
+                        'Gamma': round(gamma * quantity, 2),
+                        'Theta': round(theta * quantity, 2),
+                        'Vega': round(vega * quantity, 2),
+                        'TrueVega': round(TrueVega * quantity, 2),
+                        "u_pnl": round(unrealized_pnl, 2), # unrealized_pnl
+                    }
 
+                except Exception as e:
+                    logger.error(f"Ошибка при парсинге позиции: {e}")
+
+            # Сохраняем поля словаря data["positions"][symbol] в CSV файл Finam_MyPos.csv (sep=';', encoding='utf-8', index=False)
+            # Если файл отсутствует в папке data/Finam — он будет создан
+            try:
+                my_pos_path = os.path.join(DATA_DIR_FINAM, "Finam_MyPos.csv")
+                os.makedirs(DATA_DIR_FINAM, exist_ok=True)
+                if data["positions"]:
+                    pd.DataFrame.from_dict(data["positions"], orient="index").to_csv(
+                        my_pos_path,
+                        sep=";",
+                        encoding="utf-8",
+                        index=False,
+                    )
             except Exception as e:
-                logger.error(f"Ошибка при парсинге позиции: {e}")
+                logger.error(f"Ошибка при записи Finam_MyPos.csv: {e}")
 
-        # Сохраняем поля словаря data["positions"][symbol] в CSV файл Finam_MyPos.csv (sep=';', encoding='utf-8', index=False)
-        # Если файл отсутствует в папке data/Finam — он будет создан
-        try:
-            my_pos_path = os.path.join(DATA_DIR_FINAM, "Finam_MyPos.csv")
-            os.makedirs(DATA_DIR_FINAM, exist_ok=True)
-            if data["positions"]:
-                pd.DataFrame.from_dict(data["positions"], orient="index").to_csv(
-                    my_pos_path,
-                    sep=";",
-                    encoding="utf-8",
-                    index=False,
-                )
-        except Exception as e:
-            logger.error(f"Ошибка при записи Finam_MyPos.csv: {e}")
-
-        # Проверяем, не появились ли новые опционы в портфеле
-        update_option_subscriptions_from_portfolio()
+            # Проверяем, не появились ли новые опционы в портфеле
+            update_option_subscriptions_from_portfolio()
 
     except Exception as e:
         logger.error(
@@ -2308,11 +2315,11 @@ def main():
                     logger.info("Перезапуск подписки после добавления новых опционов")
                     restart_quotes_subscription()
 
-                # Отложенная очистка устаревших опционов (проверяем не чаще раза в 5 секунд)
-                if _cleanup_dirty and _time.time() - _last_cleanup_check >= 5.0:
-                    _last_cleanup_check = _time.time()
-                    logger.info("Периодическая очистка устаревших опционов")
-                    cleanup_obsolete_subscriptions()
+                # # Отложенная очистка устаревших опционов (проверяем не чаще раза в 5 секунд)
+                # if _cleanup_dirty and _time.time() - _last_cleanup_check >= 5.0:
+                #     _last_cleanup_check = _time.time()
+                #     logger.info("Периодическая очистка устаревших опционов")
+                #     cleanup_obsolete_subscriptions()
 
                 stop_event.wait(1)
 

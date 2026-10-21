@@ -1816,11 +1816,8 @@ def updateTable(n, value, active_tab):
         os.path.join(DATA_DIR_FINAM, "Finam_MyPos.csv"),
         sep=";"
     )
-    # Фильтрация строк по базовому активу
-    df_pos = df_pos[df_pos['option_base'] == value]
-
-    # Замена нулевых значений 'P/L last' на значения 'P/L theor'
-    df_pos['P/L last'] = df_pos['P/L last'].mask(df_pos['P/L last'] == 0, df_pos['P/L theor'])
+    # Фильтрация строк по базовому активу option_base и тикеру ticker
+    df_pos = df_pos[(df_pos['option_base'] == value) | (df_pos['ticker'] == value)]
 
     # Вычисление итогов по колонке net_pos
     total_net_pos = df_pos['net_pos'].sum()
@@ -1828,45 +1825,13 @@ def updateTable(n, value, active_tab):
     # total_theor = (df_pos['theor'] * df_pos['net_pos']).sum()
     total_last = df_pos['last'].sum()
 
-    # Theor
-    weights_theor = df_pos['theor'] * abs(df_pos['net_pos'])
-    total_weight_theor = weights_theor.sum()
-
-    # Last
-    weights_last = df_pos['last'] * abs(df_pos['net_pos'])
-    total_weight_last = weights_last.sum()
-
-    # Market
-    # Раздельное вычисление total_weight_bid и total_weight_ask для weighted_pl_market
-    # Для положительных значений net_pos (длинные позиции)
-    mask_long = df_pos['net_pos'] > 0
-    weights_bid = df_pos.loc[mask_long, 'bid'] * df_pos.loc[mask_long, 'net_pos']
-    total_weight_bid = weights_bid.sum()
-
-    # Для отрицательных значений net_pos (короткие позиции)
-    mask_short = df_pos['net_pos'] < 0
-    weights_ask = df_pos.loc[mask_short, 'ask'] * abs(df_pos.loc[mask_short, 'net_pos'])
-    total_weight_ask = weights_ask.sum()
-
-    # Расчет weighted_pl_market с использованием тех же масок
-    weighted_pl_market_pos = (df_pos.loc[mask_long, 'P/L market'] * df_pos.loc[mask_long, 'bid'] * df_pos.loc[
-        mask_long, 'net_pos']).sum()
-    weighted_pl_market_neg = (df_pos.loc[mask_short, 'P/L market'] * df_pos.loc[mask_short, 'ask'] * abs(
-        df_pos.loc[mask_short, 'net_pos'])).sum()
-
-    # Общий взвешенный P/L market
-    total_weight = total_weight_bid + total_weight_ask
-    weighted_pl_market = (weighted_pl_market_pos + weighted_pl_market_neg) / total_weight if total_weight != 0 else 0
-
-    # Проверка на существование колонок перед вычислением
-    weighted_pl_theor = (df_pos[
-                             'P/L theor'] * weights_theor).sum() / total_weight_theor if 'P/L theor' in df_pos.columns and total_weight_theor != 0 else 0
-    weighted_pl_last = (df_pos[
-                            'P/L last'] * weights_last).sum() / total_weight_last if 'P/L last' in df_pos.columns and total_weight_last != 0 else 0
-
-    # Вычисление сумм по Vega и TrueVega
+    # Вычисление сумм
+    total_delta = df_pos['Delta'].sum() if 'Delta' in df_pos.columns else 0
+    total_gamma = round(df_pos['Gamma'].sum(), 5)
+    total_theta = df_pos['Theta'].sum() if 'Theta' in df_pos.columns else 0
     total_vega = df_pos['Vega'].sum() if 'Vega' in df_pos.columns else 0
     total_true_vega = df_pos['TrueVega'].sum() if 'TrueVega' in df_pos.columns else 0
+    total_u_pnl = df_pos['u_pnl'].sum() if 'u_pnl' in df_pos.columns else 0
 
     # Сортировать датафрейм df_pos по столбцу strike
     df_pos = df_pos.sort_values(by='strike')
@@ -1882,11 +1847,15 @@ def updateTable(n, value, active_tab):
     total_row = {col: '' for col in df_pos.columns}
     total_row['ticker'] = 'Total'
     total_row['net_pos'] = total_net_pos
-    total_row['P/L theor'] = round(weighted_pl_theor, 2)
-    total_row['P/L last'] = round(weighted_pl_last, 2)
-    total_row['P/L market'] = round(weighted_pl_market, 2)
+    # total_row['P/L theor'] = round(weighted_pl_theor, 2)
+    # total_row['P/L last'] = round(weighted_pl_last, 2)
+    # total_row['P/L market'] = round(weighted_pl_market, 2)
+    total_row['Delta'] = round(total_delta, 2)
+    total_row['Gamma'] = round(total_gamma, 4)
+    total_row['Theta'] = round(total_theta, 2)
     total_row['Vega'] = round(total_vega, 2)
     total_row['TrueVega'] = round(total_true_vega, 2)
+    total_row['u_pnl'] = round(total_u_pnl, 2)
 
     # Добавление строки итогов к данным
     df_pos_with_total = pd.concat([df_pos, pd.DataFrame([total_row])], ignore_index=True)
