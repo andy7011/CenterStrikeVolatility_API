@@ -13,14 +13,13 @@ import os
 import queue  # Очередь для фоновых задач I/O (очистка CSV, LastQuote)
 from scipy.stats import norm
 from scipy.optimize import brentq
-from accfifo import Entry, FIFO
-import pandas as pd
 
 # Импортируем только те функции MOEX API, которые реально используются в этом модуле
 from moex_api import get_option_expirations
-from FinamPy.FinamPy import FinamPy  # Основной класс библиотеки FinamPy
+from FinamPy import FinamPy  # Основной класс библиотеки FinamPy
 from FinamPy.grpc import orders_service_pb2 as orders_service
 from FinamPy.grpc import assets_service_pb2 as assets_service
+from FinamPy.grpc import accounts_service_pb2 as accounts_service  # Счета (GetAccount)
 from FinamPy.grpc.assets_service_pb2 import (
     ClockRequest,
     ClockResponse,
@@ -35,11 +34,6 @@ logger = logging.getLogger("FinamPy.Stream")
 # Константы
 DAYS_IN_YEAR = 365.0
 RISK_FREE_RATE = 0.0  # Безрисковая ставка (0 для фьючерсов)
-
-# Каталог data/Finam с CSV-файлами
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR_FINAM = os.path.join(BASE_DIR, "data", "Finam")
-TRADES_CSV_PATH = os.path.join(DATA_DIR_FINAM, "Finam_Stream_Trades.csv")
 
 # ---------------------------------------------------------------------------
 # Глобальные переменные состояния
@@ -61,13 +55,6 @@ _trades_all_csv_ids = set()
 # Последние наборы символов из позиций и заявок (для быстрой проверки изменений)
 _last_positions_symbols = set()
 _last_orders_symbols = set()
-# Момент времени, когда символ перестал появляться в событиях: {symbol: timestamp}.
-# Используется для отложенной очистки CSV (позиция считается закрытой,
-# если она отсутствует в потоке дольше _POSITION_CLEANUP_DELAY).
-_symbol_closed_at = {}
-# Задержка (сек) перед удалением из Finam_Stream_Trades.csv позиций,
-# которые исчезли из событий аккаунта (защита от «рассинхрона» потока).
-_POSITION_CLEANUP_DELAY = 30.0
 # Хранилище устаревших опционов для логирования
 _previous_obsolete = set()
 _subscription_dirty = (
@@ -75,6 +62,13 @@ _subscription_dirty = (
 )
 _cleanup_dirty = False  # флаг необходимости отложенной очистки (для старых опционов)
 _last_cleanup_check = 0.0  # время последней попытки очистки
+# Время последней постановки задачи проверки портфеля/очистки CSV в очередь.
+# Нужно для дедупликации: при старте подписки на сделки приходит исторический
+# снапшот внутри пакетов, каждый пакет → отдельный _on_trade → в очередь
+# ставится отдельная задача. Чтобы не выполнять 4+ одинаковых очисток подряд,
+# ограничиваем частоту постановки задач.
+_LAST_TRADES_CLEANUP_INTERVAL = 5.0  # сек
+_last_trades_cleanup_enqueued = 0.0
 
 # Флаг запроса переподключения от watchdog или упавших потоков
 _reconnect_requested = False
@@ -279,7 +273,7 @@ def calculate_greeks(F, K, T, sigma, option_type="call"):
     if option_type == "call":
         delta = norm.cdf(d1)
         theta = -(F * pdf_d1 * sigma) / (2 * sqrt_T)  # без r*F*... (r=0)
-        rho = 0.0  # при r=0 rho всегда 0
+        rho = 0.0  # при r=0 rho всегда 0n
     else:
         delta = -norm.cdf(-d1)
         theta = -(F * pdf_d1 * sigma) / (2 * sqrt_T)  # для put тоже (без r)
@@ -364,16 +358,6 @@ def to_float(decimal_field):
         except (ValueError, TypeError):
             return 0.0
     return 0.0
-
-
-def _safe_float(value):
-    """Безопасно приводит произвольное значение к float. None/''/нечисло → 0.0."""
-    if value is None or value == "":
-        return 0.0
-    try:
-        return float(value)
-    except (ValueError, TypeError):
-        return 0.0
 
 
 def fmt_date(d):
@@ -619,8 +603,9 @@ def _fmt_num(value, decimals=2):
 def append_trade_to_csv(trade_data, filename):
     global _trades_csv_ids, _trades_all_csv_ids
 
-    file_path = os.path.join(DATA_DIR_FINAM, filename)
-    os.makedirs(DATA_DIR_FINAM, exist_ok=True)
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    file_path = os.path.join(base_dir, "data", "Finam", filename)
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
 
     if filename == "Finam_Stream_Trades.csv":
         existing_ids = _trades_csv_ids
@@ -780,6 +765,28 @@ def _on_trade(trade_response):
 
             logger.debug(f"Сделка {trade_id}: {trades[trade_id]}")
 
+        # После обработки пакета сделок запускаем проверку состава портфеля
+        # (GetAccount + очистка CSV от инструментов, которых больше нет в портфеле).
+        # Сделка потенциально закрывает инструмент — после неё в Finam_Stream_Trades.csv
+        # могут остаться записи, которые нужно удалить. Выполняется в фоновом потоке
+        # io_worker, чтобы не блокировать gRPC-поток событий.
+        #
+        # Дедупликация: на старте/переподключении подписки на сделки приходит
+        # исторический снапшот пакетами — каждый пакет порождает отдельный _on_trade,
+        # и без ограничения частоты в очередь набиралось бы много одинаковых задач
+        # очистки. Ставим задачу не чаще одного раза за _LAST_TRADES_CLEANUP_INTERVAL.
+        global _last_trades_cleanup_enqueued
+        now_enqueue = _time.time()
+        if (
+            fp_provider is not None
+            and now_enqueue - _last_trades_cleanup_enqueued
+            >= _LAST_TRADES_CLEANUP_INTERVAL
+        ):
+            _last_trades_cleanup_enqueued = now_enqueue
+            _io_task_queue.put(
+                lambda: verify_positions_and_cleanup_trades(set())
+            )
+
     except Exception as e:
         logger.error(f"Ошибка в _on_trade: {e}\n{traceback.format_exc()}")
 
@@ -844,11 +851,8 @@ def fetch_last_quote_for_symbol(symbol):
             logger.warning(f"Не удалось получить последнюю котировку для {symbol}")
             return
 
-        # response.quote — одиночная котировка (объект Quote),
-        # QuoteResponse — контейнер с полем quote (для совместимости обрабатываем оба)
-        q = response.quote
-        if q is not None:
-            process_single_quote(q)
+        # response.quote — одиночная котировка (объект Quote)
+        process_single_quote(response.quote)
 
     except Exception as e:
         logger.error(f"Ошибка при получении последней котировки для {symbol}: {e}")
@@ -897,11 +901,9 @@ def update_iv_and_greeks(symbol):
     if not F or F <= 0:
         return
 
-    K = chain.get("strike")
-    if not K or K <= 0:
-        return
+    K = chain["strike"]
     # Дата экспирации
-    exp_date_str = chain.get("expiration_last_day")
+    exp_date_str = chain["expiration_last_day"]
     if not exp_date_str or exp_date_str == "0000-00-00":
         return
     exp_date = datetime.strptime(exp_date_str, "%Y-%m-%d").date()
@@ -949,11 +951,7 @@ def update_iv_and_greeks(symbol):
 
 def process_single_quote(q):
     """Обрабатывает одну котировку (из подписки или запроса последней цены)."""
-    if q is None:
-        return
     full_symbol = q.symbol
-    if not full_symbol:
-        return
     ticker = full_symbol.split("@")[0] if "@" in full_symbol else full_symbol
 
     # --- Базовые активы (фьючерсы) ---
@@ -1032,29 +1030,12 @@ def process_single_quote(q):
 # ---------------------------------------------------------------------------
 def _on_quote(quote):
     """Обработчик котировок базовых активов и опционов."""
-    # Обрабатываем оба формата, которые может присылать сервер:
-    #   - SubscribeQuoteResponse / QuoteResponse: контейнер с полем quote (список)
-    #   - одиночная котировка Quote
-    try:
-        if hasattr(quote, "quote"):
-            # Поле error есть в подписочном ответе (SubscribeQuoteResponse).
-            # Объект protobuf всегда «истинен», поэтому проверяем реальные признаки ошибки.
-            if hasattr(quote, "error") and (
-                quote.error.code != 0 or quote.error.description
-            ):
-                err = quote.error
-                logger.warning(
-                    f"Ошибка в потоке котировок: код={err.code}, {err.description}"
-                )
-                return
-            quotes = quote.quote or []
-            for q in quotes:
-                process_single_quote(q)
-        else:
-            # Одиночная котировка
-            process_single_quote(quote)
-    except Exception as e:
-        logger.error(f"Ошибка в _on_quote: {e}\n{traceback.format_exc()}")
+    if not quote.quote:
+        logger.warning("Получена пустая котировка")
+        return
+
+    for q in quote.quote:
+        process_single_quote(q)
 
 
 # ---------------------------------------------------------------------------
@@ -1112,15 +1093,29 @@ def io_worker(stop_event):
 
 
 # функция очистки Finam_Stream_Trades.csv
-def cleanup_trades_csv(current_symbols):
+def cleanup_trades_csv(actual_positions):
     """
-    Удаляет из Finam_Stream_Trades.csv записи, символ которых отсутствует в current_symbols.
-    Вызывается из фонового потока io_worker через очередь _io_task_queue.
+    Удаляет из Finam_Stream_Trades.csv записи, инструмент которых отсутствует
+    в актуальном составе портфеля.
+
+    Проверка выполняется СТРОГО по тикеру — части символа до знака '@'
+    (например 'RIZ6' или 'RI82500BW6'). Поле option_base (базовый актив) в
+    проверке НЕ участвует.
+
+    Удаляются все записи, чей тикер отсутствует в actual_positions (нет ни одной
+    живой позиции с этим тикером в актуальном портфеле). Это работает и для
+    инструментов, закрытых до старта программы, и для закрытых в процессе работы.
+
+    :param set actual_positions: символы позиций с ненулевым количеством из GetAccount,
+                                 напр. {'RIZ6@RTSX', 'RI90000BK6@RTSX'}
     """
-    print(f'Запуск функции очистки файла сделок Finam_Stream_Trades.csv')
-    file_path = TRADES_CSV_PATH
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    file_path = os.path.join(base_dir, "data", "Finam", "Finam_Stream_Trades.csv")
     if not os.path.exists(file_path):
         return
+
+    # Тикеры (часть до '@'), которые есть в актуальном портфеле.
+    live_tickers = {p.split("@")[0] for p in actual_positions if p}
 
     with _trades_csv_lock:
         # Читаем все строки
@@ -1128,18 +1123,17 @@ def cleanup_trades_csv(current_symbols):
             reader = csv.DictReader(f, delimiter=";")
             rows = list(reader)
 
-        # Актуальные инструменты из позиций (RIZ6@RTSX -> RIZ6, RI82500BW6@RTSX -> RI82500BW6)
-        base_tickers = {s.split("@")[0] for s in current_symbols if s}
-        # print(f'base_tickers {base_tickers}')
+        if not rows:
+            return
 
-        # Фильтруем: оставляем только сделки по инструментам, которые есть
-        # в актуальных позициях.
+        # Оставляем только те записи, чей тикер есть в актуальном портфеле.
+        # Поле option_base в фильтре не используется.
         filtered_rows = [
             row
             for row in rows
-            if row.get("ticker") in base_tickers
+            if row.get("ticker") in live_tickers
         ]
-        # print(f'filtered_rows {filtered_rows}')
+
         if len(filtered_rows) != len(rows):
             # Определяем заголовки (из первой строки или фиксированные)
             headers = (
@@ -1170,37 +1164,104 @@ def cleanup_trades_csv(current_symbols):
             # Обновляем множество _trades_csv_ids (удаляем удалённые ID)
             global _trades_csv_ids
             _trades_csv_ids = {row["trade_id"] for row in filtered_rows}
+            logger.info(
+                f"Очистка CSV: удалены записи по инструментам, отсутствующим в портфеле; "
+                f"осталось записей: {len(filtered_rows)}"
+            )
+
+def verify_positions_and_cleanup_trades(removed_symbols=frozenset()):
+    """Проверка состава портфеля отдельным запросом GetAccount (унитарный,
+    а не потоковый) перед удалением сделок из Finam_Stream_Trades.csv.
+
+    Очистка CSV выполняется ТОЛЬКО когда есть подтверждённо закрытые позиции:
+    символы, исчезнувшие из состава (removed_symbols или, если они не переданы,
+    разница между _last_positions_symbols и свежим снапшотом GetAccount) и
+    отсутствующие в актуальном портфеле. После подтверждения удаляются все
+    записи из CSV, чей тикер отсутствует в актуальном портфеле.
+
+    :param set removed_symbols: Символы, исчезнувшие из портфеля по данным
+                                стрим-подписки (объединение позиций и заявок).
+                                Может быть пустым — тогда разница вычисляется
+                                по _last_positions_symbols.
+    """
+    global _last_positions_symbols
+
+    try:
+        if fp_provider is None:
+            logger.warning(
+                "Проверка портфеля: провайдер не инициализирован, очистка CSV отменена"
+            )
+            return
+
+        account: accounts_service.GetAccountResponse = fp_provider.call_function(
+            fp_provider.accounts_stub.GetAccount,
+            accounts_service.GetAccountRequest(account_id=account_id),
+        )
+        if account is None:
+            logger.warning(
+                "Проверка портфеля: GetAccount не вернул ответ, очистка CSV отменена"
+            )
+            return
+
+        # Актуальный состав портфеля с ненулевым количеством из свежего снапшота
+        actual_positions = {
+            position.symbol
+            for position in account.positions
+            if to_float(position.quantity) != 0
+        }
+
+        # Если триггер не передан — вычисляем исчезнувшие сами: символы, которые
+        # были в прошлом известном составе (_last_positions_symbols), но которых
+        # нет в свежем снапшоте GetAccount.
+        if not removed_symbols:
+            removed_symbols = _last_positions_symbols - actual_positions
+
+        # Символы, которые стрим считал закрытыми, но которые есть в свежем снапшоте
+        restored = removed_symbols & actual_positions
+        if restored:
+            logger.warning(
+                f"Проверка портфеля: символы {restored} присутствуют в снапшоте GetAccount "
+                f"— ложное срабатывание стрима, очистка CSV по ним не выполняется"
+            )
+            # Восстанавливаем символы в составе портфеля, чтобы не терять их отслеживание
+            _last_positions_symbols |= restored
+
+        confirmed_removed = removed_symbols - actual_positions
+        if not confirmed_removed:
+            logger.info(
+                "Проверка портфеля: подтверждённых закрытых позиций нет, очистка CSV не требуется"
+            )
+            return
+
+        logger.info(
+            f"Проверка портфеля: подтверждено закрытие позиций: {confirmed_removed}. "
+            f"Удаляем сделки из CSV"
+        )
+        cleanup_trades_csv(actual_positions)
+
+    except Exception as e:
+        logger.error(
+            f"Ошибка проверки портфеля через GetAccount: {e}\n{traceback.format_exc()}"
+        )
 
 
 def update_option_subscriptions_from_portfolio():
     global subscribed_option_symbols, _last_positions_symbols, _last_orders_symbols
     global _subscription_dirty, _cleanup_dirty, _symbol_last_seen
-    global _previous_obsolete, _symbol_closed_at
+    global _previous_obsolete
 
-    # Текущие символы из позиций портфеля (включая позиции с нулевым количеством)
+    # Во внеторговое время подписки не трогаем: снапшот портфеля, пришедший
+    # вне сессии, может отличаться от состояния на конец дня и порождать
+    # ложное обнаружение «устаревших» опционов
+    if not schedule.trade_session(get_market_now()):
+        return
+
+    # Текущие символы из позиций портфеля с ненулевым количеством
     raw_positions = _account_data[0].get("positions", {})
-    positions = {sym: pos for sym, pos in raw_positions.items()}
+    positions = {
+        sym: pos for sym, pos in raw_positions.items() if float(pos["quantity"]) != 0
+    }
     current_positions = set(positions.keys())
-
-    # Символы с нулевым количеством: сделки по ним удаляем из CSV немедленно,
-    # но сами записи в data["positions"] и Finam_MyPos.csv остаются.
-    zero_positions = {
-        sym
-        for sym, pos in positions.items()
-        if _safe_float(pos.get("quantity", pos.get("net_pos"))) == 0
-    }
-    # Только ненулевые позиции — их сделки должны остаться в CSV (Finam_Stream_Trades.csv)
-    active_positions = {
-        sym for sym in positions if sym not in zero_positions
-    }
-
-    # Нулевые позиции чистим из CSV (Finam_Stream_Trades.csv) немедленно (операция ставится в очередь
-    # фонового потока io_worker, чтобы не блокировать gRPC-поток событий)
-    if zero_positions and schedule.trade_session(get_market_now()):
-        # logger.info(f"Закрыты позиции (нулевые): {zero_positions}")
-        _io_task_queue.put(
-            lambda positions=set(active_positions): cleanup_trades_csv(positions)
-        )
 
     # Текущие символы из активных заявок
     current_orders = set()
@@ -1209,26 +1270,6 @@ def update_option_subscriptions_from_portfolio():
         if symbol:
             current_orders.add(symbol)
 
-    # Позиции, реально закрытые (не появлялись в событиях дольше задержки),
-    # — удаляем из CSV сделки по ним. Проверяем до быстрой проверки, чтобы
-    # подтверждённое закрытие сработало даже при неизменных множествах.
-    now = _time.time()
-    if schedule.trade_session(get_market_now()):
-        expired = {
-            sym: ts
-            for sym, ts in _symbol_closed_at.items()
-            if now - ts > _POSITION_CLEANUP_DELAY
-        }
-        if expired:
-            logger.info(
-                f"Закрыты позиции (подтверждено): {set(expired.keys())}"
-            )
-            for sym in expired:
-                _symbol_closed_at.pop(sym, None)
-            _io_task_queue.put(
-                lambda positions=set(active_positions): cleanup_trades_csv(positions)
-            )
-
     # Если ничего не изменилось — выходим (быстрая проверка)
     if (
         current_positions == _last_positions_symbols
@@ -1236,21 +1277,26 @@ def update_option_subscriptions_from_portfolio():
     ):
         return
 
-    # Символы, которые были в портфеле раньше, но исчезли сейчас (нет ни в позициях,
-    # ни в заявках). Для них фиксируем время закрытия — CSV очистится позже,
-    # по истечении _POSITION_CLEANUP_DELAY, чтобы не терять данные из-за
-    # распараллеливания событий потока аккаунта.
-    removed_symbols = _last_positions_symbols - current_positions
-    for sym in removed_symbols:
-        _symbol_closed_at.setdefault(sym, now)
+    # Символы, которые были в портфеле/заявках раньше, но исчезли сейчас.
+    # Важно учитывать и заявки, а не только позиции: опцион мог быть куплен
+    # и продан через заявку, и позиция уже ненулевой, а символ исчез из заявок.
+    # Тогда CSV по нему всё равно нужно чистить.
+    prev_all_symbols = _last_positions_symbols | _last_orders_symbols
+    all_symbols_now = current_positions | current_orders
+    removed_symbols = prev_all_symbols - all_symbols_now
 
-    # # Нулевые позиции чистим из CSV немедленно (операция ставится в очередь
-    # # фонового потока io_worker, чтобы не блокировать gRPC-поток событий)
-    # if zero_positions and schedule.trade_session(get_market_now()):
-    #     # logger.info(f"Закрыты позиции (нулевые): {zero_positions}")
-    #     _io_task_queue.put(
-    #         lambda positions=set(active_positions): cleanup_trades_csv(positions)
-    #     )
+    # Если позиции/заявки изменились и сейчас торговая сессия — проверяем состав
+    # портфеля отдельным запросом GetAccount и только после подтверждения
+    # удаляем из CSV сделки по действительно закрытым инструментам.
+    # Потоковый снапшот подписки может быть промежуточным/неполным, поэтому
+    # доверяем ему только как триггеру, а не как источнику истины.
+    # Проверка выполняется в фоновом потоке io_worker, чтобы не блокировать
+    # gRPC-поток событий сетевым запросом.
+    if removed_symbols and schedule.trade_session(get_market_now()):
+        logger.info(f"Закрыты позиции (по данным стрима): {removed_symbols}")
+        _io_task_queue.put(
+            lambda removed=set(removed_symbols): verify_positions_and_cleanup_trades(removed)
+        )
 
     # Обновляем сохранённые множества
     _last_positions_symbols = current_positions
@@ -1287,11 +1333,6 @@ def update_option_subscriptions_from_portfolio():
 
         # Помечаем, что нужно перезапустить подписку (сделаем это в main сразу)
         _subscription_dirty = True
-
-    # Если символ вернулся в портфель/заявки — снимаем пометку о закрытии
-    for sym in list(_symbol_closed_at.keys()):
-        if sym in option_symbols or sym in current_orders:
-            _symbol_closed_at.pop(sym, None)
 
     # --- Устаревшие опционы (не появлялись >30 сек) — помечаем для очистки ---
     # Опционы, которых нет в текущем составе и которые не появлялись более 30 секунд
@@ -1351,12 +1392,13 @@ def cleanup_obsolete_subscriptions():
         subscribed_option_symbols, \
         _cleanup_dirty, \
         _symbol_last_seen, \
-        _previous_obsolete, \
-        _symbol_closed_at
+        _previous_obsolete
 
-    # Пересчитываем актуальные символы (включая позиции с нулевым количеством)
+    # Пересчитываем актуальные символы
     raw_positions = _account_data[0].get("positions", {})
-    positions = {sym: pos for sym, pos in raw_positions.items()}
+    positions = {
+        sym: pos for sym, pos in raw_positions.items() if float(pos["quantity"]) != 0
+    }
     current_positions = set(positions.keys())
 
     current_orders = set()
@@ -1379,8 +1421,6 @@ def cleanup_obsolete_subscriptions():
     now = _time.time()
     for sym in option_symbols:
         _symbol_last_seen[sym] = now
-        # Символ снова актуален — снимаем пометку закрытия
-        _symbol_closed_at.pop(sym, None)
 
     # Находим действительно устаревшие
     obsolete = {
@@ -1395,7 +1435,6 @@ def cleanup_obsolete_subscriptions():
             subscribed_option_symbols.discard(sym)
             option_quotes.pop(sym, None)
             _symbol_last_seen.pop(sym, None)
-            _symbol_closed_at.pop(sym, None)
         logger.info(f"Очистка: удалены устаревшие опционы: {obsolete}")
 
         # Перезапускаем подписку без устаревших
@@ -1541,114 +1580,6 @@ def start_quotes_subscription(fp_provider):
     )
     return subscriptions
 
-def calculate_open_data_open_price_open_iv(sec_code, net_pos, trades_df=None):
-    """
-    Вычисляет дату открытия позиции, цену и волатильность для заданного инструмента,
-    как средневзвешенные по объёму первых сделок до достижения нужного объёма.
-
-    :param str sec_code: Код инструмента
-    :param int net_pos: Текущая позиция (отрицательная для короткой позиции)
-    :param pd.DataFrame trades_df: Датафрейм всех сделок. Если None, читается из CSV файла
-    :return: tuple(OpenDateTime, OpenPrice, OpenIV)
-    """
-    try:
-        # Чтение сделок из переданного датафрейма или CSV файла
-        if trades_df is None:
-            trades_df = _read_trades_csv()
-
-        # Фильтрация по инструменту (все сделки по инструменту)
-        instrument_trades_df = trades_df[trades_df['ticker'] == sec_code].copy()
-
-        if instrument_trades_df.empty:
-            logger.warning(f"Предупреждение: Нет данных для инструмента {sec_code}")
-            return None, None, None
-
-        # Преобразование datetime и сортировка в обратном порядке (от последних сделок к первым)
-        instrument_trades_df['datetime'] = pd.to_datetime(instrument_trades_df['datetime'],
-                                                          format='%d.%m.%Y %H:%M:%S')
-        instrument_trades_df = instrument_trades_df.sort_values('datetime', ascending=False)
-
-        # Применяем изменение знака для объема при продаже (умножаем объем сделки на -1)
-        instrument_trades_df.loc[instrument_trades_df['operation'] == 'Продажа', 'volume'] *= -1
-
-        # Целевой объём
-        required_volume = net_pos
-        sign = 1 if required_volume > 0 else -1  # Знак позиции: для положительной вычитаем объемы, для отрицательной прибавляем
-        selected_trades = []
-        # Отбираем сделки до достижения нужного объёма
-        for _, trade in instrument_trades_df.iterrows():
-            volume = trade['volume']
-            if sign * (required_volume - volume) >= 0:
-                # Добавляем сделку целиком
-                selected_trades.append(trade)
-                required_volume -= volume
-            else:
-                # Добавляем частичную сделку
-                partial_trade = trade.copy()
-                partial_trade['volume'] = required_volume
-                selected_trades.append(partial_trade)
-                required_volume = 0
-                break
-
-        if not selected_trades:
-            sum_volume_short = instrument_trades_df.loc[instrument_trades_df['operation'] == 'Продажа', 'volume'].sum()
-            count_short = (instrument_trades_df['operation'] == 'Продажа').sum()
-            sum_volume_long = instrument_trades_df.loc[instrument_trades_df['operation'] == 'Купля', 'volume'].sum()
-            count_long = (instrument_trades_df['operation'] == 'Купля').sum()
-            logger.warning(f"Предупреждение: Недостаточно сделок для инструмента {sec_code}")
-            logger.warning(f"Позиция: {net_pos}")
-            logger.warning(f"Сделок лонг: {count_long} Объем: {sum_volume_long}")
-            logger.warning(f"Сделок шорт: {count_short} Объем: {sum_volume_short}")
-            return None, None, None
-
-        # Дата первой сделки (самой старой сделки, она в конце списка)
-        selected_df = pd.DataFrame(selected_trades)
-        OpenDateTime = selected_df.iloc[-1]['datetime'].strftime('%d.%m.%Y %H:%M:%S')
-
-        # Удаляем из списка сделки противоположной направленности
-        # для правильного расчета средневзвешенных значений цены и волатильности
-        selected_trades = [trade for trade in selected_trades
-                           if (trade['volume'] > 0) == (net_pos > 0)]
-
-        # Расчет средневзвешенной цены и волатильности открытия методом FIFO
-        fifo_entries = [Entry(quantity=trade['volume'], price=trade['price']) for trade in selected_trades]
-        fifo_entries_volatility = [Entry(quantity=trade['volume'], price=trade['volatility'])
-                                   for trade in selected_trades]
-
-        OpenPrice = calculate_weighted_average(FIFO(fifo_entries).inventory)
-        OpenIV = calculate_weighted_average(FIFO(fifo_entries_volatility).inventory)
-
-        return OpenDateTime, OpenPrice, OpenIV
-
-    except Exception as e:
-        logger.error(f"Ошибка при вычислении данных открытия для {sec_code}: {e}")
-        return None, None, None
-
-
-def calculate_weighted_average(inventory):
-    """Средневзвешенное значение по инвентарю FIFO (deque из Entry с атрибутами quantity и price)"""
-    weighted_sum = sum(entry.quantity * entry.price for entry in inventory)
-    total_weight = sum(entry.quantity for entry in inventory)
-    return weighted_sum / total_weight if total_weight != 0 else 0
-
-def _read_trades_csv():
-    """Читает CSV файл со сделками. Возвращает пустой датафрейм при отсутствии файла или ошибке"""
-    try:
-        trades_df = pd.read_csv(TRADES_CSV_PATH, encoding='utf-8', delimiter=';')
-        trades_df['datetime'] = pd.to_datetime(
-            trades_df['datetime'], format='%d.%m.%Y %H:%M:%S', errors='coerce'
-        )
-        numeric_columns = ['strike', 'volume', 'price', 'value', 'volatility']
-        for column in numeric_columns:
-            if column in trades_df.columns:
-                trades_df[column] = pd.to_numeric(trades_df[column], errors='coerce')
-        return trades_df
-    except (FileNotFoundError, pd.errors.EmptyDataError):
-        return pd.DataFrame(columns=[
-            'datetime', 'trade_id', 'order_id', 'option_base', 'ticker',
-            'option_type', 'strike', 'expdate', 'operation', 'volume',
-            'price', 'value', 'volatility'
-        ])
 
 # ---------------------------------------------------------------------------
 # Обработчик информации об аккаунте
@@ -1753,168 +1684,59 @@ def _on_account_info(account_response):
                 "maintenance_margin": to_float(mct.maintenance_margin),
             }
 
-            # --- Парсим позиции ---
-            # Накопительное обновление: не очищаем data["positions"] на каждом событии,
-            # а обновляем записи по символам, пришедшим в текущем событии.
-            # Позиции, отсутствующие в событии, остаются без изменений.
-            # Даже при quantity == 0 запись сохраняется (для Finam_MyPos.csv).
+        # --- Парсим позиции ---
+        data["positions"] = {}
 
-            for position in account_response.positions:
-                try:
-                    symbol = position.symbol if hasattr(position, "symbol") else "UNKNOWN"
-                    if symbol == "UNKNOWN":
-                        continue  # пропускаем позиции без символа
-                    chain = options_chains.get(symbol)
-
-                    quantity = (
-                        to_float(position.quantity)
-                        if hasattr(position, "quantity")
-                        else 0.0
-                    )
-                    current_price = (
-                        to_float(position.current_price)
-                        if hasattr(position, "current_price")
-                        else 0.0
-                    )
-                    average_price = (
-                        to_float(position.average_price)
-                        if hasattr(position, "average_price")
-                        else 0.0
-                    )
-                    maintenance_margin = (
-                        to_float(position.maintenance_margin)
-                        if hasattr(position, "maintenance_margin")
-                        else 0.0
-                    )
-                    daily_pnl = (
-                        to_float(position.daily_pnl)
-                        if hasattr(position, "daily_pnl")
-                        else 0.0
-                    )
-                    unrealized_pnl = (
-                        to_float(position.unrealized_pnl)
-                        if hasattr(position, "unrealized_pnl")
-                        else 0.0
-                    )
-
-                    # Тикер без суффикса биржи (например RIZ6@RTSX -> RIZ6)
-                    ticker = symbol.split("@")[0] if symbol else ""
-
-                    strike_price = chain.get("strike") if chain else ""
-                    opt_type_raw = chain.get("type") if chain else ""
-                    opt_type = "Put" if "PUT" in opt_type_raw.upper() else (
-                        "Call" if "CALL" in opt_type_raw.upper() else opt_type_raw
-                    )
-                    opt_expdate = fmt_ru_date(chain.get("expiration_last_day")) if chain else ""
-                    option_base = chain.get("base_ticker") if chain else ""
-
-                    # Если позиция не нулевая производим расчёт
-                    if quantity != 0:
-                        # Вычисление даты, цены и волатильности открытия позиции
-                        open_data_result = calculate_open_data_open_price_open_iv(ticker, quantity)
-                        # Проверяем, что функция вернула корректные данные
-                        if open_data_result is not None and len(open_data_result) > 2:
-                            open_datetime = open_data_result[0]
-                            open_price = open_data_result[1] if open_data_result[1] is not None else 0.0
-                            open_iv = open_data_result[2] if open_data_result[2] is not None else 0.0
-                        else:
-                            open_datetime = ""
-                            open_price = 0.0
-                            open_iv = 0.0
-                    else:
-                        open_datetime = ""
-                        open_price = 0.0
-                        open_iv = 0.0
-
-                    # Безопасное обращение к котировкам: позиция могла быть по символу,
-                    # которого ещё нет в option_quotes (фьючерс или ещё неподписанный опцион)
-                    q = option_quotes.get(symbol, {}) if option_quotes else {}
-                    ts = q.get("timestamp")
-                    if ts:
-                        dt = datetime.fromisoformat(ts)  # or datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
-                        last_time = dt.time()
-                    else:
-                        last_time = None
-                    bid_price = q.get("bid")
-                    last = q.get("last")
-                    ask = q.get("ask")
-                    theoretical_price = q.get("theoretical_price")
-                    volatility = q.get("implied_volatility")
-                    bid_iv = q.get("bid_iv")
-                    last_iv = q.get("last_iv")
-                    ask_iv = q.get("ask_iv")
-                    delta = _safe_float(q.get("delta"))
-                    gamma = _safe_float(q.get("gamma"))
-                    theta = _safe_float(q.get("theta"))
-                    vega = _safe_float(q.get("vega"))
-                    volatility_f = _safe_float(volatility)
-                    bid_iv_f = _safe_float(bid_iv)
-                    last_iv_f = _safe_float(last_iv)
-                    ask_iv_f = _safe_float(ask_iv)
-                    # Вычисление TrueVega
-                    # opt_expdate в формате DD.MM.YYYY (см. fmt_ru_date)
-                    try:
-                        exp_date = datetime.strptime(opt_expdate, "%d.%m.%Y").date()
-                    except (ValueError, TypeError):
-                        exp_date = None
-                    DAYS_TO_MAT_DATE = (exp_date - datetime.now().date()).days if exp_date else 0
-                    TrueVega = 0 if DAYS_TO_MAT_DATE <= 0 else vega / (DAYS_TO_MAT_DATE ** 0.5)
-
-                    data["positions"][symbol] = {
-                        'ticker': ticker,
-                        'net_pos': quantity,
-                        'strike': strike_price,
-                        'opt_type': opt_type,
-                        'expdate': opt_expdate,
-                        'option_base': option_base,
-                        'OpenDateTime': open_datetime,
-                        'OpenPrice': round(open_price, 2) if open_price is not None else open_price,
-                        'OpenIV': round(open_iv, 2) if open_iv is not None else open_iv,
-                        'time_last': last_time,
-                        'bid': bid_price,
-                        'last': last,
-                        'ask': ask,
-                        'theor': theoretical_price,
-                        'QuikVola': volatility,
-                        'bidIV': round(bid_iv_f, 2),
-                        'lastIV': round(last_iv_f, 2),
-                        'askIV': round(ask_iv_f, 2),
-                        'P/L theor': round(volatility_f - open_iv, 2) if quantity > 0 else round(
-                            open_iv - volatility_f, 2),
-                        'P/L last': 0 if last_iv_f == 0 else (
-                            round(last_iv_f - open_iv, 2) if quantity > 0 else round(
-                                open_iv - last_iv_f, 2)),
-                        'P/L market': round(bid_iv_f - open_iv, 2) if (
-                                quantity > 0 and bid_iv is not None) else round(
-                            open_iv - ask_iv_f, 2) if ask_iv is not None else None,
-                        'Delta': round(delta * quantity, 2),
-                        'Gamma': round(gamma * quantity, 2),
-                        'Theta': round(theta * quantity, 2),
-                        'Vega': round(vega * quantity, 2),
-                        'TrueVega': round(TrueVega * quantity, 2),
-                        "u_pnl": round(unrealized_pnl, 2), # unrealized_pnl
-                    }
-
-                except Exception as e:
-                    logger.error(f"Ошибка при парсинге позиции: {e}")
-
-            # Сохраняем поля словаря data["positions"][symbol] в CSV файл Finam_MyPos.csv (sep=';', encoding='utf-8', index=False)
-            # Если файл отсутствует в папке data/Finam — он будет создан
+        for position in account_response.positions:
             try:
-                my_pos_path = os.path.join(DATA_DIR_FINAM, "Finam_MyPos.csv")
-                os.makedirs(DATA_DIR_FINAM, exist_ok=True)
-                if data["positions"]:
-                    pd.DataFrame.from_dict(data["positions"], orient="index").to_csv(
-                        my_pos_path,
-                        sep=";",
-                        encoding="utf-8",
-                        index=False,
-                    )
-            except Exception as e:
-                logger.error(f"Ошибка при записи Finam_MyPos.csv: {e}")
+                symbol = position.symbol if hasattr(position, "symbol") else "UNKNOWN"
+                if symbol == "UNKNOWN":
+                    continue  # пропускаем позиции без символа
 
-            # Проверяем, не появились ли новые опционы в портфеле
-            update_option_subscriptions_from_portfolio()
+                quantity = (
+                    to_float(position.quantity)
+                    if hasattr(position, "quantity")
+                    else 0.0
+                )
+                current_price = (
+                    to_float(position.current_price)
+                    if hasattr(position, "current_price")
+                    else 0.0
+                )
+                average_price = (
+                    to_float(position.average_price)
+                    if hasattr(position, "average_price")
+                    else 0.0
+                )
+                maintenance_margin = (
+                    to_float(position.maintenance_margin)
+                    if hasattr(position, "maintenance_margin")
+                    else 0.0
+                )
+                daily_pnl = (
+                    to_float(position.daily_pnl)
+                    if hasattr(position, "daily_pnl")
+                    else 0.0
+                )
+                unrealized_pnl = (
+                    to_float(position.unrealized_pnl)
+                    if hasattr(position, "unrealized_pnl")
+                    else 0.0
+                )
+
+                data["positions"][symbol] = {
+                    "quantity": quantity,
+                    "current_price": current_price,
+                    "average_price": average_price,
+                    "maintenance_margin": maintenance_margin,
+                    "daily_pnl": daily_pnl,
+                    "unrealized_pnl": unrealized_pnl,
+                }
+            except Exception as e:
+                logger.error(f"Ошибка при парсинге позиции: {e}")
+
+        # Проверяем, не появились ли новые опционы в портфеле
+        update_option_subscriptions_from_portfolio()
 
     except Exception as e:
         logger.error(
@@ -2048,20 +1870,6 @@ def print_quotes_periodically(stop_event):
         else:
             print("\n=== trades пуст ===")
 
-        # # --- Вывод позиций портфеля data["positions"] ---
-        # data = _account_data[0]
-        # positions = {
-        #     sym: pos
-        #     for sym, pos in data["positions"].items()
-        #     if float(pos.get("quantity", 0)) != 0
-        # }
-        # if positions:
-        #     print(f"\n=== data.positions ({len(positions)} позиций портфеля) ===")
-        #     for symbol, pos in list(positions.items()):
-        #         print(f"{symbol}: {pos}")
-        # else:
-        #     print("\n=== data.positions пуст ===")
-
 
 # ---------------------------------------------------------------------------
 # Управление соединением и переподключением
@@ -2104,11 +1912,11 @@ def reset_state():
         active_orders, \
         _subscription_dirty
     global _full_ticker_to_map, _quote_subscriptions, _cleanup_dirty, _symbol_last_seen
-    global _previous_obsolete, _io_task_queue, _symbol_closed_at
+    global _previous_obsolete, _io_task_queue
+    global _last_trades_cleanup_enqueued
 
     _quote_subscriptions.clear()
     _symbol_last_seen.clear()
-    _symbol_closed_at.clear()
     base_symbols.clear()
     _full_ticker_to_map.clear()
     _last_positions_symbols.clear()
@@ -2124,6 +1932,7 @@ def reset_state():
     _subscription_dirty = False
     _cleanup_dirty = False
     _last_cleanup_check = 0.0
+    _last_trades_cleanup_enqueued = 0.0
 
     # Выбрасываем накопившиеся фоновые задачи, чтобы после переподключения
     # не выполнялась устаревшая очистка/подписка по старым данным
@@ -2255,7 +2064,7 @@ def main():
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    # Thread(target=print_quotes_periodically, args=(stop_event,), daemon=True).start()
+    Thread(target=print_quotes_periodically, args=(stop_event,), daemon=True).start()
     Thread(target=watchdog, args=(stop_event,), daemon=True).start()
 
     # Фоновый поток для задач ввода-вывода (очистка CSV, LastQuote),
@@ -2315,11 +2124,11 @@ def main():
                     logger.info("Перезапуск подписки после добавления новых опционов")
                     restart_quotes_subscription()
 
-                # # Отложенная очистка устаревших опционов (проверяем не чаще раза в 5 секунд)
-                # if _cleanup_dirty and _time.time() - _last_cleanup_check >= 5.0:
-                #     _last_cleanup_check = _time.time()
-                #     logger.info("Периодическая очистка устаревших опционов")
-                #     cleanup_obsolete_subscriptions()
+                # Отложенная очистка устаревших опционов (проверяем не чаще раза в 5 секунд)
+                if _cleanup_dirty and _time.time() - _last_cleanup_check >= 5.0:
+                    _last_cleanup_check = _time.time()
+                    logger.info("Периодическая очистка устаревших опционов")
+                    cleanup_obsolete_subscriptions()
 
                 stop_event.wait(1)
 

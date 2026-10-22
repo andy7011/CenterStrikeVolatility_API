@@ -298,7 +298,7 @@ def calculate_greeks(F, K, T, sigma, option_type="call"):
         "delta": delta,
         "gamma": gamma,
         "theta": theta,
-        "vega": vega,
+        "vega": vega / 100,
         "rho": rho,
     }
 
@@ -787,9 +787,25 @@ def _on_trade(trade_response):
 
             logger.debug(f"Сделка {trade_id}: {trades[trade_id]}")
 
+        # После обработки пакета сделок запускаем проверку состава портфеля
+        # (GetAccount + очистка CSV от инструментов, которых больше нет в портфеле).
+        # Сделка потенциально закрывает инструмент — после неё в Finam_Stream_Trades.csv
+        # могут остаться записи, которые нужно удалить. Выполняется в фоновом потоке
+        # io_worker, чтобы не блокировать gRPC-поток событий.
+        #
+        # Дедупликация: на старте/переподключении подписки на сделки приходит
+        # исторический снапшот пакетами — каждый пакет порождает отдельный _on_trade,
+        # и без ограничения частоты в очередь набиралось бы много одинаковых задач
+        # очистки. Ставим задачу не чаще одного раза за _LAST_TRADES_CLEANUP_INTERVAL.
+        global _last_trades_cleanup_enqueued
+        now_enqueue = _time.time()
+        if (fp_provider is not None and now_enqueue - _last_trades_cleanup_enqueued >= _LAST_TRADES_CLEANUP_INTERVAL):
+            logger.info(f'_on_trade запуск функции verify_positions_and_cleanup_trades')
+            _last_trades_cleanup_enqueued = now_enqueue
+            _io_task_queue.put(lambda: verify_positions_and_cleanup_trades(set()))
+
     except Exception as e:
         logger.error(f"Ошибка в _on_trade: {e}\n{traceback.format_exc()}")
-
 
 # ---------------------------------------------------------------------------
 # Подписка на события по заявкам
@@ -1110,14 +1126,31 @@ def io_worker(stop_event):
 
 
 # функция очистки Finam_Stream_Trades.csv
-def cleanup_trades_csv(current_symbols):
+# функция очистки Finam_Stream_Trades.csv
+def cleanup_trades_csv(actual_positions):
     """
-    Удаляет из Finam_Stream_Trades.csv записи, символ которых отсутствует в current_symbols.
-    Вызывается из фонового потока io_worker через очередь _io_task_queue.
+    Удаляет из Finam_Stream_Trades.csv записи, инструмент которых отсутствует
+    в актуальном составе портфеля.
+
+    Проверка выполняется СТРОГО по тикеру — части символа до знака '@'
+    (например 'RIZ6' или 'RI82500BW6'). Поле option_base (базовый актив) в
+    проверке НЕ участвует.
+
+    Удаляются все записи, чей тикер отсутствует в actual_positions (нет ни одной
+    живой позиции с этим тикером в актуальном портфеле). Это работает и для
+    инструментов, закрытых до старта программы, и для закрытых в процессе работы.
+
+    :param set actual_positions: символы позиций с ненулевым количеством из GetAccount,
+                                 напр. {'RIZ6@RTSX', 'RI90000BK6@RTSX'}
     """
-    file_path = TRADES_CSV_PATH
+    logger.info(f"Запуск функции cleanup_trades_csv очистки Finam_Stream_Trades.csv")
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    file_path = os.path.join(base_dir, "data", "Finam", "Finam_Stream_Trades.csv")
     if not os.path.exists(file_path):
         return
+
+    # Тикеры (часть до '@'), которые есть в актуальном портфеле.
+    live_tickers = {p.split("@")[0] for p in actual_positions if p}
 
     with _trades_csv_lock:
         # Читаем все строки
@@ -1125,20 +1158,17 @@ def cleanup_trades_csv(current_symbols):
             reader = csv.DictReader(f, delimiter=";")
             rows = list(reader)
 
-        # Актуальные инструменты из позиций (RIZ6@RTSX -> RIZ6, RI82500BW6@RTSX -> RI82500BW6)
-        base_tickers = {s.split("@")[0] for s in current_symbols if s}
-        # print(f'base_tickers {base_tickers}')
+        if not rows:
+            return
 
-        # Фильтруем: оставляем только сделки по инструментам, которые есть
-        # в актуальных позициях. Поле option_base (базовый актив)
-        # НЕ используется для сохранения: закрытие одного опциона не должно
-        # оставлять сделки других опционов по тому же базовому активу.
+        # Оставляем только те записи, чей тикер есть в актуальном портфеле.
+        # Поле option_base в фильтре не используется.
         filtered_rows = [
             row
             for row in rows
-            if row.get("ticker") in base_tickers
+            if row.get("ticker") in live_tickers
         ]
-        # print(f'filtered_rows {filtered_rows}')
+
         if len(filtered_rows) != len(rows):
             # Определяем заголовки (из первой строки или фиксированные)
             headers = (
@@ -1169,6 +1199,46 @@ def cleanup_trades_csv(current_symbols):
             # Обновляем множество _trades_csv_ids (удаляем удалённые ID)
             global _trades_csv_ids
             _trades_csv_ids = {row["trade_id"] for row in filtered_rows}
+            logger.info(
+                f"Очистка CSV: удалены записи по инструментам, отсутствующим в портфеле; "
+                f"осталось записей: {len(filtered_rows)}"
+            )
+
+def single_transaction_clearing():
+    """ Однократная очистка файла сделок в файле из Finam_Stream_Trades.csv при запуске кода"""
+    logger.info(
+        f"Запуск функции single_transaction_clearing. Загрузка состава портфеля отдельным запросом GetAccount и"
+        f" очистка файла Finam_Stream_Trades.csv от сделок инструментов, которых уже нет в портфеле")
+    try:
+        if fp_provider is None:
+            logger.warning(
+                "Проверка портфеля: провайдер не инициализирован, очистка CSV отменена"
+            )
+            return
+        account: accounts_service.GetAccountResponse = fp_provider.call_function(
+            fp_provider.accounts_stub.GetAccount,
+            accounts_service.GetAccountRequest(account_id=account_id),
+        )
+        if account is None:
+            logger.warning(
+                "Проверка портфеля: GetAccount не вернул ответ, очистка CSV отменена"
+            )
+            return
+
+        # Актуальный состав портфеля с ненулевым количеством из свежего снапшота
+        actual_positions = {
+            position.symbol
+            for position in account.positions
+            if to_float(position.quantity) != 0
+        }
+        logger.info(f'Актуальный состав портфеля: {actual_positions}')
+        cleanup_trades_csv(actual_positions)
+
+    except Exception as e:
+        logger.error(
+            f"Ошибка проверки портфеля через GetAccount: {e}\n{traceback.format_exc()}"
+        )
+
 
 def verify_positions_and_cleanup_trades(removed_symbols=frozenset()):
     """Проверка состава портфеля отдельным запросом GetAccount (унитарный,
@@ -1186,14 +1256,13 @@ def verify_positions_and_cleanup_trades(removed_symbols=frozenset()):
                                 по _last_positions_symbols.
     """
     global _last_positions_symbols
-
+    logger.info(f"Запуск функции verify_positions_and_cleanup_trades Проверка состава портфеля отдельным запросом GetAccount")
     try:
         if fp_provider is None:
             logger.warning(
                 "Проверка портфеля: провайдер не инициализирован, очистка CSV отменена"
             )
             return
-
         account: accounts_service.GetAccountResponse = fp_provider.call_function(
             fp_provider.accounts_stub.GetAccount,
             accounts_service.GetAccountRequest(account_id=account_id),
@@ -1220,18 +1289,16 @@ def verify_positions_and_cleanup_trades(removed_symbols=frozenset()):
         # Символы, которые стрим считал закрытыми, но которые есть в свежем снапшоте
         restored = removed_symbols & actual_positions
         if restored:
-            logger.warning(
-                f"Проверка портфеля: символы {restored} присутствуют в снапшоте GetAccount "
-                f"— ложное срабатывание стрима, очистка CSV по ним не выполняется"
-            )
+            # logger.warning(
+            #     f"Проверка портфеля: символы {restored} присутствуют в снапшоте GetAccount "
+            #     f"— ложное срабатывание стрима, очистка CSV по ним не выполняется"
+            # )
             # Восстанавливаем символы в составе портфеля, чтобы не терять их отслеживание
             _last_positions_symbols |= restored
 
         confirmed_removed = removed_symbols - actual_positions
         if not confirmed_removed:
-            logger.info(
-                "Проверка портфеля: подтверждённых закрытых позиций нет, очистка CSV не требуется"
-            )
+            # logger.info(f"Проверка портфеля: подтверждённых закрытых позиций нет, очистка CSV не требуется")
             return
 
         logger.info(
@@ -1249,32 +1316,20 @@ def verify_positions_and_cleanup_trades(removed_symbols=frozenset()):
 def update_option_subscriptions_from_portfolio():
     global subscribed_option_symbols, _last_positions_symbols, _last_orders_symbols
     global _subscription_dirty, _cleanup_dirty, _symbol_last_seen
-    global _previous_obsolete, _symbol_closed_at
+    global _previous_obsolete
 
-    # Текущие символы из позиций портфеля (включая позиции с нулевым количеством)
+    # Во внеторговое время подписки не трогаем: снапшот портфеля, пришедший
+    # вне сессии, может отличаться от состояния на конец дня и порождать
+    # ложное обнаружение «устаревших» опционов
+    if not schedule.trade_session(get_market_now()):
+        return
+
+    # Текущие символы из позиций портфеля с ненулевым количеством
     raw_positions = _account_data[0].get("positions", {})
-    positions = {sym: pos for sym, pos in raw_positions.items()}
+    positions = {
+        sym: pos for sym, pos in raw_positions.items() if float(pos["net_pos"]) != 0
+    }
     current_positions = set(positions.keys())
-
-    # Символы с нулевым количеством: сделки по ним удаляем из CSV немедленно,
-    # но сами записи в data["positions"] и Finam_MyPos.csv остаются.
-    zero_positions = {
-        sym
-        for sym, pos in positions.items()
-        if _safe_float(pos.get("quantity", pos.get("net_pos"))) == 0
-    }
-    # Только ненулевые позиции — их сделки должны остаться в CSV (Finam_Stream_Trades.csv)
-    active_positions = {
-        sym for sym in positions if sym not in zero_positions
-    }
-
-    # Нулевые позиции чистим из CSV (Finam_Stream_Trades.csv) немедленно (операция ставится в очередь
-    # фонового потока io_worker, чтобы не блокировать gRPC-поток событий)
-    if zero_positions and schedule.trade_session(get_market_now()):
-        # logger.info(f"Закрыты позиции (нулевые): {zero_positions}")
-        _io_task_queue.put(
-            lambda positions=set(active_positions): cleanup_trades_csv(positions)
-        )
 
     # Текущие символы из активных заявок
     current_orders = set()
@@ -1283,26 +1338,6 @@ def update_option_subscriptions_from_portfolio():
         if symbol:
             current_orders.add(symbol)
 
-    # Позиции, реально закрытые (не появлялись в событиях дольше задержки),
-    # — удаляем из CSV сделки по ним. Проверяем до быстрой проверки, чтобы
-    # подтверждённое закрытие сработало даже при неизменных множествах.
-    now = _time.time()
-    if schedule.trade_session(get_market_now()):
-        expired = {
-            sym: ts
-            for sym, ts in _symbol_closed_at.items()
-            if now - ts > _POSITION_CLEANUP_DELAY
-        }
-        if expired:
-            logger.info(
-                f"Закрыты позиции (подтверждено): {set(expired.keys())}"
-            )
-            for sym in expired:
-                _symbol_closed_at.pop(sym, None)
-            _io_task_queue.put(
-                lambda positions=set(active_positions): cleanup_trades_csv(positions)
-            )
-
     # Если ничего не изменилось — выходим (быстрая проверка)
     if (
         current_positions == _last_positions_symbols
@@ -1310,21 +1345,26 @@ def update_option_subscriptions_from_portfolio():
     ):
         return
 
-    # Символы, которые были в портфеле раньше, но исчезли сейчас (нет ни в позициях,
-    # ни в заявках). Для них фиксируем время закрытия — CSV очистится позже,
-    # по истечении _POSITION_CLEANUP_DELAY, чтобы не терять данные из-за
-    # распараллеливания событий потока аккаунта.
-    removed_symbols = _last_positions_symbols - current_positions
-    for sym in removed_symbols:
-        _symbol_closed_at.setdefault(sym, now)
+    # Символы, которые были в портфеле/заявках раньше, но исчезли сейчас.
+    # Важно учитывать и заявки, а не только позиции: опцион мог быть куплен
+    # и продан через заявку, и позиция уже ненулевой, а символ исчез из заявок.
+    # Тогда CSV по нему всё равно нужно чистить.
+    prev_all_symbols = _last_positions_symbols | _last_orders_symbols
+    all_symbols_now = current_positions | current_orders
+    removed_symbols = prev_all_symbols - all_symbols_now
 
-    # # Нулевые позиции чистим из CSV немедленно (операция ставится в очередь
-    # # фонового потока io_worker, чтобы не блокировать gRPC-поток событий)
-    # if zero_positions and schedule.trade_session(get_market_now()):
-    #     # logger.info(f"Закрыты позиции (нулевые): {zero_positions}")
-    #     _io_task_queue.put(
-    #         lambda positions=set(active_positions): cleanup_trades_csv(positions)
-    #     )
+    # Если позиции/заявки изменились и сейчас торговая сессия — проверяем состав
+    # портфеля отдельным запросом GetAccount и только после подтверждения
+    # удаляем из CSV сделки по действительно закрытым инструментам.
+    # Потоковый снапшот подписки может быть промежуточным/неполным, поэтому
+    # доверяем ему только как триггеру, а не как источнику истины.
+    # Проверка выполняется в фоновом потоке io_worker, чтобы не блокировать
+    # gRPC-поток событий сетевым запросом.
+    if removed_symbols and schedule.trade_session(get_market_now()):
+        logger.info(f"Закрыты позиции (по данным стрима): {removed_symbols}")
+        _io_task_queue.put(
+            lambda removed=set(removed_symbols): verify_positions_and_cleanup_trades(removed)
+        )
 
     # Обновляем сохранённые множества
     _last_positions_symbols = current_positions
@@ -1361,11 +1401,6 @@ def update_option_subscriptions_from_portfolio():
 
         # Помечаем, что нужно перезапустить подписку (сделаем это в main сразу)
         _subscription_dirty = True
-
-    # Если символ вернулся в портфель/заявки — снимаем пометку о закрытии
-    for sym in list(_symbol_closed_at.keys()):
-        if sym in option_symbols or sym in current_orders:
-            _symbol_closed_at.pop(sym, None)
 
     # --- Устаревшие опционы (не появлялись >30 сек) — помечаем для очистки ---
     # Опционы, которых нет в текущем составе и которые не появлялись более 30 секунд
@@ -1430,7 +1465,7 @@ def cleanup_obsolete_subscriptions():
     # Пересчитываем актуальные символы
     raw_positions = _account_data[0].get("positions", {})
     positions = {
-        sym: pos for sym, pos in raw_positions.items() if float(pos["quantity"]) != 0
+        sym: pos for sym, pos in raw_positions.items() if float(pos["net_pos"]) != 0
     }
     current_positions = set(positions.keys())
 
@@ -1951,14 +1986,6 @@ def _on_account_info(account_response):
                     'bidIV': round(bid_iv_f, 2),
                     'lastIV': round(last_iv_f, 2),
                     'askIV': round(ask_iv_f, 2),
-                    # 'P/L theor': round(volatility_f - open_iv, 2) if quantity > 0 else round(
-                    #     open_iv - volatility_f, 2),
-                    # 'P/L last': 0 if last_iv_f == 0 else (
-                    #     round(last_iv_f - open_iv, 2) if quantity > 0 else round(
-                    #         open_iv - last_iv_f, 2)),
-                    # 'P/L market': round(bid_iv_f - open_iv, 2) if (
-                    #         quantity > 0 and bid_iv is not None) else round(
-                    #     open_iv - ask_iv_f, 2) if ask_iv is not None else None,
                     'Delta': round(delta * quantity, 2),
                     'Gamma': round(gamma * quantity, 4),
                     'Theta': round(theta * quantity, 2),
@@ -1986,7 +2013,6 @@ def _on_account_info(account_response):
             logger.error(f"Ошибка при записи Finam_MyPos.csv: {e}")
 
         # Проверяем, не появились ли новые опционы в портфеле
-        # logger.info(f"_on_account_info Проверяем, не появились ли новые опционы в портфеле. update_option_subscriptions_from_portfolio()")
         update_option_subscriptions_from_portfolio()
 
     except Exception as e:
@@ -2241,6 +2267,7 @@ def initialize_connection(stop_event):
         raise RuntimeError("Не найдено ни одного торгового счёта")
     account_id = fp_provider.account_ids[0]
     logger.info(f"Инициализация: работа с аккаунтом {account_id}")
+    single_transaction_clearing() # Очистка файла Finam_Stream_Trades.csv от старых сделок
 
     # 3. Сбрасываем все глобальные состояния
     reset_state()

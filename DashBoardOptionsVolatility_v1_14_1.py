@@ -1818,12 +1818,11 @@ def updateTable(n, value, active_tab):
     )
     # Фильтрация строк по базовому активу option_base и тикеру ticker
     df_pos = df_pos[(df_pos['option_base'] == value) | (df_pos['ticker'] == value)]
+    # Присвоение фьючерсу значения дельта
+    df_pos.loc[df_pos['ticker'] == value, 'Delta'] = df_pos.loc[df_pos['ticker'] == value, 'net_pos']
 
-    # Вычисление итогов по колонке net_pos
-    total_net_pos = df_pos['net_pos'].sum()
-    total_theor = df_pos['theor'].sum()
-    # total_theor = (df_pos['theor'] * df_pos['net_pos']).sum()
-    total_last = df_pos['last'].sum()
+    # Вычисление итогов для опционов по колонке net_pos
+    total_net_pos = df_pos.loc[df_pos['ticker'] != value, 'net_pos'].sum()
 
     # Вычисление сумм
     total_delta = df_pos['Delta'].sum() if 'Delta' in df_pos.columns else 0
@@ -1845,11 +1844,8 @@ def updateTable(n, value, active_tab):
 
     # Создание строки итогов
     total_row = {col: '' for col in df_pos.columns}
-    total_row['ticker'] = 'Total'
+    total_row['ticker'] = 'Total options'
     total_row['net_pos'] = total_net_pos
-    # total_row['P/L theor'] = round(weighted_pl_theor, 2)
-    # total_row['P/L last'] = round(weighted_pl_last, 2)
-    # total_row['P/L market'] = round(weighted_pl_market, 2)
     total_row['Delta'] = round(total_delta, 2)
     total_row['Gamma'] = round(total_gamma, 4)
     total_row['Theta'] = round(total_theta, 2)
@@ -1873,7 +1869,10 @@ def updateTable(n, value, active_tab):
 def updateTrades(n, value, active_tab):
     if active_tab != 'tab-5':
         raise PreventUpdate
-    df_trades = read_csv_cached('QUIK_Stream_Trades_ALL.csv', encoding='UTF-8', sep=';')
+    df_trades = pd.read_csv(
+        os.path.join(DATA_DIR_FINAM, "Finam_Stream_Trades_ALL.csv"),
+        sep=";"
+    )
     # Добавляем столбец с порядковым номером строки, начиная с 1
     df_trades['num'] = range(1, len(df_trades) + 1)
     # Переставляем столбец 'num' в начало
@@ -1897,7 +1896,11 @@ def updateTrades(n, value, active_tab):
 def updateOrders(n, value, active_tab):
     if active_tab != 'tab-6':
         raise PreventUpdate
-    df_orders = read_csv_cached('QUIK_Stream_Orders.csv', encoding='UTF-8', sep=';')
+    df_orders = pd.read_csv(
+        os.path.join(DATA_DIR_FINAM, "Finam_Stream_Orders.csv"),
+        sep=";"
+    )
+    # df_orders = read_csv_cached('QUIK_Stream_Orders.csv', encoding='UTF-8', sep=';')
     # Добавляем столбец с порядковым номером строки, начиная с 1
     df_orders['num'] = range(1, len(df_orders) + 1)
     # Переставляем столбец 'num' в начало
@@ -1919,7 +1922,10 @@ def updateOrders(n, value, active_tab):
     prevent_initial_call=True
 )
 def updateGauge(n, value):
-    df_pos = read_csv_cached('QUIK_MyPos.csv', sep=';')
+    df_pos = pd.read_csv(
+        os.path.join(DATA_DIR_FINAM, "Finam_MyPos.csv"),
+        sep=";"
+    )
     # Фильтрация строк по базовому активу
     df_pos = df_pos[df_pos['option_base'] == value]
 
