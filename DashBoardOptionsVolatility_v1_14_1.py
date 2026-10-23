@@ -564,7 +564,7 @@ tab6_content = [  # Таблица моих ордеров
                 },
             ]
         ),
-        style={'margin-left': '400px'}  # Сдвиг вправо
+        # style={'margin-left': '400px'}  # Сдвиг вправо
     )
 ]
 
@@ -1906,8 +1906,8 @@ def updateOrders(n, value, active_tab):
     # Переставляем столбец 'num' в начало
     cols = ['num'] + [col for col in df_orders.columns if col != 'num']
     df_orders = df_orders[cols]
-    # Преобразование столбца order_num в строку
-    df_orders['order_num'] = df_orders['order_num'].astype(str)
+    # # Преобразование столбца order_num в строку
+    # df_orders['order_num'] = df_orders['order_num'].astype(str)
     # Фильтрация строк по базовому активу
     df_orders = df_orders[df_orders['option_base'] == value]
 

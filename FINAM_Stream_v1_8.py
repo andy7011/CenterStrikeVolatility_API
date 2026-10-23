@@ -117,6 +117,27 @@ schedule = Futures()
 # Хранилище активных заявок: {order_id: { ... }}
 active_orders = {}
 
+CSV_ORDERS_FILENAME = "Finam_Stream_Orders.csv"
+CSV_ORDERS_COLUMNS = [
+    "transact_at",
+    "order_num",
+    "opt_base",
+    "ticker",
+    "opt_type",
+    "strike",
+    "expdate",
+    "operation",
+    "volume",
+    "price",
+    "value",
+    "type",
+    "status",
+    "exec",
+    "remain",
+    "updated",
+    "order_iv",
+]
+
 # Хранилище сделок: {trade_id: { ... }}
 trades = {}
 
@@ -452,8 +473,6 @@ def _on_order(order_state):
     """
     try:
         # Различаем два случая по НАЛИЧИЮ поля orders, а не по его значению.
-        # Если поле присутствует — перед нами контейнерный ответ (список может
-        # быть пустым, тогда обрабатывать нечего). Если поля нет — одиночная заявка.
         if hasattr(order_state, "orders"):
             order_states = order_state.orders or []
         else:
@@ -545,40 +564,64 @@ def _on_order(order_state):
                     else:
                         order_type = str(type_raw)
 
-                # --- Временные метки (transact_at, accept_at) ---
-                transact_at = None
-                accept_at = None
-                # Пытаемся взять из order_state_item (как в структуре ответа)
-                if hasattr(order_state_item, "transact_at"):
-                    transact_at = _format_timestamp(order_state_item.transact_at)
-                if hasattr(order_state_item, "accept_at"):
-                    accept_at = _format_timestamp(order_state_item.accept_at)
-                # Если не нашли, пробуем из order (на случай другого формата)
-                if transact_at is None and hasattr(order, "transact_at"):
-                    transact_at = _format_timestamp(order.transact_at)
-                if accept_at is None and hasattr(order, "accept_at"):
-                    accept_at = _format_timestamp(order.accept_at)
+                # --- Метка времени transact_at ---
+                transact_at_str = None
+                if order_state_item.HasField("transact_at"):
+                    ts = order_state_item.transact_at
+                    try:
+                        dt_msk = fp_provider.timestamp_to_msk_datetime(ts.seconds)
+                        transact_at_str = dt_msk.strftime("%d.%m.%Y %H:%M:%S")
+                    except (AttributeError, ValueError, TypeError):
+                        transact_at_str = None
+
+                # --- Информация об опционе ---
+                chain = options_chains.get(symbol)
+                option_base = chain.get("base_ticker") if chain else ""
+                opt_type_raw = chain.get("type") if chain else ""
+                opt_type = "Put" if "PUT" in opt_type_raw.upper() else (
+                    "Call" if "CALL" in opt_type_raw.upper() else opt_type_raw
+                )
+                opt_strike = chain.get("strike") if chain else ""
+                opt_expdate = fmt_ru_date(chain.get("expiration_last_day")) if chain else ""
+
+                # Сторона сделки: SIDE_BUY/1 -> Купля, SIDE_SELL/2 -> Продажа
+                side_upper = side.upper()
+                if "BUY" in side_upper or side == "1":
+                    operation = "Купля"
+                elif "SELL" in side_upper or side == "2":
+                    operation = "Продажа"
+                else:
+                    operation = side
+
+                ticker = symbol.split("@")[0] if symbol else ""
 
                 # --- Сохраняем заявку ---
                 active_orders[order_id] = {
-                    "symbol": symbol,
-                    "quantity": quantity,
+                    "transact_at": transact_at_str,
+                    "order_num": order_id,
+                    "opt_base": option_base,
+                    "ticker": ticker,
+                    "opt_type": opt_type,
+                    "strike": opt_strike,
+                    "expdate": opt_expdate,
+                    "operation": operation,
+                    "volume": quantity,
                     "price": price,
-                    "side": side,
+                    "value": quantity * price,
                     "type": order_type,
                     "status": status,
-                    "executed_quantity": executed_quantity,
-                    "remaining_quantity": remaining_quantity,
-                    "client_order_id": order.client_order_id
-                    if hasattr(order, "client_order_id")
-                    else "",
-                    "transact_at": transact_at,
-                    "accept_at": accept_at,
+                    "exec": executed_quantity,
+                    "remain": remaining_quantity,
                     "updated": datetime.now().strftime("%H:%M:%S"),
                 }
                 # Добавляем расчёт IV (если это опцион)
                 order_iv = calculate_order_iv(symbol, price)
-                active_orders[order_id]["order_iv"] = order_iv
+                if order_iv is not None:
+                    active_orders[order_id]["order_iv"] = round(float(order_iv), 2)
+                else:
+                    active_orders[order_id]["order_iv"] = None
+                    logger.warning("order_iv is None для order_id=%s", order_id)
+
                 logger.debug(f"Активная заявка #{order_id}: {active_orders[order_id]}")
             else:
                 # Терминальный статус — удаляем заявку
@@ -588,13 +631,30 @@ def _on_order(order_state):
                         f"Заявка #{order_id} удалена (статус: {status}). Была: {removed}"
                     )
 
+        # --- Запись CSV-файла Finam_Stream_Orders.csv ---
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        file_path = os.path.join(base_dir, "data", "Finam", CSV_ORDERS_FILENAME)
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
+        with open(file_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(
+                f,
+                fieldnames=CSV_ORDERS_COLUMNS,
+                extrasaction='ignore',
+                delimiter=";",
+                restval=''
+            )
+            writer.writeheader()
+            for order_id, order_data in active_orders.items():
+                # Гарантируем, что order_num соответствует ключу словаря
+                order_data["order_num"] = order_id
+                writer.writerow(order_data)
+
         # Проверяем, не появились ли новые опционы в заявках
-        # logger.info(f"_on_order Проверяем, не появились ли новые опционы в заявках. update_option_subscriptions_from_portfolio()")
         update_option_subscriptions_from_portfolio()
 
     except Exception as e:
         logger.error(f"Ошибка в _on_order: {e}\n{traceback.format_exc()}")
-
 
 def _load_existing_ids(file_path):
     """Загружает все trade_id из существующего CSV-файла."""
