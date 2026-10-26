@@ -480,20 +480,16 @@ tab4_content = [  # MyPosTable
                             'fontWeight': 'bold',
                             'backgroundColor': 'rgb(60, 60, 60)'
                         },
+                        {'if': {'column_id': 'time_last'}, 'color': '#DAA520'},
+                        {'if': {'column_id': 'bid'}, 'color': '#3D9970'},
+                        {'if': {'column_id': 'last'}, 'color': '#DAA520'},
+                        {'if': {'column_id': 'ask'}, 'color': '#FF0000'},
                         # правило для net_pos == 0
                         {
                             'if': {'filter_query': 'net_pos eq 0'},
                             'color': '#CCCCCC',  # светло‑серый
                             'fontStyle': 'italic'  # курсив
                         },
-                        {'if': {'filter_query': '{P/L last} > 1', 'column_id': 'P/L last'},
-                         'backgroundColor': '#3D9970', 'color': 'white'},
-                        {'if': {'filter_query': '{P/L market} > 1', 'column_id': 'P/L market'},
-                         'backgroundColor': '#3D9970', 'color': 'white'},
-                        {'if': {'column_id': 'time_last'}, 'color': '#DAA520'},
-                        {'if': {'column_id': 'bid'}, 'color': '#3D9970'},
-                        {'if': {'column_id': 'last'}, 'color': '#DAA520'},
-                        {'if': {'column_id': 'ask'}, 'color': '#FF0000'},
                     ]
                 ),
                 style={'margin': '20px'}
@@ -677,30 +673,30 @@ app.layout = html.Div(children=[
         # Интервал обновления данных - 5 секунд
         dcc.Interval(
             id='interval-component',
-            interval=1000 * 5,
+            interval=5000,
             n_intervals=0),
         # Интервал обновления данных - 10 секунд
         dcc.Interval(
             id='interval-10sec',
-            interval=1000 * 10,  # 10 секунд
+            interval=10000,  # 10 секунд
             n_intervals=0),
 
         # Интервал обновления данных - 1 минута
         dcc.Interval(
             id='interval-1min',
-            interval=1000 * 60,  # 1 минута
+            interval=60000,  # 1 минута
             n_intervals=0),
 
         # Интервал обновления данных - 5 минут
         dcc.Interval(
             id='interval-5min',
-            interval=1000 * 60 * 5,  # 5 минут
+            interval=300000,  # 5 минут
             n_intervals=0),
 
         # Интервал обновления данных - 60 минут
         dcc.Interval(
             id='interval-60min',
-            interval=1000 * 60 * 60,  # 60 минут
+            interval=3600000,  # 60 минут
             n_intervals=0),
 
         # Слайдер
