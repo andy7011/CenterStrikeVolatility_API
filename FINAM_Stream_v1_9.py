@@ -2171,8 +2171,8 @@ def print_quotes_periodically(stop_event):
         print("\n" + "=" * 40)
         print(f"=== Идентификатор аккаунта: {data.get('account_id', 'Не указан')} ===")
         print(f"Статус аккаунта: {data.get('status', 'Не указан')}")
-        print(f"Equity (средства + позиции): {data.get('equity', 0):,.2f}")
-        print(f"Нереализованная прибыль: {data.get('unrealized_profit', 0):,.2f}")
+        print(f"Equity: {data.get('equity', 0):,.2f}")
+        print(f"    VM: {data.get('unrealized_profit', 0):,.2f}")
 
         cash_rub = data.get("cash", {}).get("RUB", {})
         if cash_rub:
@@ -2180,13 +2180,13 @@ def print_quotes_periodically(stop_event):
                 f"RUB Balance: {cash_rub.get('balance', 0):,.2f} | Blocked: {cash_rub.get('blocked', 0):,.2f} | Free: {cash_rub.get('free', 0):,.2f}")
             gm = cash_rub.get("GM", 0)
             if gm:
-                print(f"GM (залог % от equity): {gm:.0f}%")
+                print(f"    GM: {gm:.0f}%")
         else:
             print("Нет данных по RUB в cash")
 
         margin = data.get("margin", {})
         if margin:
-            print(f"Доступные средства: {margin.get('available_cash', 0):,.2f}")
+            print(f" Free: {margin.get('available_cash', 0):,.2f}")
             # Для FORTS это money_reserved, для MC/MCT это initial/maintenance margin
             reserved = margin.get('money_reserved') or margin.get('initial_margin')
             if reserved is not None:

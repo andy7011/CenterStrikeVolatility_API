@@ -1,0 +1,2523 @@
+import logging  # Модуль для ведения логов
+from threading import Thread, Event  # Модуль для создания потоков и событий
+from datetime import datetime  # Модуль для работы с датой и временем
+from time import sleep  # Функция для приостановки выполнения программы
+import time as _time
+import signal
+import traceback  # Модуль для получения полной информации об ошибке
+import threading
+import random
+import math
+import csv
+import os
+import queue  # Очередь для фоновых задач I/O (очистка CSV, LastQuote)
+from scipy.stats import norm
+from scipy.optimize import brentq
+from accfifo import Entry, FIFO
+import pandas as pd
+
+# Импортируем только те функции MOEX API, которые реально используются в этом модуле
+from moex_api import get_option_expirations
+from FinamPy import FinamPy  # Основной класс библиотеки FinamPy
+from FinamPy.grpc import orders_service_pb2 as orders_service
+from FinamPy.grpc import assets_service_pb2 as assets_service
+from FinamPy.grpc import accounts_service_pb2 as accounts_service  # Счета (GetAccount)
+from FinamPy.grpc.assets_service_pb2 import (
+    ClockRequest,
+    ClockResponse,
+)  # Время на сервере
+from FinamPy.grpc import marketdata_service_pb2 as marketdata_service
+from FinLabPy.Schedule.MOEX import Futures  # Расписание торгов
+from app.supported_base_asset import MAP  # Список базовых активов
+from app.central_strike import get_list_of_strikes
+
+# Логгер на уровне модуля
+logger = logging.getLogger("FinamPy.Stream")
+# Константы
+DAYS_IN_YEAR = 365.0
+RISK_FREE_RATE = 0.0  # Безрисковая ставка (0 для фьючерсов)
+# Каталог data/Finam с CSV-файлами
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR_FINAM = os.path.join(BASE_DIR, "data", "Finam")
+TRADES_CSV_PATH = os.path.join(DATA_DIR_FINAM, "Finam_Stream_Trades.csv")
+# ---------------------------------------------------------------------------
+# Глобальные переменные состояния
+# ---------------------------------------------------------------------------
+fp_provider = None  # Глобальный экземпляр FinamPy
+account_id = None  # Текущий идентификатор аккаунта
+_full_ticker_to_map = {}  # {полный_тикер: тикер_из_MAP}
+# Время последнего появления символа в портфеле/заявках: {symbol: timestamp}
+_symbol_last_seen = {}
+
+# Множество символов базовых фьючерсов, например {'RIZ6@RTSX', 'SiZ6@RTSX', ...}
+# Заполняется в subscribe_base_assets и используется для фильтрации опционов.
+base_symbols = set()
+
+# Множества для хранения уже записанных trade_id (для каждого файла csv)
+_trades_csv_ids = set()
+_trades_all_csv_ids = set()
+
+# Последние наборы символов из позиций и заявок (для быстрой проверки изменений)
+_last_positions_symbols = set()
+_last_orders_symbols = set()
+# Момент времени, когда символ перестал появляться в событиях: {symbol: timestamp}.
+# Используется для отложенной очистки CSV (позиция считается закрытой,
+# если она отсутствует в потоке дольше _POSITION_CLEANUP_DELAY).
+_symbol_closed_at = {}
+# Задержка (сек) перед удалением из Finam_Stream_Trades.csv позиций,
+# которые исчезли из событий аккаунта (защита от «рассинхрона» потока).
+_POSITION_CLEANUP_DELAY = 30.0
+# Хранилище устаревших опционов для логирования
+_previous_obsolete = set()
+_subscription_dirty = (
+    False  # флаг необходимости немедленного перезапуска (для новых опционов)
+)
+_cleanup_dirty = False  # флаг необходимости отложенной очистки (для старых опционов)
+_last_cleanup_check = 0.0  # время последней попытки очистки
+# Время последней постановки задачи проверки портфеля/очистки CSV в очередь.
+# Нужно для дедупликации: при старте подписки на сделки приходит исторический
+# снапшот внутри пакетов, каждый пакет → отдельный _on_trade → в очередь
+# ставится отдельная задача. Чтобы не выполнять 4+ одинаковых очисток подряд,
+# ограничиваем частоту постановки задач.
+_LAST_TRADES_CLEANUP_INTERVAL = 5.0  # сек
+_last_trades_cleanup_enqueued = 0.0
+
+# Флаг запроса переподключения от watchdog или упавших потоков
+_reconnect_requested = False
+
+# Список всех активных потоков подписок
+_stream_threads = []
+
+# Блокировка для защиты от одновременного переподключения
+_reconnect_lock = threading.Lock()
+# Блокировка для синхронизации доступа к CSV-файлам сделок
+_trades_csv_lock = threading.Lock()
+
+# Очередь фоновых задач ввода-вывода.
+# Сюда ставятся «тяжёлые» операции (очистка CSV, сетевые запросы LastQuote),
+# чтобы не блокировать gRPC-потоки событий (_on_order, _on_account_info).
+_io_task_queue = queue.Queue()
+
+
+# Глобальный список для хранения данных аккаунта
+_account_data = [
+    {
+        "positions": {},
+        "cash": {},
+        "equity": 0.0,
+        "unrealized_profit": 0.0,
+        "GM": 0.0,
+        "portfolio_type": "",
+    }
+]
+
+# Объект расписания торгов
+schedule = Futures()
+
+# Хранилище активных заявок: {order_id: { ... }}
+active_orders = {}
+
+CSV_ORDERS_FILENAME = "Finam_Stream_Orders.csv"
+CSV_ORDERS_COLUMNS = [
+    "transact_at",
+    "order_num",
+    "opt_base",
+    "ticker",
+    "opt_type",
+    "strike",
+    "expdate",
+    "operation",
+    "volume",
+    "price",
+    "value",
+    "type",
+    "status",
+    "exec",
+    "remain",
+    "updated",
+    "order_iv",
+]
+
+# Хранилище сделок: {trade_id: { ... }}
+trades = {}
+
+
+class QuoteSubscription:
+    """Управляемая подписка на котировки с возможностью остановки."""
+
+    def __init__(self, fp_provider, symbols, name="QuotesThread"):
+        self.fp_provider = fp_provider
+        self.symbols = symbols
+        self.name = name
+        self.stream = None
+        self.stop_event = threading.Event()
+        self.thread = None
+
+    def _run(self):
+        """Основной цикл подписки."""
+        while not self.stop_event.is_set():
+            try:
+                self.stream = self.fp_provider.marketdata_stub.SubscribeQuote(
+                    request=marketdata_service.SubscribeQuoteRequest(
+                        symbols=self.symbols
+                    ),
+                    metadata=(self.fp_provider.metadata,),
+                )
+                # Читаем события, пока не запрошена остановка
+                while not self.stop_event.is_set():
+                    event = next(self.stream)
+                    self.fp_provider.on_quote.trigger(event)
+            except ValueError as e:
+                # Канал закрыт. Логируем только если остановка не была запрошена
+                # намеренно, чтобы была видна причина завершения потока.
+                if not self.stop_event.is_set():
+                    logger.warning(f"Канал подписки закрыт ({self.name}): {e}")
+                break
+            except Exception as e:
+                if self.stop_event.is_set():
+                    break
+                logger.error(f"Ошибка подписки на котировки ({self.name}): {e}")
+                sleep(5)  # повторная попытка через 5 секунд
+
+    def start(self):
+        """Запускает поток подписки."""
+        self.thread = Thread(target=self._run, name=self.name, daemon=True)
+        self.thread.start()
+
+    def stop(self):
+        """Останавливает поток и отменяет gRPC-стрим."""
+        self.stop_event.set()
+        if self.stream is not None:
+            try:
+                self.stream.cancel()
+            except Exception:
+                pass
+        if self.thread is not None:
+            self.thread.join(timeout=10)
+
+
+# ---------------------------------------------------------------------------
+# Вспомогательные функции
+# ---------------------------------------------------------------------------
+def black_76_price(F, K, T, sigma, option_type="call"):
+    """Цена европейского опциона на фьючерс по модели Блэка-76."""
+    if sigma <= 0 or T <= 0:
+        return 0.0
+    d1 = (math.log(F / K) + 0.5 * sigma**2 * T) / (sigma * math.sqrt(T))
+    d2 = d1 - sigma * math.sqrt(T)
+    if option_type == "call":
+        price = math.exp(-RISK_FREE_RATE * T) * (F * norm.cdf(d1) - K * norm.cdf(d2))
+    else:
+        price = math.exp(-RISK_FREE_RATE * T) * (K * norm.cdf(-d2) - F * norm.cdf(-d1))
+    return price
+
+
+def black_76_vega(F, K, T, sigma):
+    """Вега (производная цены по волатильности)."""
+    if sigma <= 0 or T <= 0:
+        return 0.0
+    d1 = (math.log(F / K) + 0.5 * sigma**2 * T) / (sigma * math.sqrt(T))
+    return F * math.exp(-RISK_FREE_RATE * T) * norm.pdf(d1) * math.sqrt(T)
+
+
+def initial_volatility_guess(F, K, T, price, option_type="call"):
+    """
+    Быстрое начальное приближение IV для метода Ньютона.
+    Использует формулу Бренера–Субраманьяна для ATM и корректировку для OTM.
+    """
+    if T <= 0 or price <= 0:
+        return 0.2  # дефолт
+    # Внутренняя стоимость
+    intrinsic = max(0, F - K) if option_type == "call" else max(0, K - F)
+    if price <= intrinsic:
+        return 0.001  # минимум
+    # Для ATM опционов: sigma ≈ sqrt(2π/T) * (price / F) (приближение)
+    if abs(F - K) / F < 0.05:  # около денег
+        return math.sqrt(2 * math.pi) * price / (F * math.sqrt(T))
+    else:
+        # Для OTM используем бисекцию на 5 итерациях или возвращаем дефолт 0.2
+        # Простой вариант: стартовая 0.2
+        return 0.2
+
+
+def implied_volatility_newton(
+    market_price,
+    F,
+    K,
+    T,
+    option_type="call",
+    initial_guess=None,
+    tolerance=1e-8,
+    max_iter=100,
+):
+    """
+    Вычисление IV методом Ньютона с аналитической вегой.
+    Возвращает sigma (десятичная дробь) или None при неудаче.
+    """
+    if T <= 0 or market_price <= 0:
+        return None
+    intrinsic = max(0, F - K) if option_type == "call" else max(0, K - F)
+    if market_price < intrinsic:
+        return None
+
+    sigma = (
+        initial_guess
+        if initial_guess is not None
+        else initial_volatility_guess(F, K, T, market_price, option_type)
+    )
+    sigma = max(sigma, 1e-5)  # защита от нуля
+
+    for _ in range(max_iter):
+        price = black_76_price(F, K, T, sigma, option_type)
+        diff = price - market_price
+        if abs(diff) < tolerance:
+            return sigma
+        vega = black_76_vega(F, K, T, sigma)
+        if abs(vega) < 1e-12:
+            break  # вега слишком мала, дальнейшие шаги бесполезны
+        step = diff / vega
+        sigma_new = sigma - step
+        if sigma_new <= 0 or not math.isfinite(sigma_new):
+            break
+        sigma = sigma_new
+
+    # Если не сошлось — пробуем Brent как fallback
+    try:
+        sigma = brentq(
+            lambda s: black_76_price(F, K, T, s, option_type) - market_price, 1e-5, 10.0
+        )
+        return sigma
+    except ValueError:
+        return None
+
+
+def calculate_greeks(F, K, T, sigma, option_type="call", trading_days_per_year=365):
+    if sigma <= 0 or T <= 0:
+        return {"delta": None, "gamma": None, "theta": None, "vega": None, "rho": None}
+
+    sqrt_T = math.sqrt(T)
+    d1 = (math.log(F / K) + 0.5 * sigma**2 * T) / (sigma * sqrt_T)
+    pdf_d1 = norm.pdf(d1)
+
+    # Годовой theta
+    theta_annual = -(F * pdf_d1 * sigma) / (2 * sqrt_T)
+
+    if option_type == "call":
+        delta = norm.cdf(d1)
+    else:
+        delta = -norm.cdf(-d1)
+
+    gamma = pdf_d1 / (F * sigma * sqrt_T)
+    vega = F * pdf_d1 * sqrt_T
+
+    # Дневной theta (делим годовой на число торговых дней)
+    theta = theta_annual / trading_days_per_year
+
+    return {
+        "delta": delta,
+        "gamma": gamma,
+        "theta": theta,
+        "vega": vega / 100,
+        "rho": 0.0,
+    }
+
+
+def calculate_order_iv(symbol, price):
+    """
+    Рассчитывает подразумеваемую волатильность (IV) для опциона по цене заявки.
+    Возвращает IV в процентах или None, если расчёт невозможен.
+    """
+    if not symbol or price is None or price <= 0:
+        return None
+
+    # Проверяем, что символ является опционом (есть в options_chains)
+    chain = options_chains.get(symbol)
+    if not chain:
+        return None
+
+    base_ticker = chain.get("base_ticker")
+    if not base_ticker:
+        return None
+
+    # Получаем цену базового актива
+    base_quote = base_asset_quotes.get(base_ticker)
+    if not base_quote:
+        return None
+
+    # Берём последнюю цену, иначе среднее bid/ask
+    F = base_quote.get("last")
+    if F is None:
+        bid = base_quote.get("bid")
+        ask = base_quote.get("ask")
+        if bid and ask:
+            F = (bid + ask) / 2
+        else:
+            return None
+    if not F or F <= 0:
+        return None
+
+    # Параметры опциона
+    K = chain["strike"]
+    exp_date_str = chain.get("expiration_last_day")
+    if not exp_date_str or exp_date_str == "0000-00-00":
+        return None
+
+    try:
+        exp_date = datetime.strptime(exp_date_str, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+    today = datetime.now().date()
+    T = (exp_date - today).days / DAYS_IN_YEAR
+    if T <= 0:
+        return None
+
+    option_type = "call" if chain["type"] == "TYPE_CALL" else "put"
+
+    # Расчёт IV
+    iv = implied_volatility_newton(price, F, K, T, option_type)
+    if iv is None:
+        return None
+    return iv * 100  # в процентах
+
+
+def to_float(decimal_field):
+    """Универсальное преобразование Decimal-поля protobuf в float."""
+    if decimal_field and hasattr(decimal_field, "value") and decimal_field.value:
+        try:
+            return float(decimal_field.value)
+        except (ValueError, TypeError):
+            return 0.0
+    return 0.0
+
+def _safe_float(value):
+    """Безопасно приводит произвольное значение к float. None/''/нечисло → 0.0."""
+    if value is None or value == "":
+        return 0.0
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def fmt_date(d):
+    """Форматирует дату protobuf в строку YYYY-MM-DD."""
+    if d is None:
+        return None
+    return f"{d.year:04d}-{d.month:02d}-{d.day:02d}"
+
+
+def fmt_ru_date(date_str):
+    """Переводит дату YYYY-MM-DD в российский формат DD.MM.YYYY."""
+    if not date_str:
+        return ""
+    try:
+        return datetime.strptime(date_str, "%Y-%m-%d").strftime("%d.%m.%Y")
+    except (ValueError, TypeError):
+        return date_str
+
+
+def is_order_status_active(status: str) -> bool:
+    """Определяет, является ли статус заявки активным (не терминальным)."""
+    short_status = status.replace("ORDER_STATUS_", "")
+    active_statuses = {
+        "NEW",
+        "PARTIALLY_FILLED",
+        "PENDING_NEW",
+        "PENDING_CANCEL",
+        "REPLACED",
+        "SUSPENDED",
+        "FORWARDING",
+        "WAIT",
+        "WATCHING",
+        "LINK_WAIT",
+        "SL_GUARD_TIME",
+        "SL_FORWARDING",
+        "TP_GUARD_TIME",
+        "TP_FORWARDING",
+        "TP_CORRECTION",
+        "TP_CORR_GUARD_TIME",
+    }
+    return short_status in active_statuses
+
+
+def get_market_now():
+    """Возвращает текущее время в часовой зоне биржи (Москва) как naive datetime."""
+    return datetime.now(schedule.market_timezone).replace(tzinfo=None)
+
+
+# ---------------------------------------------------------------------------
+# Обработчик событий по собственным заявкам
+# ---------------------------------------------------------------------------
+def _format_timestamp(ts):
+    if ts is None:
+        return None
+    try:
+        # Проверяем, что timestamp не нулевой (секунды и наносекунды равны 0)
+        if ts.seconds == 0 and ts.nanos == 0:
+            return None
+        dt_msk = fp_provider.timestamp_to_msk_datetime(ts.seconds)
+        return dt_msk.strftime("%Y-%m-%d %H:%M:%S")
+    except (AttributeError, ValueError, TypeError):
+        return None
+
+
+def _on_order(order_state):
+    """
+    Обработчик событий по собственным заявкам.
+    Поддерживает:
+      - ответ с полем orders (список заявок),
+      - одиночный объект OrderState.
+    """
+    try:
+        # Различаем два случая по НАЛИЧИЮ поля orders, а не по его значению.
+        if hasattr(order_state, "orders"):
+            order_states = order_state.orders or []
+        else:
+            order_states = [order_state]
+
+        for order_state_item in order_states:
+            order_id = (
+                order_state_item.order_id
+                if hasattr(order_state_item, "order_id")
+                else None
+            )
+            if not order_id:
+                continue
+
+            # --- Статус заявки ---
+            status_raw = (
+                order_state_item.status if hasattr(order_state_item, "status") else None
+            )
+            if isinstance(status_raw, int):
+                try:
+                    status = orders_service.OrderStatus.Name(status_raw)
+                except ValueError:
+                    status = f"UNKNOWN_{status_raw}"
+            else:
+                status = str(status_raw) if status_raw else ""
+
+            # --- Определяем активность ---
+            is_active = is_order_status_active(status)
+
+            if is_active:
+                order = (
+                    order_state_item.order
+                    if hasattr(order_state_item, "order")
+                    else None
+                )
+                if not order:
+                    continue
+
+                symbol = order.symbol if hasattr(order, "symbol") else ""
+
+                quantity = (
+                    to_float(order.quantity) if hasattr(order, "quantity") else 0.0
+                )
+                price = (
+                    to_float(order.limit_price)
+                    if hasattr(order, "limit_price")
+                    else 0.0
+                )
+                executed_quantity = (
+                    to_float(order_state_item.executed_quantity)
+                    if hasattr(order_state_item, "executed_quantity")
+                    else 0.0
+                )
+                remaining_quantity = (
+                    to_float(order_state_item.remaining_quantity)
+                    if hasattr(order_state_item, "remaining_quantity")
+                    else 0.0
+                )
+
+                # --- Сторона (side) ---
+                side = ""
+                if hasattr(order, "side"):
+                    side_raw = order.side
+                    if isinstance(side_raw, int):
+                        enum_class = getattr(orders_service, "Side", None)
+                        if enum_class is not None:
+                            try:
+                                side = enum_class.Name(side_raw)
+                            except ValueError:
+                                side = str(side_raw)
+                        else:
+                            side = str(side_raw)
+                    else:
+                        side = str(side_raw)
+
+                # --- Тип заявки (type) ---
+                order_type = ""
+                if hasattr(order, "type"):
+                    type_raw = order.type
+                    if isinstance(type_raw, int):
+                        enum_class = getattr(orders_service, "OrderType", None)
+                        if enum_class is not None:
+                            try:
+                                order_type = enum_class.Name(type_raw)
+                            except ValueError:
+                                order_type = str(type_raw)
+                        else:
+                            order_type = str(type_raw)
+                    else:
+                        order_type = str(type_raw)
+
+                # --- Метка времени transact_at ---
+                transact_at_str = None
+                if order_state_item.HasField("transact_at"):
+                    ts = order_state_item.transact_at
+                    try:
+                        dt_msk = fp_provider.timestamp_to_msk_datetime(ts.seconds)
+                        transact_at_str = dt_msk.strftime("%d.%m.%Y %H:%M:%S")
+                    except (AttributeError, ValueError, TypeError):
+                        transact_at_str = None
+
+                # --- Информация об опционе ---
+                chain = options_chains.get(symbol)
+                option_base = chain.get("base_ticker") if chain else ""
+                opt_type_raw = chain.get("type") if chain else ""
+                opt_type = "Put" if "PUT" in opt_type_raw.upper() else (
+                    "Call" if "CALL" in opt_type_raw.upper() else opt_type_raw
+                )
+                opt_strike = chain.get("strike") if chain else ""
+                opt_expdate = fmt_ru_date(chain.get("expiration_last_day")) if chain else ""
+
+                # Сторона сделки: SIDE_BUY/1 -> Купля, SIDE_SELL/2 -> Продажа
+                side_upper = side.upper()
+                if "BUY" in side_upper or side == "1":
+                    operation = "Купля"
+                elif "SELL" in side_upper or side == "2":
+                    operation = "Продажа"
+                else:
+                    operation = side
+
+                ticker = symbol.split("@")[0] if symbol else ""
+
+                # --- Сохраняем заявку ---
+                active_orders[order_id] = {
+                    "transact_at": transact_at_str,
+                    "order_num": order_id,
+                    "opt_base": option_base,
+                    "ticker": ticker,
+                    "opt_type": opt_type,
+                    "strike": opt_strike,
+                    "expdate": opt_expdate,
+                    "operation": operation,
+                    "volume": quantity,
+                    "price": price,
+                    "value": quantity * price,
+                    "type": order_type,
+                    "status": status,
+                    "exec": executed_quantity,
+                    "remain": remaining_quantity,
+                    "updated": datetime.now().strftime("%H:%M:%S"),
+                }
+                # Добавляем расчёт IV (если это опцион)
+                order_iv = calculate_order_iv(symbol, price)
+                if order_iv is not None:
+                    active_orders[order_id]["order_iv"] = round(float(order_iv), 2)
+                else:
+                    active_orders[order_id]["order_iv"] = None
+                    logger.warning("order_iv is None для order_id=%s", order_id)
+
+                logger.debug(f"Активная заявка #{order_id}: {active_orders[order_id]}")
+            else:
+                # Терминальный статус — удаляем заявку
+                if order_id in active_orders:
+                    removed = active_orders.pop(order_id)
+                    logger.debug(
+                        f"Заявка #{order_id} удалена (статус: {status}). Была: {removed}"
+                    )
+
+        # --- Запись CSV-файла Finam_Stream_Orders.csv ---
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        file_path = os.path.join(base_dir, "data", "Finam", CSV_ORDERS_FILENAME)
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
+        with open(file_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(
+                f,
+                fieldnames=CSV_ORDERS_COLUMNS,
+                extrasaction='ignore',
+                delimiter=";",
+                restval=''
+            )
+            writer.writeheader()
+            for order_id, order_data in active_orders.items():
+                # Гарантируем, что order_num соответствует ключу словаря
+                order_data["order_num"] = order_id
+                writer.writerow(order_data)
+
+        # Проверяем, не появились ли новые опционы в заявках
+        update_option_subscriptions_from_portfolio()
+
+    except Exception as e:
+        logger.error(f"Ошибка в _on_order: {e}\n{traceback.format_exc()}")
+
+def _load_existing_ids(file_path):
+    """Загружает все trade_id из существующего CSV-файла."""
+    ids = set()
+    if os.path.exists(file_path):
+        with open(file_path, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f, delimiter=";")
+            for row in reader:
+                tid = row.get("trade_id")
+                if tid:
+                    ids.add(tid)
+    return ids
+
+
+def _fmt_num(value, decimals=2):
+    """Форматирует число для CSV: целые без «.0», остальные с заданным числом знаков."""
+    if value is None or value == "":
+        return ""
+    try:
+        num = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if num == int(num):
+        return str(int(num))
+    return f"{num:.{decimals}f}"
+
+
+def append_trade_to_csv(trade_data, filename):
+    global _trades_csv_ids, _trades_all_csv_ids
+
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    file_path = os.path.join(base_dir, "data", "Finam", filename)
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
+    if filename == "Finam_Stream_Trades.csv":
+        existing_ids = _trades_csv_ids
+    elif filename == "Finam_Stream_Trades_ALL.csv":
+        existing_ids = _trades_all_csv_ids
+    else:
+        raise ValueError(f"Неизвестное имя файла: {filename}")
+
+    # Загружаем существующие ID при первом обращении
+    if not existing_ids and os.path.exists(file_path):
+        with _trades_csv_lock:
+            existing_ids.update(_load_existing_ids(file_path))
+
+    trade_id = trade_data.get("trade_id")
+    if trade_id in existing_ids:
+        return
+
+    headers = [
+        "datetime",
+        "trade_id",
+        "order_id",
+        "option_base",
+        "ticker",
+        "option_type",
+        "strike",
+        "expdate",
+        "operation",
+        "volume",
+        "price",
+        "value",
+        "volatility",
+    ]
+    numeric_fields = {"strike", "volume", "price", "value", "volatility"}
+
+    # Блокируем доступ к файлу на время записи
+    with _trades_csv_lock:
+        write_header = not os.path.exists(file_path) or os.path.getsize(file_path) == 0
+        with open(file_path, "a", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=headers, delimiter=";")
+            if write_header:
+                writer.writeheader()
+            row = {}
+            for k in headers:
+                v = trade_data.get(k)
+                if v is None:
+                    row[k] = ""
+                elif k in numeric_fields:
+                    row[k] = _fmt_num(v)
+                else:
+                    row[k] = v
+            writer.writerow(row)
+        # Добавляем ID в множество ПОД той же блокировкой,
+        # чтобы исключить гонку с cleanup_trades_csv (которая переписывает
+        # _trades_csv_ids под _trades_csv_lock).
+        existing_ids.add(trade_id)
+
+
+# ---------------------------------------------------------------------------
+# Обработчик событий по собственным сделкам
+# ---------------------------------------------------------------------------
+def _on_trade(trade_response):
+    try:
+        if not trade_response:
+            logger.warning("Получен пустой ответ по сделкам")
+            return
+
+        # Различаем контейнерный ответ (поле trades) и одиночную сделку по
+        # НАЛИЧИЮ поля, а не по его значению: пустой список — это «сделок нет».
+        if hasattr(trade_response, "trades"):
+            trade_list = trade_response.trades or []
+        else:
+            trade_list = [trade_response]  # одиночная сделка
+
+        for trade in trade_list:
+            trade_id = trade.trade_id if hasattr(trade, "trade_id") else None
+            if not trade_id:
+                logger.warning("Сделка без trade_id, пропускаем")
+                continue
+
+            # --- Сторона сделки (side) ---
+            side = ""
+            if hasattr(trade, "side"):
+                side_raw = trade.side
+                if isinstance(side_raw, int):
+                    enum_class = getattr(orders_service, "Side", None)
+                    if enum_class is not None:
+                        try:
+                            side = enum_class.Name(side_raw)
+                        except ValueError:
+                            side = str(side_raw)
+                    else:
+                        side = str(side_raw)
+                else:
+                    side = str(side_raw)
+
+            # --- Метка времени ---
+            timestamp_str = None
+            if hasattr(trade, "timestamp") and trade.timestamp:
+                try:
+                    ts = trade.timestamp
+                    dt_msk = fp_provider.timestamp_to_msk_datetime(ts.seconds)
+                    timestamp_str = dt_msk.strftime("%d.%m.%Y %H:%M:%S")
+                except (AttributeError, ValueError, TypeError):
+                    timestamp_str = None
+
+            # --- Цена сделки (для расчёта IV) ---
+            price = to_float(trade.price) if hasattr(trade, "price") else 0.0
+            # --- Расчёт IV для опциона ---
+            trade_iv = calculate_order_iv(trade.symbol, price)
+
+            symbol = trade.symbol if hasattr(trade, "symbol") else ""
+            chain = options_chains.get(symbol)
+
+            # Тикер без суффикса биржи (например RIZ6@RTSX -> RIZ6)
+            ticker = symbol.split("@")[0] if symbol else ""
+
+            # Базовый актив для опциона
+            option_base = chain.get("base_ticker") if chain else ""
+            opt_type_raw = chain.get("type") if chain else ""
+            opt_type = "Put" if "PUT" in opt_type_raw.upper() else (
+                "Call" if "CALL" in opt_type_raw.upper() else opt_type_raw
+            )
+            opt_strike = chain.get("strike") if chain else ""
+            opt_expdate = fmt_ru_date(chain.get("expiration_last_day")) if chain else ""
+
+            # Сторона сделки: SIDE_BUY/1 -> Купля, SIDE_SELL/2 -> Продажа
+            side_upper = side.upper()
+            if "BUY" in side_upper or side == "1":
+                operation = "Купля"
+            elif "SELL" in side_upper or side == "2":
+                operation = "Продажа"
+            else:
+                operation = side
+
+            # Поля для CSV
+            # datetime;trade_id;order_id;option_base;ticker;option_type;strike;expdate;operation;volume;price;value;volatility
+            # --- Сохраняем сделку ---
+            trades[trade_id] = {
+                "datetime": timestamp_str,
+                "trade_id": trade_id,
+                "order_id": trade.order_id if hasattr(trade, "order_id") else "",
+                "option_base": option_base,
+                "ticker": ticker,
+                "option_type": opt_type,
+                "strike": opt_strike,
+                "expdate": opt_expdate,
+                "operation": operation,
+                "volume": to_float(trade.size) if hasattr(trade, "size") else 0.0,
+                "price": price,
+                "value": price * (to_float(trade.size) if hasattr(trade, "size") else 0.0),
+                "volatility": trade_iv,
+            }
+
+            # Запись в оба CSV-файла (уникальные по trade_id)
+            append_trade_to_csv(trades[trade_id], "Finam_Stream_Trades.csv")
+            append_trade_to_csv(trades[trade_id], "Finam_Stream_Trades_ALL.csv")
+
+            logger.debug(f"Сделка {trade_id}: {trades[trade_id]}")
+
+        # После обработки пакета сделок запускаем проверку состава портфеля
+        # (GetAccount + очистка CSV от инструментов, которых больше нет в портфеле).
+        # Сделка потенциально закрывает инструмент — после неё в Finam_Stream_Trades.csv
+        # могут остаться записи, которые нужно удалить. Выполняется в фоновом потоке
+        # io_worker, чтобы не блокировать gRPC-поток событий.
+        #
+        # Дедупликация: на старте/переподключении подписки на сделки приходит
+        # исторический снапшот пакетами — каждый пакет порождает отдельный _on_trade,
+        # и без ограничения частоты в очередь набиралось бы много одинаковых задач
+        # очистки. Ставим задачу не чаще одного раза за _LAST_TRADES_CLEANUP_INTERVAL.
+        global _last_trades_cleanup_enqueued
+        now_enqueue = _time.time()
+        if (fp_provider is not None and now_enqueue - _last_trades_cleanup_enqueued >= _LAST_TRADES_CLEANUP_INTERVAL):
+            logger.info(f'_on_trade запуск функции verify_positions_and_cleanup_trades')
+            _last_trades_cleanup_enqueued = now_enqueue
+            _io_task_queue.put(lambda: verify_positions_and_cleanup_trades(set()))
+
+    except Exception as e:
+        logger.error(f"Ошибка в _on_trade: {e}\n{traceback.format_exc()}")
+
+# ---------------------------------------------------------------------------
+# Подписка на события по заявкам
+# ---------------------------------------------------------------------------
+def subscribe_orders(fp_provider, account_id):
+    """Подписка на события по собственным заявкам"""
+    fp_provider.on_order.subscribe(_on_order)
+    thread = Thread(
+        target=fp_provider.subscribe_orders_thread,
+        name="OrdersThread",
+        args=(account_id,),
+        daemon=True,
+    )
+    thread.start()
+    track_thread(thread)
+    logger.info(f"Подписка на собственные заявки аккаунта {account_id} запущена")
+    return thread
+
+
+def subscribe_trades(fp_provider, account_id):
+    """Подписка на события по собственным сделкам"""
+    fp_provider.on_trade.subscribe(_on_trade)
+    thread = Thread(
+        target=fp_provider.subscribe_trades_thread,
+        name="TradesThread",
+        args=(account_id,),
+        daemon=True,
+    )
+    thread.start()
+    track_thread(thread)
+    logger.info(f"Подписка на собственные сделки аккаунта {account_id} запущена")
+    return thread
+
+
+# ---------------------------------------------------------------------------
+# Хранилища котировок
+# ---------------------------------------------------------------------------
+base_asset_quotes = {}  # Котировки базовых активов: {ticker: {...}}
+option_quotes = {}  # Котировки опционов: {symbol: {...}}
+subscribed_option_symbols = set()  # Символы опционов, на которые уже подписаны
+options_chains = {}  # {symbol: { ... }} — все опционы по базовым активам
+_options_chains_loaded = False  # Флаг однократной загрузки
+
+
+def fetch_last_quote_for_symbol(symbol):
+    """
+    Получает последнюю котировку по опциону через API LastQuote
+    и сохраняет в option_quotes.
+    Вызывается из фонового потока io_worker (через очередь _io_task_queue),
+    чтобы не блокировать gRPC-поток событий.
+    """
+    try:
+        request = marketdata_service.QuoteRequest(symbol=symbol)
+        response = fp_provider.call_function(
+            fp_provider.marketdata_stub.LastQuote, request
+        )
+
+        if response is None:
+            logger.warning(f"Не удалось получить последнюю котировку для {symbol}")
+            return
+
+        # response.quote — одиночная котировка (объект Quote)
+        process_single_quote(response.quote)
+
+    except Exception as e:
+        logger.error(f"Ошибка при получении последней котировки для {symbol}: {e}")
+
+
+def _set_if_present(target, source, field):
+    """Обновляет поле только если оно реально присутствует в сообщении."""
+    try:
+        if source.HasField(field):
+            # Decimal содержит строковое поле .value
+            target[field] = float(getattr(source, field).value)
+    except (ValueError, TypeError, AttributeError):
+        target[field] = None
+
+
+def _set_timestamp(target, source):
+    """Заполняет timestamp из protobuf Timestamp (секунды + наносекунды) в МСК."""
+    try:
+        if source.HasField("timestamp"):
+            ts = source.timestamp
+            dt_msk = fp_provider.timestamp_to_msk_datetime(ts.seconds)
+            target["timestamp"] = dt_msk.strftime("%Y-%m-%d %H:%M:%S")
+    except (AttributeError, ValueError, TypeError):
+        target["timestamp"] = None
+
+
+def update_iv_and_greeks(symbol):
+    """Вычисляет IV для ask/bid/last/theor и греки для опциона."""
+    # Получаем параметры из хранилищ
+    chain = options_chains.get(symbol)
+    if not chain:
+        return
+
+    base_ticker = chain.get("base_ticker")
+    if not base_ticker:
+        return
+    quote = base_asset_quotes.get(base_ticker)  # 'RIZ6' — совпадает с ключами хранилища
+    if not quote:
+        return
+    if quote.get("last") is None:
+        bid = quote.get("bid")
+        ask = quote.get("ask")
+        F = (bid + ask) / 2 if bid and ask else None
+    else:
+        F = quote["last"]
+    if not F or F <= 0:
+        return
+
+    K = chain["strike"]
+    # Дата экспирации
+    exp_date_str = chain["expiration_last_day"]
+    if not exp_date_str or exp_date_str == "0000-00-00":
+        return
+    exp_date = datetime.strptime(exp_date_str, "%Y-%m-%d").date()
+    today = datetime.now().date()
+    T = (exp_date - today).days / DAYS_IN_YEAR
+    if T <= 0:
+        return
+
+    option_type = "call" if chain["type"] == "TYPE_CALL" else "put"
+
+    record = option_quotes.get(symbol)
+    if not record:
+        return
+
+    # Расчёт IV для каждой цены
+    for price_field, iv_field in [
+        ("ask", "ask_iv"),
+        ("bid", "bid_iv"),
+        ("last", "last_iv"),
+        ("theoretical_price", "theor_iv"),
+    ]:
+        price = record.get(price_field)
+        if price is None:
+            record[iv_field] = None
+            continue
+        iv = implied_volatility_newton(price, F, K, T, option_type)
+        record[iv_field] = iv * 100 if iv is not None else None  # в процентах
+
+    # Для греков используем IV биржи
+    sigma_for_greeks = record.get("implied_volatility")
+    # if sigma_for_greeks is None:
+    #     sigma_for_greeks = (
+    #         record.get("theor_iv") or record.get("ask_iv") or record.get("bid_iv")
+    #     )
+    # if sigma_for_greeks is None:
+    #     sigma_for_greeks = record.get("last_iv")  # last_iv (если есть)
+    # if sigma_for_greeks is None:
+    #     return
+    sigma = sigma_for_greeks / 100.0  # переводим в десятичную
+    greeks = calculate_greeks(F, K, T, sigma, option_type)
+    record.update(greeks)  # добавит delta, gamma, theta, vega, rho
+
+
+def process_single_quote(q):
+    """Обрабатывает одну котировку (из подписки или запроса последней цены)."""
+    full_symbol = q.symbol
+    ticker = full_symbol.split("@")[0] if "@" in full_symbol else full_symbol
+
+    # --- Базовые активы (фьючерсы) ---
+    if full_symbol in base_symbols or ticker in MAP:
+        map_ticker = _full_ticker_to_map.get(ticker, ticker)  # 'RIZ6' → 'RI'
+        if map_ticker not in base_asset_quotes:
+            base_asset_quotes[map_ticker] = {
+                "timestamp": None,
+                "ask": None,
+                "bid": None,
+                "last": None,
+                "ask_size": None,
+                "bid_size": None,
+                "last_size": None,
+                "time": None,
+            }
+        record = base_asset_quotes[map_ticker]
+        _set_timestamp(record, q)
+        for field in ("ask", "bid", "last", "ask_size", "bid_size", "last_size"):
+            _set_if_present(record, q, field)
+        record["time"] = datetime.now().strftime("%H:%M:%S")
+
+    # --- Опционы ---
+    elif full_symbol in subscribed_option_symbols:
+        if full_symbol not in option_quotes:
+            option_quotes[full_symbol] = {
+                "timestamp": None,
+                "ask": None,
+                "ask_iv": None,
+                "ask_size": None,
+                "bid": None,
+                "bid_iv": None,
+                "bid_size": None,
+                "last": None,
+                "last_iv": None,
+                "last_size": None,
+                "open_interest": None,
+                "implied_volatility": None,
+                "theoretical_price": None,
+                "theor_iv": None,
+                "delta": None,
+                "gamma": None,
+                "theta": None,
+                "vega": None,
+                "rho": None,
+                "time": None,
+            }
+        record = option_quotes[full_symbol]
+        for field in ("ask", "bid", "last", "ask_size", "bid_size", "last_size"):
+            _set_if_present(record, q, field)
+        _set_timestamp(record, q)
+        _set_if_present(record, q, "open_interest")
+
+        if q.HasField("option"):
+            opt = q.option
+            for field in (
+                "open_interest",
+                "implied_volatility",
+                "theoretical_price",
+                "delta",
+                "gamma",
+                "theta",
+                "vega",
+                "rho",
+            ):
+                _set_if_present(record, opt, field)
+
+        record["time"] = datetime.now().strftime("%H:%M:%S")
+
+        # --- Расчёт IV и греков ---
+        update_iv_and_greeks(full_symbol)
+
+
+# ---------------------------------------------------------------------------
+# Обработчик котировок (базовые активы + опционы)
+# ---------------------------------------------------------------------------
+def _on_quote(quote):
+    """Обработчик котировок базовых активов и опционов."""
+    # Обрабатываем оба формата, которые может присылать сервер:
+    #   - SubscribeQuoteResponse / QuoteResponse: контейнер с полем quote (список)
+    #   - одиночная котировка Quote
+    try:
+        if hasattr(quote, "quote"):
+            # Поле error есть в подписочном ответе (SubscribeQuoteResponse).
+            # Объект protobuf всегда «истинен», поэтому проверяем реальные признаки ошибки.
+            if hasattr(quote, "error") and (
+                quote.error.code != 0 or quote.error.description
+            ):
+                err = quote.error
+                logger.warning(
+                    f"Ошибка в потоке котировок: код={err.code}, {err.description}"
+                )
+                return
+            quotes = quote.quote or []
+            for q in quotes:
+                process_single_quote(q)
+        else:
+            # Одиночная котировка
+            process_single_quote(quote)
+    except Exception as e:
+        logger.error(f"Ошибка в _on_quote: {e}\n{traceback.format_exc()}")
+
+
+# ---------------------------------------------------------------------------
+# Подписка на котировки базовых активов
+# ---------------------------------------------------------------------------
+def subscribe_base_assets(fp_provider):
+    global base_symbols, _full_ticker_to_map
+    base_symbols.clear()
+    _full_ticker_to_map.clear()
+
+    for ticker in MAP.keys():
+        dataname = f"SPBFUT.{ticker}"
+        try:
+            finam_board, ticker_code = fp_provider.dataname_to_finam_board_ticker(
+                dataname
+            )
+            mic = fp_provider.get_mic(finam_board, ticker_code)
+            symbol = f"{ticker_code}@{mic}"
+            base_symbols.add(symbol)
+            _full_ticker_to_map[ticker_code] = ticker
+        except Exception as e:
+            logger.error(f"Не удалось определить биржу для {ticker}: {e}")
+
+    logger.info(f"Базовые активы собраны: {list(base_symbols)}")
+
+
+# ---------------------------------------------------------------------------
+# Проверка появления новых опционов в портфеле/заявках
+# ---------------------------------------------------------------------------
+
+# Хранилище активных потоков подписки
+_quote_subscriptions = []  # список активных QuoteSubscription
+
+
+def io_worker(stop_event):
+    """
+    Фоновый поток для выполнения «тяжёлых» операций ввода-вывода:
+    чтение/запись CSV-файлов и сетевые запросы LastQuote.
+    Ранее эти операции выполнялись прямо в gRPC-потоках событий
+    (_on_order, _on_account_info), что могло блокировать обработку
+    котировок и заявок. Теперь задачи ставятся в очередь _io_task_queue
+    и выполняются в этом отдельном потоке.
+    """
+    logger.info("Фоновый поток обработки задач I/O запущен")
+    while not stop_event.is_set():
+        try:
+            # Ожидаем задачу с таймаутом, чтобы вовремя реагировать на stop_event
+            task = _io_task_queue.get(timeout=0.5)
+        except queue.Empty:
+            continue
+        try:
+            task()
+        except Exception as e:
+            logger.error(f"Ошибка в фоновой задаче I/O: {e}\n{traceback.format_exc()}")
+
+
+# функция очистки Finam_Stream_Trades.csv
+def cleanup_trades_csv(actual_positions):
+    """
+    Удаляет из Finam_Stream_Trades.csv записи, инструмент которых отсутствует
+    в актуальном составе портфеля.
+
+    Проверка выполняется СТРОГО по тикеру — части символа до знака '@'
+    (например 'RIZ6' или 'RI82500BW6'). Поле option_base (базовый актив) в
+    проверке НЕ участвует.
+
+    Удаляются все записи, чей тикер отсутствует в actual_positions (нет ни одной
+    живой позиции с этим тикером в актуальном портфеле). Это работает и для
+    инструментов, закрытых до старта программы, и для закрытых в процессе работы.
+
+    :param set actual_positions: символы позиций с ненулевым количеством из GetAccount,
+                                 напр. {'RIZ6@RTSX', 'RI90000BK6@RTSX'}
+    """
+    logger.info(f"Запуск функции cleanup_trades_csv очистки Finam_Stream_Trades.csv")
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    file_path = os.path.join(base_dir, "data", "Finam", "Finam_Stream_Trades.csv")
+    if not os.path.exists(file_path):
+        return
+
+    # Тикеры (часть до '@'), которые есть в актуальном портфеле.
+    live_tickers = {p.split("@")[0] for p in actual_positions if p}
+
+    with _trades_csv_lock:
+        # Читаем все строки
+        with open(file_path, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f, delimiter=";")
+            rows = list(reader)
+
+        if not rows:
+            return
+
+        # Оставляем только те записи, чей тикер есть в актуальном портфеле.
+        # Поле option_base в фильтре не используется.
+        filtered_rows = [
+            row
+            for row in rows
+            if row.get("ticker") in live_tickers
+        ]
+
+        if len(filtered_rows) != len(rows):
+            # Определяем заголовки (из первой строки или фиксированные)
+            headers = (
+                rows[0].keys()
+                if rows
+                else [
+                    "datetime",
+                    "trade_id",
+                    "order_id",
+                    "option_base",
+                    "ticker",
+                    "option_type",
+                    "strike",
+                    "expdate",
+                    "operation",
+                    "volume",
+                    "price",
+                    "value",
+                    "volatility",
+                ]
+            )
+            # Перезаписываем файл
+            with open(file_path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=headers, delimiter=";")
+                writer.writeheader()
+                writer.writerows(filtered_rows)
+
+            # Обновляем множество _trades_csv_ids (удаляем удалённые ID)
+            global _trades_csv_ids
+            _trades_csv_ids = {row["trade_id"] for row in filtered_rows}
+            logger.info(
+                f"Очистка CSV: удалены записи по инструментам, отсутствующим в портфеле; "
+                f"осталось записей: {len(filtered_rows)}"
+            )
+
+def single_transaction_clearing():
+    """ Однократная очистка файла сделок в файле из Finam_Stream_Trades.csv при запуске кода"""
+    logger.info(
+        f"Запуск функции single_transaction_clearing. Загрузка состава портфеля отдельным запросом GetAccount и"
+        f" очистка файла Finam_Stream_Trades.csv от сделок инструментов, которых уже нет в портфеле")
+    try:
+        if fp_provider is None:
+            logger.warning(
+                "Проверка портфеля: провайдер не инициализирован, очистка CSV отменена"
+            )
+            return
+        account: accounts_service.GetAccountResponse = fp_provider.call_function(
+            fp_provider.accounts_stub.GetAccount,
+            accounts_service.GetAccountRequest(account_id=account_id),
+        )
+        if account is None:
+            logger.warning(
+                "Проверка портфеля: GetAccount не вернул ответ, очистка CSV отменена"
+            )
+            return
+
+        # Актуальный состав портфеля с ненулевым количеством из свежего снапшота
+        actual_positions = {
+            position.symbol
+            for position in account.positions
+            if to_float(position.quantity) != 0
+        }
+        logger.info(f'Актуальный состав портфеля: {actual_positions}')
+        cleanup_trades_csv(actual_positions)
+
+    except Exception as e:
+        logger.error(
+            f"Ошибка проверки портфеля через GetAccount: {e}\n{traceback.format_exc()}"
+        )
+
+
+def verify_positions_and_cleanup_trades(removed_symbols=frozenset()):
+    """Проверка состава портфеля отдельным запросом GetAccount (унитарный,
+    а не потоковый) перед удалением сделок из Finam_Stream_Trades.csv.
+
+    Очистка CSV выполняется ТОЛЬКО когда есть подтверждённо закрытые позиции:
+    символы, исчезнувшие из состава (removed_symbols или, если они не переданы,
+    разница между _last_positions_symbols и свежим снапшотом GetAccount) и
+    отсутствующие в актуальном портфеле. После подтверждения удаляются все
+    записи из CSV, чей тикер отсутствует в актуальном портфеле.
+
+    :param set removed_symbols: Символы, исчезнувшие из портфеля по данным
+                                стрим-подписки (объединение позиций и заявок).
+                                Может быть пустым — тогда разница вычисляется
+                                по _last_positions_symbols.
+    """
+    global _last_positions_symbols
+    logger.info(f"Запуск функции verify_positions_and_cleanup_trades Проверка состава портфеля отдельным запросом GetAccount")
+    try:
+        if fp_provider is None:
+            logger.warning(
+                "Проверка портфеля: провайдер не инициализирован, очистка CSV отменена"
+            )
+            return
+        account: accounts_service.GetAccountResponse = fp_provider.call_function(
+            fp_provider.accounts_stub.GetAccount,
+            accounts_service.GetAccountRequest(account_id=account_id),
+        )
+        if account is None:
+            logger.warning(
+                "Проверка портфеля: GetAccount не вернул ответ, очистка CSV отменена"
+            )
+            return
+
+        # Актуальный состав портфеля с ненулевым количеством из свежего снапшота
+        actual_positions = {
+            position.symbol
+            for position in account.positions
+            if to_float(position.quantity) != 0
+        }
+
+        # Если триггер не передан — вычисляем исчезнувшие сами: символы, которые
+        # были в прошлом известном составе (_last_positions_symbols), но которых
+        # нет в свежем снапшоте GetAccount.
+        if not removed_symbols:
+            removed_symbols = _last_positions_symbols - actual_positions
+
+        # Символы, которые стрим считал закрытыми, но которые есть в свежем снапшоте
+        restored = removed_symbols & actual_positions
+        if restored:
+            # logger.warning(
+            #     f"Проверка портфеля: символы {restored} присутствуют в снапшоте GetAccount "
+            #     f"— ложное срабатывание стрима, очистка CSV по ним не выполняется"
+            # )
+            # Восстанавливаем символы в составе портфеля, чтобы не терять их отслеживание
+            _last_positions_symbols |= restored
+
+        confirmed_removed = removed_symbols - actual_positions
+        if not confirmed_removed:
+            # logger.info(f"Проверка портфеля: подтверждённых закрытых позиций нет, очистка CSV не требуется")
+            return
+
+        logger.info(
+            f"Проверка портфеля: подтверждено закрытие позиций: {confirmed_removed}. "
+            f"Удаляем сделки из CSV"
+        )
+        cleanup_trades_csv(actual_positions)
+
+    except Exception as e:
+        logger.error(
+            f"Ошибка проверки портфеля через GetAccount: {e}\n{traceback.format_exc()}"
+        )
+
+
+def update_option_subscriptions_from_portfolio():
+    global subscribed_option_symbols, _last_positions_symbols, _last_orders_symbols
+    global _subscription_dirty, _cleanup_dirty, _symbol_last_seen
+    global _previous_obsolete
+
+    # Во внеторговое время подписки не трогаем: снапшот портфеля, пришедший
+    # вне сессии, может отличаться от состояния на конец дня и порождать
+    # ложное обнаружение «устаревших» опционов
+    if not schedule.trade_session(get_market_now()):
+        return
+
+    # Текущие символы из позиций портфеля с ненулевым количеством
+    raw_positions = _account_data[0].get("positions", {})
+    positions = {
+        sym: pos for sym, pos in raw_positions.items() if float(pos["net_pos"]) != 0
+    }
+    current_positions = set(positions.keys())
+
+    # Текущие символы из активных заявок
+    current_orders = set()
+    for order in active_orders.values():
+        symbol = order.get("symbol", "")
+        if symbol:
+            current_orders.add(symbol)
+
+    # Если ничего не изменилось — выходим (быстрая проверка)
+    if (
+        current_positions == _last_positions_symbols
+        and current_orders == _last_orders_symbols
+    ):
+        return
+
+    # Символы, которые были в портфеле/заявках раньше, но исчезли сейчас.
+    # Важно учитывать и заявки, а не только позиции: опцион мог быть куплен
+    # и продан через заявку, и позиция уже ненулевой, а символ исчез из заявок.
+    # Тогда CSV по нему всё равно нужно чистить.
+    prev_all_symbols = _last_positions_symbols | _last_orders_symbols
+    all_symbols_now = current_positions | current_orders
+    removed_symbols = prev_all_symbols - all_symbols_now
+
+    # Если позиции/заявки изменились и сейчас торговая сессия — проверяем состав
+    # портфеля отдельным запросом GetAccount и только после подтверждения
+    # удаляем из CSV сделки по действительно закрытым инструментам.
+    # Потоковый снапшот подписки может быть промежуточным/неполным, поэтому
+    # доверяем ему только как триггеру, а не как источнику истины.
+    # Проверка выполняется в фоновом потоке io_worker, чтобы не блокировать
+    # gRPC-поток событий сетевым запросом.
+    if removed_symbols and schedule.trade_session(get_market_now()):
+        logger.info(f"Закрыты позиции (по данным стрима): {removed_symbols}")
+        _io_task_queue.put(
+            lambda removed=set(removed_symbols): verify_positions_and_cleanup_trades(removed)
+        )
+
+    # Обновляем сохранённые множества
+    _last_positions_symbols = current_positions
+    _last_orders_symbols = current_orders
+
+    # Все символы из портфеля и заявок
+    all_symbols = current_positions | current_orders
+
+    # Оставляем только опционы
+    option_symbols = set()
+    for s in all_symbols:
+        if s in base_symbols:
+            continue
+        ticker = s.split("@")[0]
+        if ticker in MAP:
+            continue
+        option_symbols.add(s)
+
+    # Обновляем время последнего появления для всех актуальных опционов
+    now = _time.time()
+    for sym in option_symbols:
+        _symbol_last_seen[sym] = now
+
+    # --- Новые опционы — добавляем и перезапускаем подписку НЕМЕДЛЕННО ---
+    new_symbols = option_symbols - subscribed_option_symbols
+    if new_symbols:
+        subscribed_option_symbols.update(new_symbols)
+        logger.info(f"Добавлены новые опционы в отслеживание: {new_symbols}")
+
+        # Предзаполняем котировки. Сетевые запросы LastQuote выполняются
+        # в фоновом потоке io_worker, чтобы не задерживать обработку событий.
+        for symbol in new_symbols:
+            _io_task_queue.put(lambda s=symbol: fetch_last_quote_for_symbol(s))
+
+        # Помечаем, что нужно перезапустить подписку (сделаем это в main сразу)
+        _subscription_dirty = True
+
+    # --- Устаревшие опционы (не появлялись >30 сек) — помечаем для очистки ---
+    # Опционы, которых нет в текущем составе и которые не появлялись более 30 секунд
+    obsolete_symbols = {
+        sym
+        for sym in subscribed_option_symbols
+        if sym not in option_symbols and now - _symbol_last_seen.get(sym, 0) > 30
+    }
+    if obsolete_symbols:
+        _cleanup_dirty = True
+        # Логируем только новые устаревшие
+        new_obsolete = obsolete_symbols - _previous_obsolete
+        if new_obsolete:
+            logger.info(
+                f"Обнаружены устаревшие опционы (очистка через 30 сек): {new_obsolete}"
+            )
+        _previous_obsolete = obsolete_symbols
+
+
+_restart_lock = threading.Lock()
+
+
+def restart_quotes_subscription():
+    global _quote_subscriptions, _stream_threads
+
+    if not _restart_lock.acquire(blocking=False):
+        logger.info("Перезапуск подписки уже выполняется, пропускаем.")
+        return
+
+    try:
+        # Останавливаем все старые подписки
+        for sub in _quote_subscriptions:
+            sub.stop()
+        _quote_subscriptions = []
+        logger.info("Все старые подписки остановлены")
+
+        # Убираем мёртвые потоки из списка (потоки подписки уже дожданы
+        # внутри sub.stop(), повторный join не требуется)
+        _stream_threads[:] = [t for t in _stream_threads if t.is_alive()]
+
+        # Даём серверу время освободить символы
+        sleep(1)
+
+        # Отписываемся от обработчика
+        if fp_provider is not None:
+            fp_provider.on_quote.unsubscribe(_on_quote)
+
+        # Запускаем новые подписки
+        start_quotes_subscription(fp_provider)
+    finally:
+        _restart_lock.release()
+
+
+def cleanup_obsolete_subscriptions():
+    """Удаляет опционы, отсутствующие в портфеле/заявках более 30 секунд, и перезапускает подписку."""
+    global \
+        subscribed_option_symbols, \
+        _cleanup_dirty, \
+        _symbol_last_seen, \
+        _previous_obsolete
+
+    # Пересчитываем актуальные символы
+    raw_positions = _account_data[0].get("positions", {})
+    positions = {
+        sym: pos for sym, pos in raw_positions.items() if float(pos["net_pos"]) != 0
+    }
+    current_positions = set(positions.keys())
+
+    current_orders = set()
+    for order in active_orders.values():
+        symbol = order.get("symbol", "")
+        if symbol:
+            current_orders.add(symbol)
+
+    all_symbols = current_positions | current_orders
+    option_symbols = set()
+    for s in all_symbols:
+        if s in base_symbols:
+            continue
+        ticker = s.split("@")[0]
+        if ticker in MAP:
+            continue
+        option_symbols.add(s)
+
+    # Обновляем время последнего появления для актуальных
+    now = _time.time()
+    for sym in option_symbols:
+        _symbol_last_seen[sym] = now
+
+    # Находим действительно устаревшие
+    obsolete = {
+        sym
+        for sym in subscribed_option_symbols
+        if sym not in option_symbols and now - _symbol_last_seen.get(sym, 0) > 30
+    }
+
+    if obsolete:
+        # Удаляем из отслеживания, котировок и last_seen
+        for sym in obsolete:
+            subscribed_option_symbols.discard(sym)
+            option_quotes.pop(sym, None)
+            _symbol_last_seen.pop(sym, None)
+        logger.info(f"Очистка: удалены устаревшие опционы: {obsolete}")
+
+        # Перезапускаем подписку без устаревших
+        restart_quotes_subscription()
+    else:
+        logger.debug("Очистка: устаревших опционов нет")
+
+    _previous_obsolete.clear()
+
+    _cleanup_dirty = False
+
+
+# ---------------------------------------------------------------------------
+# Загрузка цепочек опционов
+# ---------------------------------------------------------------------------
+def load_options_chains(fp_provider):
+    global _options_chains_loaded
+    if _options_chains_loaded:
+        return options_chains
+    _options_chains_loaded = True
+
+    for ticker, params in MAP.items():
+        strike_step = params["strike_step"]
+        strikes_count = params["max_strikes_count"]
+
+        try:
+            # Получаем список дат экспирации (уникальные, в формате 'YYYY-MM-DD')
+            expirations = get_option_expirations(ticker)
+            expiration_dates = sorted(
+                set(exp["expiration_date"] for exp in expirations)
+            )
+            print(
+                f"Даты экспирации опционов базового актива {ticker}: {expiration_dates}"
+            )
+
+            # Получаем цену базового актива
+            quote = base_asset_quotes.get(ticker)
+            if not quote or quote.get("last") is None:
+                logger.warning(f"Нет цены для {ticker}, пропускаем загрузку цепочки")
+                continue
+            base_price = quote["last"]
+
+            # Формируем нужные страйки
+            required_strikes = set(
+                get_list_of_strikes(base_price, strike_step, strikes_count)
+            )
+
+            # Определяем символ для API
+            dataname = f"SPBFUT.{ticker}"
+            finam_board, ticker_code = fp_provider.dataname_to_finam_board_ticker(
+                dataname
+            )
+            mic = fp_provider.get_mic(finam_board, ticker_code)
+            underlying_symbol = f"{ticker_code}@{mic}"
+
+            # Перебираем все даты экспирации
+            for exp_date_str in expiration_dates:
+                expiration_date_obj = datetime.strptime(exp_date_str, "%Y-%m-%d").date()
+                year = expiration_date_obj.year
+                month = expiration_date_obj.month
+                day = expiration_date_obj.day
+                # --- Запрашиваем полную цепочку опционов ---
+                request = assets_service.OptionsChainRequest(
+                    underlying_symbol=underlying_symbol,
+                    expiration_date={"year": year, "month": month, "day": day},
+                )
+                response = fp_provider.call_function(
+                    fp_provider.assets_stub.OptionsChain, request
+                )
+
+                if response is None:
+                    logger.error(
+                        f"Не удалось получить цепочку опционов для {underlying_symbol} на {exp_date_str}"
+                    )
+                    continue
+
+                filtered_count = 0
+                for opt in response.options:
+                    strike = to_float(opt.strike)
+                    if strike not in required_strikes:
+                        continue
+
+                    try:
+                        opt_type = assets_service.Option.Type.Name(opt.type)
+                    except ValueError:
+                        opt_type = str(opt.type)
+
+                    options_chains[opt.symbol] = {
+                        "symbol": opt.symbol,
+                        "type": opt_type,
+                        "contract_size": to_float(opt.contract_size),
+                        "trade_first_day": fmt_date(opt.trade_first_day),
+                        "trade_last_day": fmt_date(opt.trade_last_day),
+                        "strike": strike,
+                        "multiplier": to_float(opt.multiplier),
+                        "expiration_first_day": fmt_date(opt.expiration_first_day),
+                        "expiration_last_day": fmt_date(opt.expiration_last_day),
+                        "base_ticker": ticker,
+                    }
+                    filtered_count += 1
+
+                logger.info(
+                    f"Цепочка опционов для {underlying_symbol} на {exp_date_str}: "
+                    f"загружено {filtered_count} из {len(response.options)} опционов "
+                    f"(страйков: {len(required_strikes)})"
+                )
+
+        except Exception as e:
+            logger.error(f"Ошибка при получении цепочки опционов для {ticker}: {e}")
+
+    logger.info(f"Всего опционов загружено: {len(options_chains)}")
+    return options_chains
+
+
+def start_quotes_subscription(fp_provider):
+    """Подписка на базовые активы + все опционы из subscribed_option_symbols."""
+    global subscribed_option_symbols, _quote_subscriptions
+
+    all_symbols = list(set(base_symbols) | subscribed_option_symbols)
+    if not all_symbols:
+        logger.warning("Нет символов для подписки на котировки")
+        return []
+
+    # Защита от дублирования обработчика
+    fp_provider.on_quote.unsubscribe(_on_quote)
+    fp_provider.on_quote.subscribe(_on_quote)
+
+    subscriptions = []
+    chunk_size = 10  # уменьшите до 10, чтобы точно не превысить лимит
+
+    for i in range(0, len(all_symbols), chunk_size):
+        chunk = all_symbols[i : i + chunk_size]
+        sub = QuoteSubscription(
+            fp_provider, chunk, name=f"QuotesThread-{i // chunk_size}"
+        )
+        sub.start()
+        track_thread(sub.thread)
+        subscriptions.append(sub)
+
+    _quote_subscriptions = subscriptions
+    logger.info(
+        f"Запущено {len(subscriptions)} потоков подписки на {len(all_symbols)} символов"
+    )
+    return subscriptions
+
+def calculate_open_data_open_price_open_iv(sec_code, net_pos, trades_df=None):
+    """
+    Вычисляет дату открытия позиции, цену и волатильность для заданного инструмента,
+    как средневзвешенные по объёму первых сделок до достижения нужного объёма.
+
+    :param str sec_code: Код инструмента
+    :param int net_pos: Текущая позиция (отрицательная для короткой позиции)
+    :param pd.DataFrame trades_df: Датафрейм всех сделок. Если None, читается из CSV файла
+    :return: tuple(OpenDateTime, OpenPrice, OpenIV)
+    """
+    try:
+        # Чтение сделок из переданного датафрейма или CSV файла
+        if trades_df is None:
+            trades_df = _read_trades_csv()
+
+        # Фильтрация по инструменту (все сделки по инструменту)
+        instrument_trades_df = trades_df[trades_df['ticker'] == sec_code].copy()
+
+        if instrument_trades_df.empty:
+            logger.warning(f"Предупреждение: Нет данных для инструмента {sec_code}")
+            return None, None, None
+
+        # Преобразование datetime и сортировка в обратном порядке (от последних сделок к первым)
+        instrument_trades_df['datetime'] = pd.to_datetime(instrument_trades_df['datetime'],
+                                                          format='%d.%m.%Y %H:%M:%S')
+        instrument_trades_df = instrument_trades_df.sort_values('datetime', ascending=False)
+
+        # Применяем изменение знака для объема при продаже (умножаем объем сделки на -1)
+        instrument_trades_df.loc[instrument_trades_df['operation'] == 'Продажа', 'volume'] *= -1
+
+        # Целевой объём
+        required_volume = net_pos
+        sign = 1 if required_volume > 0 else -1  # Знак позиции: для положительной вычитаем объемы, для отрицательной прибавляем
+        selected_trades = []
+        # Отбираем сделки до достижения нужного объёма
+        for _, trade in instrument_trades_df.iterrows():
+            volume = trade['volume']
+            if sign * (required_volume - volume) >= 0:
+                # Добавляем сделку целиком
+                selected_trades.append(trade)
+                required_volume -= volume
+            else:
+                # Добавляем частичную сделку
+                partial_trade = trade.copy()
+                partial_trade['volume'] = required_volume
+                selected_trades.append(partial_trade)
+                required_volume = 0
+                break
+
+        if not selected_trades:
+            sum_volume_short = instrument_trades_df.loc[instrument_trades_df['operation'] == 'Продажа', 'volume'].sum()
+            count_short = (instrument_trades_df['operation'] == 'Продажа').sum()
+            sum_volume_long = instrument_trades_df.loc[instrument_trades_df['operation'] == 'Купля', 'volume'].sum()
+            count_long = (instrument_trades_df['operation'] == 'Купля').sum()
+            logger.warning(f"Предупреждение: Недостаточно сделок для инструмента {sec_code}")
+            logger.warning(f"Позиция: {net_pos}")
+            logger.warning(f"Сделок лонг: {count_long} Объем: {sum_volume_long}")
+            logger.warning(f"Сделок шорт: {count_short} Объем: {sum_volume_short}")
+            return None, None, None
+
+        # Дата первой сделки (самой старой сделки, она в конце списка)
+        selected_df = pd.DataFrame(selected_trades)
+        OpenDateTime = selected_df.iloc[-1]['datetime'].strftime('%d.%m.%Y %H:%M:%S')
+
+        # Удаляем из списка сделки противоположной направленности
+        # для правильного расчета средневзвешенных значений цены и волатильности
+        selected_trades = [trade for trade in selected_trades
+                           if (trade['volume'] > 0) == (net_pos > 0)]
+
+        # Расчет средневзвешенной цены и волатильности открытия методом FIFO
+        fifo_entries = [Entry(quantity=trade['volume'], price=trade['price']) for trade in selected_trades]
+        fifo_entries_volatility = [Entry(quantity=trade['volume'], price=trade['volatility'])
+                                   for trade in selected_trades]
+
+        OpenPrice = calculate_weighted_average(FIFO(fifo_entries).inventory)
+        OpenIV = calculate_weighted_average(FIFO(fifo_entries_volatility).inventory)
+
+        return OpenDateTime, OpenPrice, OpenIV
+
+    except Exception as e:
+        logger.error(f"Ошибка при вычислении данных открытия для {sec_code}: {e}")
+        return None, None, None
+
+
+def calculate_weighted_average(inventory):
+    """Средневзвешенное значение по инвентарю FIFO (deque из Entry с атрибутами quantity и price)"""
+    weighted_sum = sum(entry.quantity * entry.price for entry in inventory)
+    total_weight = sum(entry.quantity for entry in inventory)
+    return weighted_sum / total_weight if total_weight != 0 else 0
+
+def _read_trades_csv():
+    """Читает CSV файл со сделками. Возвращает пустой датафрейм при отсутствии файла или ошибке"""
+    try:
+        trades_df = pd.read_csv(TRADES_CSV_PATH, encoding='utf-8', delimiter=';')
+        trades_df['datetime'] = pd.to_datetime(
+            trades_df['datetime'], format='%d.%m.%Y %H:%M:%S', errors='coerce'
+        )
+        numeric_columns = ['strike', 'volume', 'price', 'value', 'volatility']
+        for column in numeric_columns:
+            if column in trades_df.columns:
+                trades_df[column] = pd.to_numeric(trades_df[column], errors='coerce')
+        return trades_df
+    except (FileNotFoundError, pd.errors.EmptyDataError):
+        return pd.DataFrame(columns=[
+            'datetime', 'trade_id', 'order_id', 'option_base', 'ticker',
+            'option_type', 'strike', 'expdate', 'operation', 'volume',
+            'price', 'value', 'volatility'
+        ])
+
+# ---------------------------------------------------------------------------
+# Обработчик информации об аккаунте
+# ---------------------------------------------------------------------------
+def _on_account_info(account_response):
+    """Обработчик информации об аккаунте из стрим-подписки"""
+    try:
+        data = _account_data[0]
+
+        if not account_response:
+            logger.warning("Получен пустой ответ по аккаунту из стрим-подписки")
+            return
+
+        if not hasattr(account_response, "positions"):
+            logger.warning("В ответе нет атрибута positions")
+            return
+
+        # --- Сохраняем базовую информацию ---
+        if hasattr(account_response, "account_id"):
+            data["account_id"] = account_response.account_id  # Идентификатор аккаунта
+        if hasattr(account_response, "status"):
+            data["status"] = account_response.status  # Статус аккаунта
+
+        # --- Equity и unrealized_profit ---
+        if hasattr(account_response, "equity") and account_response.equity:
+            data["equity"] = to_float(
+                account_response.equity
+            )  # Доступные средства плюс стоимость открытых позиций
+        if (
+            hasattr(account_response, "unrealized_profit")
+            and account_response.unrealized_profit
+        ):
+            data["unrealized_profit"] = to_float(
+                account_response.unrealized_profit
+            )  # Нереализованная прибыль
+
+        # --- Денежные средства ---
+        data["cash"] = {}
+        if hasattr(account_response, "cash"):
+            for money_item in account_response.cash:
+                currency = (
+                    money_item.currency_code if money_item.currency_code else "RUB"
+                )
+                # В Google Money (protobuf) nanos всегда неотрицателен и лежит в [0, 1e9),
+                # а знак числа задаётся units. Поэтому сумму считаем как units + nanos/1e9.
+                # Важно: не выбрасывать наносоставляющую, даже если units == 0.
+                amount = (
+                    float(money_item.units) + float(money_item.nanos) / 1_000_000_000
+                )
+                data["cash"][currency] = {
+                    "balance": amount,
+                    "blocked": 0.0,
+                    "free": amount,
+                }
+
+        # --- Определяем тип портфеля ---
+        # Проверяем наличие поля через DESCRIPTOR, чтобы избежать ошибок HasField
+        if (
+            "portfolio_forts" in account_response.DESCRIPTOR.fields_by_name
+            and account_response.HasField("portfolio_forts")
+        ):
+            data["portfolio_type"] = (
+                "FORTS"  # Тип портфеля для торговли на срочном рынке Московской Биржи.
+            )
+            forts = account_response.portfolio_forts
+            data["margin"] = {
+                "available_cash": to_float(
+                    forts.available_cash
+                ),  # Сумма собственных денежных средств на счете, доступная для торговли. Включает маржинальные средства.
+                "money_reserved": to_float(
+                    forts.money_reserved
+                ),  # Минимальная маржа (необходимая сумма обеспечения под открытые позиции)
+            }
+            data["cash"]["RUB"] = {
+                "balance": to_float(forts.available_cash),
+                "blocked": to_float(forts.money_reserved),
+                "free": to_float(forts.available_cash),
+                "GM": (to_float(forts.money_reserved) / data["equity"]) * 100
+                if data["equity"]
+                else 0.0,
+            }
+        elif (
+            "portfolio_mc" in account_response.DESCRIPTOR.fields_by_name
+            and account_response.HasField("portfolio_mc")
+        ):
+            data["portfolio_type"] = "MC"
+            mc = account_response.portfolio_mc
+            data["margin"] = {
+                "available_cash": to_float(mc.available_cash),
+                "initial_margin": to_float(mc.initial_margin),
+                "maintenance_margin": to_float(mc.maintenance_margin),
+            }
+        elif (
+            "portfolio_mct" in account_response.DESCRIPTOR.fields_by_name
+            and account_response.HasField("portfolio_mct")
+        ):
+            data["portfolio_type"] = "MCT"
+            mct = account_response.portfolio_mct
+            data["margin"] = {
+                "available_cash": to_float(mct.available_cash),
+                "initial_margin": to_float(mct.initial_margin),
+                "maintenance_margin": to_float(mct.maintenance_margin),
+            }
+
+        # --- Парсим позиции ---
+        # Накопительное обновление: не очищаем data["positions"] на каждом событии,
+        # а обновляем записи по символам, пришедшим в текущем событии.
+        # Позиции, отсутствующие в событии, остаются без изменений.
+        # Даже при quantity == 0 запись сохраняется (для Finam_MyPos.csv).
+
+        for position in account_response.positions:
+            try:
+                symbol = position.symbol if hasattr(position, "symbol") else "UNKNOWN"
+                if symbol == "UNKNOWN":
+                    continue  # пропускаем позиции без символа
+                chain = options_chains.get(symbol)
+
+                quantity = (
+                    to_float(position.quantity)
+                    if hasattr(position, "quantity")
+                    else 0.0
+                )
+                current_price = (
+                    to_float(position.current_price)
+                    if hasattr(position, "current_price")
+                    else 0.0
+                )
+                average_price = (
+                    to_float(position.average_price)
+                    if hasattr(position, "average_price")
+                    else 0.0
+                )
+                maintenance_margin = (
+                    to_float(position.maintenance_margin)
+                    if hasattr(position, "maintenance_margin")
+                    else 0.0
+                )
+                daily_pnl = (
+                    to_float(position.daily_pnl)
+                    if hasattr(position, "daily_pnl")
+                    else 0.0
+                )
+                unrealized_pnl = (
+                    to_float(position.unrealized_pnl)
+                    if hasattr(position, "unrealized_pnl")
+                    else 0.0
+                )
+
+                # Тикер без суффикса биржи (например RIZ6@RTSX -> RIZ6)
+                ticker = symbol.split("@")[0] if symbol else ""
+
+                strike_price = chain.get("strike") if chain else ""
+                opt_type_raw = chain.get("type") if chain else ""
+                opt_type = "Put" if "PUT" in opt_type_raw.upper() else (
+                    "Call" if "CALL" in opt_type_raw.upper() else opt_type_raw
+                )
+                opt_expdate = fmt_ru_date(chain.get("expiration_last_day")) if chain else ""
+                option_base = chain.get("base_ticker") if chain else ""
+
+                # Если позиция не нулевая производим расчёт
+                if quantity != 0:
+                    # Вычисление даты, цены и волатильности открытия позиции
+                    open_data_result = calculate_open_data_open_price_open_iv(ticker, quantity)
+                    # Проверяем, что функция вернула корректные данные
+                    if open_data_result is not None and len(open_data_result) > 2:
+                        open_datetime = open_data_result[0]
+                        open_price = open_data_result[1] if open_data_result[1] is not None else 0.0
+                        open_iv = open_data_result[2] if open_data_result[2] is not None else 0.0
+                    else:
+                        open_datetime = ""
+                        open_price = 0.0
+                        open_iv = 0.0
+                else:
+                    open_datetime = ""
+                    open_price = 0.0
+                    open_iv = 0.0
+
+                # Безопасное обращение к котировкам: позиция могла быть по символу,
+                # которого ещё нет в option_quotes (фьючерс или ещё неподписанный опцион)
+                q = option_quotes.get(symbol, {}) if option_quotes else {}
+                ts = q.get("timestamp")
+                if ts:
+                    dt = datetime.fromisoformat(ts)  # or datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
+                    last_time = dt.time()
+                else:
+                    last_time = None
+                bid_price = q.get("bid")
+                last = q.get("last")
+                ask = q.get("ask")
+                theoretical_price = q.get("theoretical_price")
+                volatility = q.get("implied_volatility")
+                bid_iv = q.get("bid_iv")
+                last_iv = q.get("last_iv")
+                ask_iv = q.get("ask_iv")
+                delta = _safe_float(q.get("delta"))
+                gamma = _safe_float(q.get("gamma"))
+                theta = _safe_float(q.get("theta"))
+                vega = _safe_float(q.get("vega"))
+                volatility_f = _safe_float(volatility)
+                bid_iv_f = _safe_float(bid_iv)
+                last_iv_f = _safe_float(last_iv)
+                ask_iv_f = _safe_float(ask_iv)
+                # Вычисление TrueVega
+                # opt_expdate в формате DD.MM.YYYY (см. fmt_ru_date)
+                try:
+                    exp_date = datetime.strptime(opt_expdate, "%d.%m.%Y").date()
+                except (ValueError, TypeError):
+                    exp_date = None
+                DAYS_TO_MAT_DATE = (exp_date - datetime.now().date()).days if exp_date else 0
+                TrueVega = 0 if DAYS_TO_MAT_DATE <= 0 else vega / (DAYS_TO_MAT_DATE ** 0.5)
+
+                data["positions"][symbol] = {
+                    'ticker': ticker,
+                    'net_pos': quantity,
+                    'strike': strike_price,
+                    'opt_type': opt_type,
+                    'expdate': opt_expdate,
+                    'option_base': option_base,
+                    'OpenDateTime': open_datetime,
+                    'OpenPrice': round(open_price, 2) if open_price is not None else open_price,
+                    'OpenIV': round(open_iv, 2) if open_iv is not None else open_iv,
+                    'time_last': last_time,
+                    'bid': bid_price,
+                    'last': last,
+                    'ask': ask,
+                    'theor': theoretical_price,
+                    'QuikVola': round(volatility_f, 2),
+                    'bidIV': round(bid_iv_f, 2),
+                    'lastIV': round(last_iv_f, 2),
+                    'askIV': round(ask_iv_f, 2),
+                    'Delta': round(delta * quantity, 2),
+                    'Gamma': round(gamma * quantity, 4),
+                    'Theta': round(theta * quantity, 2),
+                    'Vega': round(vega * quantity, 2),
+                    'TrueVega': round(TrueVega * quantity, 2),
+                    "u_pnl": round(unrealized_pnl, 2),  # unrealized_pnl
+                }
+
+            except Exception as e:
+                logger.error(f"Ошибка при парсинге позиции: {e}")
+
+        # Сохраняем поля словаря data["positions"][symbol] в CSV файл Finam_MyPos.csv (sep=';', encoding='utf-8', index=False)
+        # Если файл отсутствует в папке data/Finam — он будет создан
+        try:
+            my_pos_path = os.path.join(DATA_DIR_FINAM, "Finam_MyPos.csv")
+            os.makedirs(DATA_DIR_FINAM, exist_ok=True)
+            if data["positions"]:
+                pd.DataFrame.from_dict(data["positions"], orient="index").to_csv(
+                    my_pos_path,
+                    sep=";",
+                    encoding="utf-8",
+                    index=False,
+                )
+        except Exception as e:
+            logger.error(f"Ошибка при записи Finam_MyPos.csv: {e}")
+
+        # Проверяем, не появились ли новые опционы в портфеле
+        update_option_subscriptions_from_portfolio()
+
+    except Exception as e:
+        logger.error(
+            f"Необработанная ошибка в _on_account_info: {e}\n{traceback.format_exc()}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Подписка на поток информации об аккаунте
+# ---------------------------------------------------------------------------
+def start_account_stream(fp_provider, account_id):
+    """Запускает поток подписки на информацию об аккаунте"""
+    fp_provider.on_account_info.subscribe(_on_account_info)
+    stream_thread = Thread(
+        target=fp_provider.subscribe_account_thread,
+        name="AccountThread",
+        args=(account_id,),
+        daemon=True,
+    )
+    stream_thread.start()
+    track_thread(stream_thread)
+    logger.info(f"Подписка на аккаунт {account_id} запущена")
+    return stream_thread
+
+
+# ---------------------------------------------------------------------------
+# Ожидание торговой сессии
+# ---------------------------------------------------------------------------
+def wait_for_trading_session(stop_event):
+    """
+    Ожидает начала торговой сессии.
+
+    Во время ожидания дополнительно следит за состоянием соединения:
+    если оно оборвалось (флаг _reconnect_requested или все потоки подписки
+    на котировки мертвы) — немедленно переподключается, чтобы к началу торгов
+    программа уже была готова к работе.
+    """
+    global _reconnect_requested
+
+    while not stop_event.is_set():
+        now = get_market_now()
+        seconds_to_trade = schedule.time_until_trade(now).total_seconds()
+
+        if seconds_to_trade <= 0:
+            logger.info("Торговая сессия активна. Начинаем работу.")
+            return
+
+        # Если соединение оборвалось во время ожидания торгов — переподключаемся сразу
+        if _reconnect_requested or (
+            fp_provider is not None and not _connection_is_alive()
+        ):
+            _reconnect_requested = False
+            logger.info(
+                "Обнаружен обрыв соединения во время ожидания торгов. Переподключаемся..."
+            )
+            try:
+                initialize_connection(stop_event)
+                logger.info("Соединение восстановлено во время ожидания торгов.")
+            except Exception as e:
+                logger.error(
+                    f"Не удалось переподключиться во время ожидания торгов: "
+                    f"{e}\n{traceback.format_exc()}"
+                )
+
+        wait_seconds = min(seconds_to_trade, 60)
+        logger.info(
+            f"До начала торгов {seconds_to_trade:.0f} сек. Ждём {wait_seconds:.0f} сек..."
+        )
+        stop_event.wait(wait_seconds)
+
+
+def wait_for_base_asset_prices(stop_event, timeout=30):
+    """Ожидает появления котировок по всем базовым активам."""
+    deadline = datetime.now().timestamp() + timeout
+    while not stop_event.is_set():
+        missing = [t for t in MAP if t not in base_asset_quotes]
+        if not missing:
+            return True
+        if datetime.now().timestamp() > deadline:
+            logger.warning(
+                f"Не удалось получить котировки по всем базовым активам за {timeout} сек. Отсутствуют: {missing}"
+            )
+            return False
+        sleep(0.5)
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Отладочный вывод котировок (периодический)
+# ---------------------------------------------------------------------------
+def print_quotes_periodically(stop_event):
+    """Раз в 10 секунд выводит записи в хранилищах."""
+    while not stop_event.is_set():
+        stop_event.wait(10)
+
+        # Вывод параметров портфеля
+        # Берем тот самый глобальный словарь, который обновляется в _on_account_info
+        data = _account_data[0]
+
+        print("\n" + "=" * 40)
+        print(f"=== Идентификатор аккаунта: {data.get('account_id', 'Не указан')} ===")
+        print(f"Статус аккаунта: {data.get('status', 'Не указан')}")
+        print(f"Equity (средства + позиции): {data.get('equity', 0):,.2f}")
+        print(f"Нереализованная прибыль: {data.get('unrealized_profit', 0):,.2f}")
+
+        cash_rub = data.get("cash", {}).get("RUB", {})
+        if cash_rub:
+            print(
+                f"RUB Balance: {cash_rub.get('balance', 0):,.2f} | Blocked: {cash_rub.get('blocked', 0):,.2f} | Free: {cash_rub.get('free', 0):,.2f}")
+            gm = cash_rub.get("GM", 0)
+            if gm:
+                print(f"GM (залог % от equity): {gm:.0f}%")
+        else:
+            print("Нет данных по RUB в cash")
+
+        margin = data.get("margin", {})
+        if margin:
+            print(f"Доступные средства: {margin.get('available_cash', 0):,.2f}")
+            # Для FORTS это money_reserved, для MC/MCT это initial/maintenance margin
+            reserved = margin.get('money_reserved') or margin.get('initial_margin')
+            if reserved is not None:
+                print(f"Зарезервировано под позиции: {reserved:,.2f}")
+
+        pos_count = len(data.get("positions", {}))
+        print(f"Количество позиций в портфеле: {pos_count}")
+        print("=" * 40 + "\n")
+
+        # # --- Вывод котировок базовых активов ---
+        # if base_asset_quotes:
+        #     print(f"\n=== base_asset_quotes ({len(base_asset_quotes)} тикеров) ===")
+        # #     for ticker, quote in base_asset_quotes.items():
+        # #         print(f"{ticker}: {quote}")
+        # # else:
+        # #     print("\n=== base_asset_quotes пуст ===")
+        #
+        # # --- Вывод котировок опционов ---
+        # if option_quotes:
+        #     print(f"\n=== option_quotes ({len(option_quotes)} символов) ===")
+        # #     for symbol, quote in option_quotes.items():
+        # #         print(f"{symbol}: {quote}")
+        # # else:
+        # #     print("\n=== option_quotes пуст ===")
+        #
+        # # --- Вывод заявок active_orders ---
+        # if active_orders:
+        #     print(f"\n=== active_orders ({len(active_orders)} заявок) ===")
+        #     # for order_id, order_data in active_orders.items():
+        #     #     print(f"Заявка ID: {order_id}")
+        #     #     for field, value in order_data.items():
+        #     #         print(f"  {field}: {value}")
+        #     #     print("-" * 40)  # разделитель между заявками
+        # else:
+        #     print("\n=== active_orders пуст ===")
+        #
+        # # --- Вывод сделок trades ---
+        # if trades:
+        #     print(f"\n=== trades ({len(trades)} сделок) ===")
+        #     # for trade_id, trade_data in list(trades.items()):
+        #     #     print(f"Сделка ID: {trade_id}")
+        #     #     for field, value in trade_data.items():
+        #     #         print(f"  {field}: {value}")
+        #     #     print("-" * 40)
+        # else:
+        #     print("\n=== trades пуст ===")
+
+
+# ---------------------------------------------------------------------------
+# Управление соединением и переподключением
+# ---------------------------------------------------------------------------
+def close_provider():
+    global fp_provider
+    if fp_provider is not None:
+        try:
+            # Останавливаем все подписки на котировки
+            for sub in _quote_subscriptions:
+                sub.stop()
+            _quote_subscriptions.clear()
+
+            # Отписываемся от всех событий
+            fp_provider.on_quote.unsubscribe(_on_quote)
+            fp_provider.on_order.unsubscribe(_on_order)
+            fp_provider.on_trade.unsubscribe(_on_trade)
+            fp_provider.on_account_info.unsubscribe(_on_account_info)
+
+            # Закрываем канал
+            fp_provider.close_channel()
+        except Exception:
+            pass
+        finally:
+            fp_provider = None
+
+
+def reset_state():
+    """
+    Сбрасывает все глобальные состояния перед повторным подключением.
+    Удалены неиспользуемые переменные (_known_symbols, _subscribed_symbols,
+    _last_change_time); добавлен сброс _previous_obsolete и очистка очереди задач.
+    """
+    global base_symbols, _last_positions_symbols, _last_orders_symbols
+    global _options_chains_loaded, subscribed_option_symbols
+    global \
+        _stream_threads, \
+        option_quotes, \
+        options_chains, \
+        active_orders, \
+        _subscription_dirty
+    global _full_ticker_to_map, _quote_subscriptions, _cleanup_dirty, _symbol_last_seen
+    global _previous_obsolete, _io_task_queue
+    global _last_trades_cleanup_enqueued
+
+    _quote_subscriptions.clear()
+    _symbol_last_seen.clear()
+    base_symbols.clear()
+    _full_ticker_to_map.clear()
+    _last_positions_symbols.clear()
+    _last_orders_symbols.clear()
+    subscribed_option_symbols.clear()
+    _stream_threads.clear()
+    option_quotes.clear()
+    options_chains.clear()
+    active_orders.clear()
+    trades.clear()
+    _previous_obsolete.clear()
+    _options_chains_loaded = False
+    _subscription_dirty = False
+    _cleanup_dirty = False
+    _last_cleanup_check = 0.0
+    _last_trades_cleanup_enqueued = 0.0
+
+    # Выбрасываем накопившиеся фоновые задачи, чтобы после переподключения
+    # не выполнялась устаревшая очистка/подписка по старым данным
+    while not _io_task_queue.empty():
+        try:
+            _io_task_queue.get_nowait()
+        except queue.Empty:
+            break
+
+
+def track_thread(thread):
+    """Добавляет поток в список отслеживаемых и чистит завершённые."""
+    _stream_threads.append(thread)
+    # Удаляем мёртвые потоки, чтобы список не разрастался
+    for t in _stream_threads[:]:
+        if not t.is_alive():
+            _stream_threads.remove(t)
+
+
+def _connection_is_alive():
+    """
+    Проверяет, жив ли хотя бы один поток подписки на котировки.
+
+    Используется как индикатор здоровья gRPC-соединения: если все потоки
+    подписки на котировки мертвы, значит, канал с сервером потерян
+    (в отличие от проверки is_alive всех потоков, этот метод не даёт ложных
+    срабатываний на управляющие потоки вроде io_worker).
+    """
+    quote_threads = [t for t in _stream_threads if t.name.startswith("QuotesThread")]
+    return bool(quote_threads) and all(t.is_alive() for t in quote_threads)
+
+
+def get_backoff_delay(attempt):
+    """Экспоненциальная задержка с джиттером: 5с, 10с, 20с, 40с, ... до 300с."""
+    base = min(5 * (2**attempt), 300)
+    jitter = random.uniform(0, 0.3 * base)
+    return base + jitter
+
+
+def initialize_connection(stop_event):
+    """
+    Полная инициализация подключения: создание провайдера,
+    подписка на все потоки и загрузка данных.
+    """
+    global fp_provider, account_id, _options_chains_loaded
+
+    # 1. Закрываем старый канал (внутри уже остановит и очистит подписки)
+    close_provider()
+
+    # 2. Создаём новый экземпляр FinamPy
+    fp_provider = FinamPy()
+    if not fp_provider.account_ids:
+        fp_provider.account_ids = list(fp_provider.token_details().account_ids)
+    if not fp_provider.account_ids:
+        raise RuntimeError("Не найдено ни одного торгового счёта")
+    account_id = fp_provider.account_ids[0]
+    logger.info(f"Инициализация: работа с аккаунтом {account_id}")
+    single_transaction_clearing() # Очистка файла Finam_Stream_Trades.csv от старых сделок
+
+    # 3. Сбрасываем все глобальные состояния
+    reset_state()
+
+    # 4. Последовательность подписок
+    subscribe_base_assets(fp_provider)  # заполняет base_symbols
+    start_quotes_subscription(fp_provider)  # базовые активы
+    wait_for_base_asset_prices(stop_event, timeout=30)
+    load_options_chains(fp_provider)  # загружает цепочки опционов
+    # start_quotes_subscription(fp_provider)      # перезапуск с опционами
+    subscribe_orders(fp_provider, account_id)  # заявки
+    subscribe_trades(fp_provider, account_id)  # сделки
+    start_account_stream(fp_provider, account_id)  # аккаунт
+
+    logger.info("Все подписки активны.")
+
+
+def watchdog(stop_event):
+    """
+    Периодически проверяет доступность API через запрос серверного времени.
+    Если запрос не проходит — инициирует переподключение (выставляет флаг).
+    """
+    global _reconnect_requested
+
+    while not stop_event.is_set():
+        if fp_provider is not None:
+            try:
+                # Проверка живости канала: получаем время на сервере
+                clock: ClockResponse = fp_provider.call_function(
+                    fp_provider.assets_stub.Clock, ClockRequest()
+                )
+
+                if clock is None:
+                    raise ConnectionError(
+                        "ClockRequest вернул None — соединение потеряно"
+                    )
+
+                # Дополнительно можно проверить, что время адекватное
+                dt_server = datetime.fromtimestamp(
+                    clock.timestamp.seconds + clock.timestamp.nanos / 1e9,
+                    fp_provider.tz_msk,
+                )
+                logger.debug(
+                    f"Watchdog: серверное время {dt_server:%d.%m.%Y %H:%M:%S} — соединение живо"
+                )
+
+                if _reconnect_requested:
+                    logger.info("Соединение восстановлено (watchdog).")
+                _reconnect_requested = False
+
+            except Exception as e:
+                logger.error(f"Watchdog: соединение потеряно: {e}")
+                _reconnect_requested = True
+
+        stop_event.wait(10)  # проверка каждые 10 секунд
+
+
+# ---------------------------------------------------------------------------
+# Основная функция
+# ---------------------------------------------------------------------------
+def main():
+    logger.info("Запуск программы мониторинга аккаунта по расписанию биржи")
+    global fp_provider, account_id, _reconnect_requested, _subscription_dirty
+    global _last_cleanup_check
+
+    stop_event = Event()
+
+    def signal_handler(signum, frame):
+        logger.info("Получен сигнал остановки. Завершаем работу...")
+        stop_event.set()
+
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
+    Thread(target=watchdog, args=(stop_event,), daemon=True).start()
+    Thread(target=print_quotes_periodically, args=(stop_event,), daemon=True).start()  # Поток для тестов
+
+    # Фоновый поток для задач ввода-вывода (очистка CSV, LastQuote),
+    # чтобы не блокировать gRPC-потоки событий
+    io_thread = Thread(
+        target=io_worker, args=(stop_event,), daemon=True, name="IOWorkerThread"
+    )
+    io_thread.start()
+    track_thread(io_thread)
+
+    try:
+        while not stop_event.is_set():
+            wait_for_trading_session(stop_event)
+            if stop_event.is_set():
+                break
+
+            # --- Подключение (первичное или после обрыва) ---
+            attempt = 0
+            while not stop_event.is_set():
+                try:
+                    # Если соединение уже живое (например, восстановлено во время
+                    # ожидания торгов в wait_for_trading_session) — не инициализируем
+                    # его повторно, чтобы избежать двойного переподключения.
+                    if fp_provider is not None and _connection_is_alive():
+                        logger.info("Соединение уже активно. Используем существующее.")
+                        break
+                    initialize_connection(stop_event)
+                    logger.info(f"Соединение установлено. Аккаунт: {account_id}")
+                    attempt = 0
+                    break
+                except Exception as e:
+                    logger.error(f"Не удалось инициализировать соединение: {e}")
+                    delay = get_backoff_delay(attempt)
+                    attempt += 1
+                    logger.info(f"Повторная попытка через {delay:.1f} сек...")
+                    stop_event.wait(delay)
+
+            if stop_event.is_set():
+                break
+
+            # --- Основной цикл работы ---
+            while not stop_event.is_set():
+                now = get_market_now()
+                if not schedule.trade_session(now):
+                    logger.info("Торговая сессия закончилась.")
+                    break
+
+                # Обрыв соединения → выходим во внешний цикл для переподключения
+                if _reconnect_requested or not _connection_is_alive():
+                    logger.warning("Обнаружен обрыв соединения. Переподключаемся...")
+                    _reconnect_requested = False
+                    break
+
+                # Немедленный перезапуск при появлении новых опционов
+                if _subscription_dirty:
+                    _subscription_dirty = False
+                    logger.info("Перезапуск подписки после добавления новых опционов")
+                    restart_quotes_subscription()
+
+                # Отложенная очистка устаревших опционов (проверяем не чаще раза в 5 секунд)
+                if _cleanup_dirty and _time.time() - _last_cleanup_check >= 5.0:
+                    _last_cleanup_check = _time.time()
+                    logger.info("Периодическая очистка устаревших опционов")
+                    cleanup_obsolete_subscriptions()
+
+                stop_event.wait(1)
+
+    except Exception as e:
+        logger.error(f"Критическая ошибка в main: {e}\n{traceback.format_exc()}")
+    finally:
+        stop_event.set()
+        close_provider()
+        logger.info("Программа остановлена")
+
+
+# ---------------------------------------------------------------------------
+# Точка входа
+# ---------------------------------------------------------------------------
+if __name__ == "__main__":
+    logging.basicConfig(
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        datefmt="%d.%m.%Y %H:%M:%S",
+        level=logging.INFO,
+        handlers=[
+            logging.FileHandler("FINAM_Stream.log", encoding="utf-8"),
+            logging.StreamHandler(),
+        ],
+        force=True,
+    )
+
+    main()

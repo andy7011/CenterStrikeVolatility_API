@@ -26,7 +26,6 @@ import atexit
 from FinamPy.grpc.marketdata_service_pb2 import SubscribeBarsResponse, TimeFrame  # Подписка на бары Финама
 from FinLabPy.Config import brokers, default_broker  # Все брокеры и брокер по умолчанию
 from FinLabPy.Core import Bar, bars_to_df  # Бар, перевод бар в pandas DataFrame
-from AlorPy import AlorPy  # Работа с Alor OpenAPI V2
 
 # temp_str = 'C:\\Users\\sftpuser\\Position\\$name_file' # виртуальная машина
 # temp_str = 'C:\\Users\\ashad\\Yandex.Disk\\_ИИС\\Position\\$name_file' # домашний компьютер
