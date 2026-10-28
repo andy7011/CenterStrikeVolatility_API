@@ -100610,3 +100610,112 @@ TypeError: type NoneType doesn't define __round__ method
 27.10.2026 17:50:01 - FinamPy.Stream - INFO - Перезапуск подписки после добавления новых опционов
 27.10.2026 17:50:01 - FinamPy.Stream - INFO - Все старые подписки остановлены
 27.10.2026 17:50:02 - FinamPy.Stream - INFO - Запущено 2 потоков подписки на 14 символов
+28.10.2026 10:14:12 - FinamPy.Stream - INFO - Загружено архивных сделок из C:\Users\шадрин\PycharmProjects\CenterStrikeVolatility_API\data\Finam\Finam_Stream_Trades_ALL.csv: всего 1078 (в активную историю trades добавлено 1078)
+28.10.2026 10:14:43 - FinamPy.Stream - INFO - Запуск программы мониторинга аккаунта по расписанию биржи
+28.10.2026 10:14:43 - FinamPy.Stream - INFO - Фоновый поток обработки задач I/O запущен
+28.10.2026 10:14:43 - FinamPy.Stream - INFO - Торговая сессия активна. Начинаем работу.
+28.10.2026 10:14:44 - FinamPy.Stream - INFO - Инициализация: работа с аккаунтом 1218884
+28.10.2026 10:14:44 - FinamPy.Stream - INFO - Запуск функции single_transaction_clearing. Загрузка состава портфеля отдельным запросом GetAccount и очистка сделок инструментов, которых уже нет в портфеле
+28.10.2026 10:14:44 - FinamPy.Stream - INFO - Актуальный состав портфеля: {'RI105000BL6@RTSX', 'RI102500BL6@RTSX', 'RI90000BW6@RTSX', 'RIZ6@RTSX', 'RI95000BW6@RTSX', 'RI102500BK6A@RTSX', 'RI92500BW6@RTSX'}
+28.10.2026 10:14:44 - FinamPy.Stream - INFO - Запуск функции cleanup_trades очистки сделок закрытых инструментов
+28.10.2026 10:14:44 - FinamPy.Stream - INFO - Очистка сделок: удалено записей: 664
+28.10.2026 10:15:35 - FinamPy.Stream - INFO - Базовые активы собраны: ['SRH7@RTSX', 'RIZ6@RTSX', 'RIH7@RTSX', 'SiZ6@RTSX', 'SiH7@RTSX', 'SRZ6@RTSX']
+28.10.2026 10:15:35 - FinamPy.Stream - INFO - Запущено 1 потоков подписки на 6 символов
+28.10.2026 10:15:43 - FinamPy.Stream - INFO - Цепочка опционов для RIZ6@RTSX на 2026-10-29: загружено 30 из 52 опционов (страйков: 15)
+28.10.2026 10:15:43 - FinamPy.Stream - INFO - Цепочка опционов для RIZ6@RTSX на 2026-11-05: загружено 30 из 46 опционов (страйков: 15)
+28.10.2026 10:15:43 - FinamPy.Stream - INFO - Цепочка опционов для RIZ6@RTSX на 2026-11-12: загружено 30 из 42 опционов (страйков: 15)
+28.10.2026 10:15:43 - FinamPy.Stream - INFO - Цепочка опционов для RIZ6@RTSX на 2026-11-19: загружено 30 из 78 опционов (страйков: 15)
+28.10.2026 10:15:43 - FinamPy.Stream - INFO - Цепочка опционов для RIZ6@RTSX на 2026-12-17: загружено 30 из 128 опционов (страйков: 15)
+28.10.2026 10:15:48 - FinamPy.Stream - INFO - Цепочка опционов для SiZ6@RTSX на 2026-10-29: загружено 30 из 104 опционов (страйков: 15)
+28.10.2026 10:15:48 - FinamPy.Stream - INFO - Цепочка опционов для SiZ6@RTSX на 2026-11-05: загружено 30 из 90 опционов (страйков: 15)
+28.10.2026 10:15:48 - FinamPy.Stream - INFO - Цепочка опционов для SiZ6@RTSX на 2026-11-12: загружено 30 из 82 опционов (страйков: 15)
+28.10.2026 10:15:49 - FinamPy.Stream - INFO - Цепочка опционов для SiZ6@RTSX на 2026-11-19: загружено 30 из 150 опционов (страйков: 15)
+28.10.2026 10:15:49 - FinamPy.Stream - INFO - Цепочка опционов для SiZ6@RTSX на 2026-12-17: загружено 30 из 200 опционов (страйков: 15)
+28.10.2026 10:15:54 - FinamPy.Stream - INFO - Цепочка опционов для RIH7@RTSX на 2027-01-21: загружено 30 из 72 опционов (страйков: 15)
+28.10.2026 10:15:54 - FinamPy.Stream - INFO - Цепочка опционов для RIH7@RTSX на 2027-03-18: загружено 30 из 114 опционов (страйков: 15)
+28.10.2026 10:16:15 - FinamPy.Stream - INFO - Цепочка опционов для SiH7@RTSX на 2027-01-21: загружено 30 из 142 опционов (страйков: 15)
+28.10.2026 10:16:16 - FinamPy.Stream - INFO - Цепочка опционов для SiH7@RTSX на 2027-03-18: загружено 30 из 166 опционов (страйков: 15)
+28.10.2026 10:16:21 - FinamPy.Stream - INFO - Цепочка опционов для SRZ6@RTSX на 2026-10-28: загружено 30 из 74 опционов (страйков: 15)
+28.10.2026 10:16:21 - FinamPy.Stream - INFO - Цепочка опционов для SRZ6@RTSX на 2026-11-03: загружено 30 из 68 опционов (страйков: 15)
+28.10.2026 10:16:21 - FinamPy.Stream - INFO - Цепочка опционов для SRZ6@RTSX на 2026-11-11: загружено 30 из 62 опционов (страйков: 15)
+28.10.2026 10:16:22 - FinamPy.Stream - INFO - Цепочка опционов для SRZ6@RTSX на 2026-11-18: загружено 30 из 114 опционов (страйков: 15)
+28.10.2026 10:16:22 - FinamPy.Stream - INFO - Цепочка опционов для SRZ6@RTSX на 2026-12-16: загружено 30 из 204 опционов (страйков: 15)
+28.10.2026 10:16:26 - FinamPy.Stream - INFO - Цепочка опционов для SRH7@RTSX на 2027-03-17: загружено 30 из 178 опционов (страйков: 15)
+28.10.2026 10:16:26 - FinamPy.Stream - INFO - Всего опционов загружено: 600
+28.10.2026 10:16:26 - FinamPy.Stream - INFO - Подписка на собственные заявки аккаунта 1218884 запущена
+28.10.2026 10:16:26 - FinamPy.Stream - INFO - Подписка на собственные сделки аккаунта 1218884 запущена
+28.10.2026 10:16:26 - FinamPy.Stream - INFO - Подписка на аккаунт 1218884 запущена
+28.10.2026 10:16:26 - FinamPy.Stream - INFO - Все подписки активны.
+28.10.2026 10:16:26 - FinamPy.Stream - INFO - Соединение установлено. Аккаунт: 1218884
+28.10.2026 10:16:26 - FinamPy.Stream - INFO - _on_trade запуск функции verify_positions_and_cleanup_trades
+28.10.2026 10:16:26 - FinamPy.Stream - INFO - Запуск функции verify_positions_and_cleanup_trades Проверка состава портфеля отдельным запросом GetAccount
+28.10.2026 10:16:26 - FinamPy.Stream - INFO - Добавлены новые опционы в отслеживание: {'RI92500BW6@RTSX', 'RI105000BL6@RTSX', 'RI95000BW6@RTSX', 'RI102500BK6A@RTSX', 'RI102500BL6@RTSX', 'RI90000BW6@RTSX'}
+28.10.2026 10:16:27 - FinamPy.Stream - INFO - Перезапуск подписки после добавления новых опционов
+28.10.2026 10:16:27 - FinamPy.Stream - INFO - Все старые подписки остановлены
+28.10.2026 10:16:28 - FinamPy.Stream - INFO - Запущено 2 потоков подписки на 12 символов
+28.10.2026 10:16:40 - FinamPy.Stream - INFO - Загружено архивных сделок из C:\Users\шадрин\PycharmProjects\CenterStrikeVolatility_API\data\Finam\Finam_Stream_Trades_ALL.csv: всего 1085 (в активную историю trades добавлено 1085)
+28.10.2026 10:20:37 - FinamPy.Stream - WARNING - Предупреждение: Нет данных для инструмента RI95000BW6@RTSX
+28.10.2026 10:20:37 - FinamPy.Stream - WARNING - Предупреждение: Нет данных для инструмента RI105000BL6@RTSX
+28.10.2026 10:31:40 - FinamPy.Stream - INFO - Загружено архивных сделок из C:\Users\шадрин\PycharmProjects\CenterStrikeVolatility_API\data\Finam\Finam_Stream_Trades_ALL.csv: всего 1085 (в активную историю trades добавлено 1085)
+28.10.2026 10:33:48 - FinamPy.Stream - WARNING - Предупреждение: Нет данных для инструмента RI95000BW6@RTSX
+28.10.2026 10:33:48 - FinamPy.Stream - WARNING - Предупреждение: Нет данных для инструмента RI105000BL6@RTSX
+28.10.2026 10:35:15 - FinamPy.Stream - INFO - _on_trade запуск функции verify_positions_and_cleanup_trades
+28.10.2026 10:35:15 - FinamPy.Stream - INFO - Запуск функции verify_positions_and_cleanup_trades Проверка состава портфеля отдельным запросом GetAccount
+28.10.2026 10:39:13 - FinamPy.Stream - INFO - Загружено архивных сделок из C:\Users\шадрин\PycharmProjects\CenterStrikeVolatility_API\data\Finam\Finam_Stream_Trades_ALL.csv: всего 1087 (в активную историю trades добавлено 1087)
+28.10.2026 10:40:42 - FinamPy.Stream - WARNING - Предупреждение: Нет данных для инструмента RI95000BW6@RTSX
+28.10.2026 10:40:42 - FinamPy.Stream - WARNING - Предупреждение: Нет данных для инструмента RI105000BL6@RTSX
+28.10.2026 10:43:15 - FinamPy.Stream - INFO - Загружено архивных сделок из C:\Users\шадрин\PycharmProjects\CenterStrikeVolatility_API\data\Finam\Finam_Stream_Trades_ALL.csv: всего 1087 (в активную историю trades добавлено 1087)
+28.10.2026 10:44:51 - FinamPy.Stream - WARNING - Предупреждение: Нет данных для инструмента RI95000BW6@RTSX
+28.10.2026 10:44:51 - FinamPy.Stream - WARNING - Предупреждение: Нет данных для инструмента RI105000BL6@RTSX
+28.10.2026 10:49:16 - FinamPy.Stream - INFO - Загружено архивных сделок из C:\Users\шадрин\PycharmProjects\CenterStrikeVolatility_API\data\Finam\Finam_Stream_Trades_ALL.csv: всего 1087 (в активную историю trades добавлено 1087)
+28.10.2026 10:56:37 - FinamPy.Stream - INFO - Загружено архивных сделок из C:\Users\шадрин\PycharmProjects\CenterStrikeVolatility_API\data\Finam\Finam_Stream_Trades_ALL.csv: всего 1087 (в активную историю trades добавлено 1087)
+28.10.2026 10:58:23 - FinamPy.Stream - WARNING - Предупреждение: Нет данных для инструмента RI95000BW6@RTSX
+28.10.2026 10:58:23 - FinamPy.Stream - WARNING - Предупреждение: Нет данных для инструмента RI105000BL6@RTSX
+28.10.2026 11:10:48 - FinamPy.Stream - INFO - Загружено архивных сделок из C:\Users\шадрин\PycharmProjects\CenterStrikeVolatility_API\data\Finam\Finam_Stream_Trades_ALL.csv: всего 1087 (в активную историю trades добавлено 1087)
+28.10.2026 11:11:12 - FinamPy.Stream - INFO - Запуск программы мониторинга аккаунта по расписанию биржи
+28.10.2026 11:11:12 - FinamPy.Stream - INFO - Фоновый поток обработки задач I/O запущен
+28.10.2026 11:11:12 - FinamPy.Stream - INFO - Торговая сессия активна. Начинаем работу.
+28.10.2026 11:11:12 - FinamPy.Stream - INFO - Инициализация: работа с аккаунтом 1218884
+28.10.2026 11:11:12 - FinamPy.Stream - INFO - Запуск функции single_transaction_clearing. Загрузка состава портфеля отдельным запросом GetAccount и очистка сделок инструментов, которых уже нет в портфеле
+28.10.2026 11:11:12 - FinamPy.Stream - INFO - Актуальный состав портфеля: {'RI95000BW6@RTSX', 'RI102500BK6A@RTSX', 'RI90000BW6@RTSX', 'RI102500BL6@RTSX', 'RIZ6@RTSX', 'RI105000BL6@RTSX', 'RI92500BW6@RTSX'}
+28.10.2026 11:11:12 - FinamPy.Stream - INFO - Запуск функции cleanup_trades очистки сделок закрытых инструментов
+28.10.2026 11:11:12 - FinamPy.Stream - INFO - Очистка сделок: удалено записей: 667
+28.10.2026 11:11:52 - FinamPy.Stream - WARNING - MIC не определён для SiZ6, использую fallback RTSX
+28.10.2026 11:12:05 - FinamPy.Stream - INFO - Базовые активы собраны: ['SiZ6@RTSX', 'RIZ6@RTSX', 'SRZ6@RTSX', 'SRH7@RTSX', 'RIH7@RTSX', 'SiH7@RTSX']
+28.10.2026 11:12:05 - FinamPy.Stream - INFO - Запущено 1 потоков подписки на 6 символов
+28.10.2026 11:12:11 - FinamPy.Stream - INFO - Цепочка опционов для RIZ6@RTSX на 2026-10-29: загружено 30 из 52 опционов (страйков: 15)
+28.10.2026 11:12:11 - FinamPy.Stream - INFO - Цепочка опционов для RIZ6@RTSX на 2026-11-05: загружено 30 из 46 опционов (страйков: 15)
+28.10.2026 11:12:11 - FinamPy.Stream - INFO - Цепочка опционов для RIZ6@RTSX на 2026-11-12: загружено 30 из 42 опционов (страйков: 15)
+28.10.2026 11:12:11 - FinamPy.Stream - INFO - Цепочка опционов для RIZ6@RTSX на 2026-11-19: загружено 30 из 78 опционов (страйков: 15)
+28.10.2026 11:12:11 - FinamPy.Stream - INFO - Цепочка опционов для RIZ6@RTSX на 2026-12-17: загружено 30 из 128 опционов (страйков: 15)
+28.10.2026 11:12:14 - FinamPy.Stream - INFO - Цепочка опционов для SiZ6@RTSX на 2026-10-29: загружено 30 из 104 опционов (страйков: 15)
+28.10.2026 11:12:15 - FinamPy.Stream - INFO - Цепочка опционов для SiZ6@RTSX на 2026-11-05: загружено 30 из 90 опционов (страйков: 15)
+28.10.2026 11:12:15 - FinamPy.Stream - INFO - Цепочка опционов для SiZ6@RTSX на 2026-11-12: загружено 30 из 82 опционов (страйков: 15)
+28.10.2026 11:12:15 - FinamPy.Stream - INFO - Цепочка опционов для SiZ6@RTSX на 2026-11-19: загружено 30 из 150 опционов (страйков: 15)
+28.10.2026 11:12:15 - FinamPy.Stream - INFO - Цепочка опционов для SiZ6@RTSX на 2026-12-17: загружено 30 из 200 опционов (страйков: 15)
+28.10.2026 11:12:18 - FinamPy.Stream - INFO - Цепочка опционов для RIH7@RTSX на 2027-01-21: загружено 30 из 72 опционов (страйков: 15)
+28.10.2026 11:12:19 - FinamPy.Stream - INFO - Цепочка опционов для RIH7@RTSX на 2027-03-18: загружено 30 из 114 опционов (страйков: 15)
+28.10.2026 11:12:54 - FinamPy.Stream - INFO - Цепочка опционов для SiH7@RTSX на 2027-01-21: загружено 30 из 142 опционов (страйков: 15)
+28.10.2026 11:12:54 - FinamPy.Stream - INFO - Цепочка опционов для SiH7@RTSX на 2027-03-18: загружено 30 из 166 опционов (страйков: 15)
+28.10.2026 11:12:57 - FinamPy.Stream - INFO - Цепочка опционов для SRZ6@RTSX на 2026-10-28: загружено 30 из 74 опционов (страйков: 15)
+28.10.2026 11:12:57 - FinamPy.Stream - INFO - Цепочка опционов для SRZ6@RTSX на 2026-11-03: загружено 30 из 68 опционов (страйков: 15)
+28.10.2026 11:12:57 - FinamPy.Stream - INFO - Цепочка опционов для SRZ6@RTSX на 2026-11-11: загружено 30 из 62 опционов (страйков: 15)
+28.10.2026 11:12:58 - FinamPy.Stream - INFO - Цепочка опционов для SRZ6@RTSX на 2026-11-18: загружено 30 из 114 опционов (страйков: 15)
+28.10.2026 11:12:58 - FinamPy.Stream - INFO - Цепочка опционов для SRZ6@RTSX на 2026-12-16: загружено 30 из 204 опционов (страйков: 15)
+28.10.2026 11:13:03 - FinamPy.Stream - INFO - Цепочка опционов для SRH7@RTSX на 2027-03-17: загружено 30 из 178 опционов (страйков: 15)
+28.10.2026 11:13:03 - FinamPy.Stream - INFO - Всего опционов загружено: 600
+28.10.2026 11:13:03 - FinamPy.Stream - INFO - Подписка на собственные заявки аккаунта 1218884 запущена
+28.10.2026 11:13:03 - FinamPy.Stream - INFO - Подписка на собственные сделки аккаунта 1218884 запущена
+28.10.2026 11:13:03 - FinamPy.Stream - INFO - Подписка на аккаунт 1218884 запущена
+28.10.2026 11:13:03 - FinamPy.Stream - INFO - Все подписки активны.
+28.10.2026 11:13:03 - FinamPy.Stream - INFO - Соединение установлено. Аккаунт: 1218884
+28.10.2026 11:13:03 - FinamPy.Stream - INFO - _on_trade запуск функции verify_positions_and_cleanup_trades
+28.10.2026 11:13:03 - FinamPy.Stream - INFO - Запуск функции verify_positions_and_cleanup_trades Проверка состава портфеля отдельным запросом GetAccount
+28.10.2026 11:13:03 - FinamPy.Stream - INFO - Добавлены новые опционы в отслеживание: {'RI102500BK6A@RTSX', 'RI90000BW6@RTSX', 'RI102500BL6@RTSX', 'RI105000BL6@RTSX', 'RI92500BW6@RTSX'}
+28.10.2026 11:13:03 - FinamPy.Stream - INFO - Добавлены новые опционы в отслеживание: {'RI95000BW6@RTSX'}
+28.10.2026 11:13:04 - FinamPy.Stream - INFO - Перезапуск подписки после добавления новых опционов
+28.10.2026 11:13:04 - FinamPy.Stream - INFO - Все старые подписки остановлены
+28.10.2026 11:13:05 - FinamPy.Stream - INFO - Запущено 2 потоков подписки на 12 символов
+28.10.2026 11:13:18 - FinamPy.Stream - INFO - Загружено архивных сделок из C:\Users\шадрин\PycharmProjects\CenterStrikeVolatility_API\data\Finam\Finam_Stream_Trades_ALL.csv: всего 1087 (в активную историю trades добавлено 1087)
+28.10.2026 14:25:25 - FinamPy.Stream - INFO - Загружено архивных сделок из C:\Users\шадрин\PycharmProjects\CenterStrikeVolatility_API\data\Finam\Finam_Stream_Trades_ALL.csv: всего 1087 (в активную историю trades добавлено 1087)
+28.10.2026 14:33:35 - FinamPy.Stream - INFO - Загружено архивных сделок из C:\Users\шадрин\PycharmProjects\CenterStrikeVolatility_API\data\Finam\Finam_Stream_Trades_ALL.csv: всего 1087 (в активную историю trades добавлено 1087)
