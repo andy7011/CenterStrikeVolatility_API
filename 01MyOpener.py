@@ -14,7 +14,7 @@ import FinamPy.grpc.side_pb2 as side  # Направление заявки
 from FinLabPy.Schedule.MOEX import Futures  # Расписание торгов срочного рынка
 from zoneinfo import ZoneInfo  # ВременнАя зона
 from moex_api import get_option_board, get_option_expirations
-from QUIK_Stream_v1_7 import calculate_open_data_open_price_open_iv
+from calculate_open_data_price_iv import calculate_open_data_open_price_open_iv
 import math
 import numpy as np
 from datetime import datetime

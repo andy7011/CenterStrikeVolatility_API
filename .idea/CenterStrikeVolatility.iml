@@ -8,6 +8,7 @@
       <sourceFolder url="file://$MODULE_DIR$/FinamPy" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/AlorPy" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/QuikPy" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/DashBoardOptions" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/.venv" />
       <excludeFolder url="file://$MODULE_DIR$/venv" />
     </content>
