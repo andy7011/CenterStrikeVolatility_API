@@ -266,7 +266,10 @@ def _on_order(order):
 
 def _on_trade(trade):
     """Накопительная запись сделок: по каждой заявке собираем все частичные
-    исполнения (size — целые лоты) и средневзвешенную цену."""
+    исполнения (size — целые лоты) и средневзвешенную цену.
+    Дедуп по trade_id: при переподключении стрима / историческом снапшоте
+    сделки приходят повторно — без дедупа filled_qty раздувался и цикл
+    добирал лишние лоты."""
     logger.info(f'Сделка - {trade}')
     order_id = trade.order_id
     size = int(trade.size.value)
@@ -275,8 +278,13 @@ def _on_trade(trade):
     entry = trade_dict.get(order_id)
     if entry is None:
         entry = {'trades': [], 'filled_qty': 0, 'price_sum': 0.0, 'last_price': price,
-                 'last_timestamp': trade.timestamp}
+                 'last_timestamp': trade.timestamp, 'trade_ids': set()}
         trade_dict[order_id] = entry
+
+    trade_id = trade.trade_id
+    if trade_id in entry['trade_ids']:
+        return
+    entry['trade_ids'].add(trade_id)
 
     entry['trades'].append({
         'trade_id': trade.trade_id,
@@ -297,11 +305,30 @@ def _on_trade(trade):
 
 
 def fill_info(order_id):
-    """(накопленный объём, средневзвешенная цена) по заявке или None."""
-    entry = trade_dict.get(order_id)
-    if entry is None or entry['filled_qty'] <= 0:
+    """(накопленный объём, средневзвешенная цена) по заявке или None.
+    Объём берём из order_dict (executed_quantity из стрима заявок) — это
+    авторитетный источник: стрим сделок может терять события или доставлять
+    их с задержкой, из-за чего циклы не завершались и позиции набирались
+    сверх lot_count. Средневзвешенная цена — из накопленных сделок (trade_dict),
+    а при их отсутствии — из лимитной цены заявки."""
+    o = order_dict_order(order_id)
+    if o is None:
         return None
-    return entry['filled_qty'], entry['price_sum'] / entry['filled_qty']
+    filled = int(o['executed_quantity'])
+    if filled <= 0:
+        return None
+    entry = trade_dict.get(order_id)
+    if entry and entry['filled_qty'] > 0:
+        return filled, entry['price_sum'] / entry['filled_qty']
+    return filled, o['limit_price'] or 0.0
+
+
+def order_dict_order(order_id):
+    """Заявка из order_dict по order_id или None."""
+    for o in order_dict.values():
+        if o.get('order_id') == order_id:
+            return o
+    return None
 
 
 # ----------------------------------------------------------------------------
@@ -1072,18 +1099,26 @@ class QuoterEngine:
     def _requote(self, leg, qty, limit_price, leg_name):
         if not running:
             return None
-        new_id = place_order(leg['side'], leg['symbol'], qty, limit_price)
+        # Ограничиваем объём остатком до целевого qty: старая заявка могла
+        # частично/полностью исполниться до переквота — без этого каждая
+        # переквотовка добирала бы полный basket_size сверх плана.
+        placed_total = sum(
+            fi[0] for fi in (fill_info(oid) for oid in leg['order_ids']) if fi)
+        need = qty - placed_total
+        if need <= 0:
+            return None
+        new_id = place_order(leg['side'], leg['symbol'], need, limit_price)
         if new_id is None:
             self.set_led('red')
             self.say(f'НЕ выставлена заявка {leg_name.upper()} {leg["symbol"]}: '
-                     f'{limit_price} x{qty} — причина в консоли')
+                     f'{limit_price} x{need} — причина в консоли')
             return None
         leg['order_id'] = new_id
         leg['order_ids'].append(new_id)
         leg['price_old'] = limit_price
-        leg['qty_placed'] = qty
+        leg['qty_placed'] = need
         self.set_led('lightgreen')
-        self.say(f"Заявка {leg_name.upper()} {leg['symbol']}: {limit_price} x{qty}")
+        self.say(f"Заявка {leg_name.upper()} {leg['symbol']}: {limit_price} x{need}")
         return new_id
 
     def cancel_leg(self, leg_name):
@@ -1196,12 +1231,20 @@ class QuoterEngine:
             lead = 'sell' if fsq >= fbq else 'buy'
             lag = 'buy' if lead == 'sell' else 'sell'
             lead_q, lag_q = (fsq, fbq) if lead == 'sell' else (fbq, fsq)
-            need = lead_q - lag_q
+            lag_leg = self.legs[lag]
+            # need — с учётом ещё не исполненного остатка уже стоящей встречной
+            # заявки: иначе переквот перевыставлял бы полный объём заново
+            # (исполненная часть дублировалась) и позиции росли сверх плана.
+            pending = 0
+            if lag_leg['order_id'] is not None:
+                o = order_dict_order(lag_leg['order_id'])
+                if o is not None and o.get('remaining_quantity'):
+                    pending = int(o['remaining_quantity'])
+            need = max(lead_q - lag_q - pending, 0)
             if need <= 0:
                 sleep(poll_step)
                 continue
             lead_price = (fs if lead == 'sell' else fb)[1]
-            lag_leg = self.legs[lag]
             try:
                 target_iv = counter_target_iv(self.legs[lead]['dataname'], lead_price,
                                               lag_leg['dataname'])
@@ -1713,4 +1756,5 @@ sleep(5)  # Ждем 5 секунд
 
 if __name__ == "__main__":
     app = App()
+    app_instance = app
     app.root.mainloop()
