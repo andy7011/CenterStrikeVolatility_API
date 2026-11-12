@@ -260,8 +260,44 @@ def _to_float(v):
         return 0.0
 
 
+def _side_name(side_value):
+    """Человекочитаемое направление заявки/сделки."""
+    return {side.SIDE_BUY: 'BUY', side.SIDE_SELL: 'SELL'}.get(side_value, str(side_value))
+
+
+def _status_name(status):
+    """Имя статуса заявки (ORDER_STATUS_NEW и т.п.) для компактного лога."""
+    try:
+        return OrderStatus.Name(status)
+    except Exception:
+        return str(status)
+
+
+_ACTIVE_ORDER_STATUSES = {OrderStatus.ORDER_STATUS_NEW,
+                          OrderStatus.ORDER_STATUS_PARTIALLY_FILLED,
+                          OrderStatus.ORDER_STATUS_PENDING_NEW,
+                          OrderStatus.ORDER_STATUS_WAIT}
+# Заявки, уже виденные в этой сессии в активном статусе: их терминальные
+# события (FILLED/CANCELED) пишем в лог. Стартовый пул старых заявок приходит
+# сразу в терминальном статусе — он в лог не попадает.
+_own_orders_seen = set()
+
+
 def _on_order(order):
-    logger.info(f'Заявка - {order}')
+    coid = str(order.order.client_order_id)
+    own = coid.startswith(filename)
+    if own:
+        order_id = order.order_id
+        active = order.status in _ACTIVE_ORDER_STATUSES
+        if active or order_id in _own_orders_seen:
+            _own_orders_seen.add(order_id)
+            logger.info(f'Заявка order_id: {order_id}, статус: {_status_name(order.status)}, '
+                        f'{order.order.symbol} {_side_name(order.order.side)} '
+                        f'{_to_float(order.order.quantity.value):g} '
+                        f'@ {_to_float(order.order.limit_price.value):g}, '
+                        f'исполнено {_to_float(order.executed_quantity.value):g}'
+                        f'/{_to_float(order.initial_quantity.value):g}, '
+                        f'client_order_id: {coid}')
     order_dict[order.order.symbol] = {
         'order_id': order.order_id,
         'exec_id': order.exec_id,
@@ -286,10 +322,18 @@ def _on_trade(trade):
     Дедуп по trade_id: при переподключении стрима / историческом снапшоте
     сделки приходят повторно — без дедупа filled_qty раздувался и цикл
     добирал лишние лоты."""
-    logger.info(f'Сделка - {trade}')
     order_id = trade.order_id
     size = int(trade.size.value)
     price = float(trade.price.value)
+
+    o = order_dict_order(order_id)
+    own = o is not None and str(o.get('client_order_id', '')).startswith(filename)
+    if own:
+        logger.info(f'Сделка trade_id: {trade.trade_id}, заявка {order_id}: '
+                    f'{_side_name(trade.side)} {size} @ {price:g}')
+        if app_instance is not None:
+            msg_queue.put(('msg', f'Сделка: заявка {order_id}: '
+                                  f'{_side_name(trade.side)} {size} лотов по {price}'))
 
     entry = trade_dict.get(order_id)
     if entry is None:
@@ -315,9 +359,6 @@ def _on_trade(trade):
     entry['last_timestamp'] = trade.timestamp
 
     _register_trade(trade, size, price)
-
-    if app_instance is not None:
-        msg_queue.put(('msg', f'Сделка: заявка {order_id}: {trade.side} {size} лотов по {price}'))
 
 
 def fill_info(order_id):
@@ -1741,10 +1782,15 @@ def on_mode_change(app):
 
 def check_auto_signal(app):
     """Режим Auto (опрос раз в 2 сек из GUI): следит за Diff.theor и
-    переключает Open/Close автоматически; в промежуточной зоне — Waiting."""
-    global applied_mode, radio_mode
-    if active_mode(app) != 'Auto':
-        applied_mode = None     # сброс, чтобы ручной выбор применился заново
+    переключает Open/Close автоматически; в промежуточной зоне — Waiting.
+    В ручных режимах применяет выбранный режим, если он ещё не применён
+    (set_mode с уже применённым режимом — no-op). Раньше здесь applied_mode
+    сбрасывался в None каждые 2 секунды — из-за этого effective_profit
+    получал mode=None и возвращал сырой Профит вместо max/min (Close/Open)."""
+    global radio_mode
+    mode = active_mode(app)
+    if mode != 'Auto':
+        set_mode(app, mode)
         return
     radio_mode = 'Auto'
     set_mode(app, effective_mode(app))

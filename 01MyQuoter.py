@@ -10,17 +10,33 @@
        нога на покупку: target_iv = iv(bid другой ноги) + sign(свой тип) * profit
    sign(CALL)=+1, sign(PUT)=-1. Правило единое для пар Call-Put, Put-Call,
    Put-Put и Call-Call.
-2. Заявка, исполнившаяся первой, — первичная. Встречная заявка на противоположный
-   инструмент котируется от ФАКТИЧЕСКИ исполненной IV первичной ноги
-   (метод Ньютона от цены сделки), поэтому профит пары фиксируется
-   относительно реальной сделки, а не текущего стакана.
+2. Заявка, исполнившаяся первой, — первичная. Встречная заявка выставляется
+   по sec.target — встречной стороне стакана другой ноги (покупка по ask,
+   продажа по bid). Это предложение существует в стакане, поэтому сделка
+   исполняется мгновенно: target первичной ноги рассчитан от IV sec.target
+   с учётом профита, так что пара фиксирует прибыль по построению.
 3. Частичные исполнения поддержаны: встречная заявка выставляется на разницу
    (исполнено первичной минус исполнено встречной), size — целые лоты.
 4. Пороговые параметры (profit, timeout, indent, theor) поток движка читает
    на каждой итерации — их можно менять на ходу из GUI.
+5. Diff.spread — разница IV середин спреда ask/bid обеих ног (середина —
+   среднее IV сторон по котировкам). Если собственная заявка стоит на
+   best ask/bid ноги («заражение» середины), значение невалидно — движок
+   и GUI используют последнее валидное (заморозка). Галки Th и Sp
+   независимы и работают во всех режимах (Open/Close/Auto): каждая
+   добавляет в выборку свою величину (Th — Diff.theor, Sp — Diff.spread).
+   В режиме Open берётся наименьшее из включённых величин (Профит, Th, Sp),
+   в режиме Close — наибольшее.
+6. Режим Auto: сигнал режима вычисляется из Diff.theor И Diff.spread
+   против Profit open / Profit close из Spinbox: если хотя бы одна из
+   доступных величин <= Profit open — применяется Open; если хотя бы одна
+   >= Profit close — Close (с перестановкой ног, числом циклов и сбросом
+   счётчика «Пар исполнено»); промежуточные значения — Waiting: жёлтый
+   светодиод, заявки не выставляются, движок ждёт сработки условия.
 """
 
 import logging
+# logging.basicConfig(level=logging.WARNING)  # уровень логгирования
 import traceback
 import math
 import os
@@ -52,6 +68,7 @@ import FinamPy.grpc.side_pb2 as side
 from FinLabPy.Schedule.MOEX import Futures  # Расписание торгов срочного рынка
 from moex_api import get_option_board, get_option_expirations
 from app.supported_base_asset import MAP
+from calculate_open_data_price_iv import calculate_open_data_open_price_open_iv
 
 # ----------------------------------------------------------------------------
 # Константы и глобальное состояние
@@ -75,12 +92,39 @@ dataname_buy = ''
 base_asset_ticker = ''
 
 # --- пороговые параметры, изменяемые на ходу из GUI ---
-expected_profit = 2.0   # профит в п.п. волатильности
+expected_profit_open = -3.0   # профит режима Open, п.п. волатильности
+expected_profit_close = -1.0  # профит режима Close, п.п. волатильности
+expected_profit = expected_profit_open  # активный профит (по радиокнопке Open/Close)
 lot_count = 1           # число циклов пар
 basket_size = 1         # лотов в каждой заявке
 timeout = 1             # пауза цикла, сек
 indent = 0              # сдвиг лимитной цены в шагах цены (продажа: '-', покупка: '+')
-theor_flag = False      # не котировать ближе теоретической разницы IV
+theor_flag_open = False   # флаг Theor режима Open
+theor_flag_close = False  # флаг Theor режима Close
+theor_flag = theor_flag_open  # активный флаг Theor (по радиокнопке Open/Close)
+# --- флаг источника разницы для таргет-цен (Th/Sp, взаимоисключающие) ---
+spread_flag_open = False  # галка Sp режима Open: правило «не хуже середины спреда»
+spread_flag_close = False  # галка Sp режима Close
+spread_flag = spread_flag_open  # активный флаг Sp (по радиокнопке Open/Close)
+# --- Diff.spread: разница IV середин спреда ask/bid (п.п. IV) ---
+# Середина — среднее IV сторон ((ask_iv + bid_iv) / 2). Если собственная
+# заявка ноги стоит на best ask/bid, середина «заражена» — значение
+# невалидно (None), используется последнее валидное.
+# diff_spread_current вместе с diff_theor_current — источник сигнала Auto
+# (см. auto_signal_mode): при «заражении» сигнал берёт последнее валидное.
+diff_spread_current = None
+diff_spread_last_valid = None
+diff_spread_frozen = False  # True — сейчас показываем замороженное значение
+
+# --- режим работы (радиокнопки Open/Close/Auto) ---
+# Сигнал Auto вычисляется из Diff.theor И Diff.spread против Profit
+# open/close из Spinbox (см. auto_signal_mode): если хотя бы одна из
+# доступных величин <= Profit open -> Open, если хотя бы одна
+# >= Profit close -> Close, промежуточные значения — Waiting.
+radio_mode = 'Open'   # режим, выбранный радиокнопкой ('Open'/'Close'/'Auto')
+diff_theor_current = None  # актуальный Diff.theor (обновляют GUI и движок)
+legs_swapped = False  # True — опционы продажи/покупки переставлены местами (режим Close)
+applied_mode = None   # фактически применённый режим ('Open'/'Close'), None — ещё не применялся
 
 # --- данные ---
 expiration_dates = []
@@ -244,8 +288,44 @@ def _to_float(v):
         return 0.0
 
 
+def _side_name(side_value):
+    """Человекочитаемое направление заявки/сделки."""
+    return {side.SIDE_BUY: 'BUY', side.SIDE_SELL: 'SELL'}.get(side_value, str(side_value))
+
+
+def _status_name(status):
+    """Имя статуса заявки (ORDER_STATUS_NEW и т.п.) для компактного лога."""
+    try:
+        return OrderStatus.Name(status)
+    except Exception:
+        return str(status)
+
+
+_ACTIVE_ORDER_STATUSES = {OrderStatus.ORDER_STATUS_NEW,
+                          OrderStatus.ORDER_STATUS_PARTIALLY_FILLED,
+                          OrderStatus.ORDER_STATUS_PENDING_NEW,
+                          OrderStatus.ORDER_STATUS_WAIT}
+# Заявки, уже виденные в этой сессии в активном статусе: их терминальные
+# события (FILLED/CANCELED) пишем в лог. Стартовый пул старых заявок приходит
+# сразу в терминальном статусе — он в лог не попадает.
+_own_orders_seen = set()
+
+
 def _on_order(order):
-    logger.info(f'Заявка - {order}')
+    coid = str(order.order.client_order_id)
+    own = coid.startswith(filename)
+    if own:
+        order_id = order.order_id
+        active = order.status in _ACTIVE_ORDER_STATUSES
+        if active or order_id in _own_orders_seen:
+            _own_orders_seen.add(order_id)
+            logger.info(f'Заявка order_id: {order_id}, статус: {_status_name(order.status)}, '
+                        f'{order.order.symbol} {_side_name(order.order.side)} '
+                        f'{_to_float(order.order.quantity.value):g} '
+                        f'@ {_to_float(order.order.limit_price.value):g}, '
+                        f'исполнено {_to_float(order.executed_quantity.value):g}'
+                        f'/{_to_float(order.initial_quantity.value):g}, '
+                        f'client_order_id: {coid}')
     order_dict[order.order.symbol] = {
         'order_id': order.order_id,
         'exec_id': order.exec_id,
@@ -270,10 +350,18 @@ def _on_trade(trade):
     Дедуп по trade_id: при переподключении стрима / историческом снапшоте
     сделки приходят повторно — без дедупа filled_qty раздувался и цикл
     добирал лишние лоты."""
-    logger.info(f'Сделка - {trade}')
     order_id = trade.order_id
     size = int(trade.size.value)
     price = float(trade.price.value)
+
+    o = order_dict_order(order_id)
+    own = o is not None and str(o.get('client_order_id', '')).startswith(filename)
+    if own:
+        logger.info(f'Сделка trade_id: {trade.trade_id}, заявка {order_id}: '
+                    f'{_side_name(trade.side)} {size} @ {price:g}')
+        if app_instance is not None:
+            msg_queue.put(('msg', f'Сделка: заявка {order_id}: '
+                                  f'{_side_name(trade.side)} {size} лотов по {price}'))
 
     entry = trade_dict.get(order_id)
     if entry is None:
@@ -299,9 +387,6 @@ def _on_trade(trade):
     entry['last_timestamp'] = trade.timestamp
 
     _register_trade(trade, size, price)
-
-    if app_instance is not None:
-        msg_queue.put(('msg', f'Сделка: заявка {order_id}: {trade.side} {size} лотов по {price}'))
 
 
 def fill_info(order_id):
@@ -486,13 +571,18 @@ def _parse_expiration(end_expiration):
 
 def get_option_data_for_calc_price(dataname):
     """(S, K, T, opt_type) для Блэка–Шоулза: S — цена базового актива из потока
-    котировок, K — страйк, T — время до экспирации в долях года."""
+    котировок, K — страйк, T — время до экспирации в долях года.
+    T считается как в DashBoardOptionsVolatility: целые календарные дни
+    до даты экспирации, год = 365 дней. Это выравнивает пространство IV
+    с Алором и дашбордом (ранее T считалось по секундам до 00:00 даты,
+    что завышало IV примерно на 0.7–1.7 п.п. в течение сессии)."""
     info = options_data[dataname]
     K = info['strikePrice']
     opt_type = CALL if info['optionSide'] == 'Call' else PUT
     exp_dt = _parse_expiration(info['endExpiration'])
-    now = datetime.now(exp_dt.tzinfo) if exp_dt.tzinfo else datetime.now()
-    T = max((exp_dt - now).total_seconds() / (365 * 24 * 3600), 1 / (365 * 24 * 3600))
+    today = datetime.now(exp_dt.tzinfo).date() if exp_dt.tzinfo else datetime.now().date()
+    days = (exp_dt.date() - today).days
+    T = max(days / 365, 1 / (365 * 24 * 3600))
     # Цена базового актива: подписка на БА создана в on_base_asset_change
     q = new_quotes.get(base_asset_ticker)
     S = q['last_price'] if q and q.get('last_price') else None
@@ -519,52 +609,133 @@ def option_price(S, sigma, K, T, r: float, opt_type):
     return price
 
 
-# Расчет IV Метод Ньютона для опциона CALL
-def newton_vol_call(S, K, T, C, r, sigma):
+def _newton_vol(S, K, T, price, r, sigma0, opt_type):
+    """IV (десятичная) общим солвером: Ньютон от стартового приближения,
+    при неудаче — fallback на brentq. Возвращает None, если IV не существует
+    (цена дешевле внутренней стоимости) или не найдена ни одним методом."""
+    if S <= 0 or K <= 0 or T <= 0 or price <= 0:
+        return None
+    intrinsic = max(0.0, S - K) if opt_type == CALL else max(0.0, K - S)
+    if price < intrinsic:                      # IV не существует
+        return None
     tolerance = 0.000001
     max_iterations = 100
-    x0 = sigma
-    xnew = x0
-    xold = x0 - 1
-    iteration = 0
-
-    while abs(xnew - xold) > tolerance and iteration < max_iterations:
-        xold = xnew
-        d1 = (np.log(S / K) + (r - 0.5 * xnew ** 2) * T) / (xnew * np.sqrt(T))
-        d2 = d1 - xnew * np.sqrt(T)
-        fx = S * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2) - C
-        vega = S * np.sqrt(T) * np.exp(-0.5 * d1 ** 2) / np.sqrt(2 * np.pi)
-        if abs(vega) < 1e-10:  # Избегаем деления на ноль
+    sigma = sigma0 if (sigma0 and sigma0 > 0) else 0.2
+    sigma = max(sigma, 1e-5)
+    sqT = math.sqrt(T)
+    log_Sk = math.log(S / K)
+    for _ in range(max_iterations):
+        d1 = (log_Sk + (r + 0.5 * sigma ** 2) * T) / (sigma * sqT)
+        d2 = d1 - sigma * sqT
+        if opt_type == CALL:
+            fx = S * norm.cdf(d1) - K * math.exp(-r * T) * norm.cdf(d2) - price
+        else:
+            fx = K * math.exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1) - price
+        if abs(fx) < 1e-8:                     # сошлись по цене модели
+            return sigma
+        vega = S * sqT * math.exp(-0.5 * d1 ** 2) / math.sqrt(2 * math.pi)
+        if abs(vega) < 1e-12:                  # вега вырождена — шаг бесполезен
             break
-        xnew = xnew - fx / vega
-        iteration += 1
-    return abs(xnew)
+        sigma_new = sigma - fx / vega
+        if sigma_new <= 0 or not math.isfinite(sigma_new):
+            break                              # шаг унёс в отрицательную IV
+        if abs(sigma_new - sigma) < tolerance:
+            return sigma_new
+        sigma = sigma_new
+    try:
+        return brentq(lambda s: option_price(S, s, K, T, r, opt_type) - price,
+                      1e-5, 10.0)
+    except ValueError:
+        return None
+
+
+# Расчет IV Метод Ньютона для опциона CALL
+def newton_vol_call(S, K, T, C, r, sigma):
+    return _newton_vol(S, K, T, C, r, sigma, CALL)
 
 
 # Расчет IV Метод Ньютона для опциона PUT
 def newton_vol_put(S, K, T, P, r, sigma):
-    tolerance = 0.000001
-    max_iterations = 100
-    x0 = sigma
-    xnew = x0
-    xold = x0 - 1
-    iteration = 0
-    while abs(xnew - xold) > tolerance and iteration < max_iterations:
-        xold = xnew
-        d1 = (np.log(S / K) + (r - 0.5 * xnew ** 2) * T) / (xnew * np.sqrt(T))
-        d2 = d1 - xnew * np.sqrt(T)
-        fx = K * np.exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1) - P
-        vega = S * np.sqrt(T) * np.exp(-0.5 * d1 ** 2) / np.sqrt(2 * np.pi)
-        if abs(vega) < 1e-10:
-            break
-        xnew = xnew - fx / vega
-        iteration += 1
-    return abs(xnew)
+    return _newton_vol(S, K, T, P, r, sigma, PUT)
 
 
 def round_step(price, step, decimals):
     """Округление цены вниз к шагу цены (как в 03MyCloser)."""
     return int(round((price // step) * step, decimals))
+
+
+def _expiration_of(dataname):
+    """datetime экспирации опциона или None, если распознать не удалось."""
+    try:
+        return _parse_expiration(options_data[dataname]['endExpiration'])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def diff_iv(iv_a, iv_b, dataname_a, dataname_b):
+    """Разница IV (в п.п.): из волатильности «дальней» ноги вычитается
+    волатильность «ближней» ноги — независимо от того, какая нога продана,
+    а какая куплена (call или put). Правило порядка ног:
+      1) дальше опцион с БОЛЬШИМ страйком;
+      2) при равных страйках (календарный спрэд, ноги разных серий) дальше
+         опцион СТАРШЕЙ серии (с более поздней датой экспирации).
+    Если порядок определить не удалось (нет данных/одинаковые серии),
+    возвращается iv_a - iv_b."""
+    k_a = options_data.get(dataname_a, {}).get('strikePrice')
+    k_b = options_data.get(dataname_b, {}).get('strikePrice')
+    if k_a is not None and k_b is not None and k_a != k_b:
+        return iv_a - iv_b if k_a > k_b else iv_b - iv_a
+    exp_a, exp_b = _expiration_of(dataname_a), _expiration_of(dataname_b)
+    if exp_a is not None and exp_b is not None and exp_a.date() != exp_b.date():
+        return iv_a - iv_b if exp_a.date() > exp_b.date() else iv_b - iv_a
+    return iv_a - iv_b
+
+
+def leg_mid_iv(m):
+    """IV середины спреда ноги: среднее IV сторон ask/bid.
+    m — кортеж leg_market: (ask, bid, ask_iv, bid_iv, theor_iv)."""
+    return (m[2] + m[3]) / 2
+
+
+def update_diff_spread(m_sell, m_buy, legs=None, store=True):
+    """Diff.spread — разница IV середин спреда ask/bid обеих ног (п.п. IV),
+    порядок вычитания — тот же, что у diff_iv (дальняя нога минус ближняя).
+    Середина «заражена», если собственная ЖИВАЯ заявка ноги стоит на best
+    ask (sell-нога) или best bid (buy-нога): тогда значение невалидно
+    (current = None), используется последнее валидное (заморозка).
+    Исполненная/снятая заявка заражения не даёт: проверка order_alive —
+    иначе рынок, вернувшийся к цене исполненной заявки, замораживал бы
+    показатель, хотя ask/bid в этой цене теперь чужие.
+    legs — словарь ног движка (для детекции своей заявки) или None
+    (предрасчёт без активных заявок).
+    store — пополнять ли diff_spread_last_valid. False для внутренних
+    вызовов initial_offset и предрасчёта: их середина может быть «заражена»
+    (детекция без ног не срабатывает), и без store=False последнее валидное
+    значение перезаписывалось бы отравленным до того, как заморозка
+    сработает в update_diff_spread из compute_targets.
+    Возвращает (значение, заморожено): значение — None при первом
+    «заражении», когда ещё нет последнего валидного."""
+    global diff_spread_current, diff_spread_last_valid, diff_spread_frozen
+    frozen = False
+    for m, leg in ((m_sell, legs.get('sell') if legs else None),
+                   (m_buy, legs.get('buy') if legs else None)):
+        if leg is not None and leg.get('order_id') is not None \
+                and leg.get('price_old') is not None and order_alive(leg['order_id']):
+            # Своя заявка в лучшей цене: sell-нога стоит на ask,
+            # buy-нога — на bid
+            if (leg['side'] == side.SIDE_SELL and m[0] == leg['price_old']) \
+                    or (leg['side'] == side.SIDE_BUY and m[1] == leg['price_old']):
+                frozen = True
+    diff_spread_frozen = frozen
+    if frozen:
+        diff_spread_current = None
+        return diff_spread_last_valid, True
+    diff_spread = diff_iv(leg_mid_iv(m_sell), leg_mid_iv(m_buy),
+                          dataname_sell, dataname_buy)
+    diff_spread_current = diff_spread
+    if store:
+        diff_spread_last_valid = diff_spread
+    return diff_spread, False
 
 
 def opt_type_of(dataname):
@@ -597,16 +768,30 @@ def leg_market(dataname):
     ask, bid = q['ask'], q['bid']
     ask_iv = newton(S, K, T, ask, r, sigma) * 100
     bid_iv = newton(S, K, T, bid, r, sigma) * 100
+    # Теоретическая IV: сначала биржевая implied_volatility из потока Финам
+    # (приходит в _on_new_quotes). Метод Ньютона от теоретической цены —
+    # fallback: для глубоких страйков вега мала и Ньютон может расходиться,
+    # а смешивание источников для разных ног искажает Diff.theor.
     theor_iv = q.get('implied_volatility') or 0.0
+    if theor_iv <= 0:
+        theor_price = q.get('theoretical_price') or 0.0
+        if theor_price <= 0:
+            # Fallback: теоретическая цена из Алор (theorPrice)
+            theor_price = options_data.get(dataname, {}).get('theorPrice') or 0.0
+        if theor_price > 0:
+            theor_iv = newton(S, K, T, theor_price, r, sigma) * 100
     return ask, bid, ask_iv, bid_iv, theor_iv
 
 
 def leg_iv(dataname, price):
-    """IV по цене сделки ноги (метод Ньютона)."""
+    """IV по цене сделки ноги (метод Ньютона) или ValueError, если не рассчитана."""
     S, K, T, opt_type = get_option_data_for_calc_price(dataname)
     sigma = _sigma_of(dataname)
     newton = newton_vol_call if opt_type == CALL else newton_vol_put
-    return newton(S, K, T, price, r, sigma) * 100
+    iv = newton(S, K, T, price, r, sigma)
+    if iv is None:
+        raise ValueError(f'IV не рассчитана для {dataname} по цене {price}')
+    return iv * 100
 
 
 def positions_quantity(dataname):
@@ -662,79 +847,6 @@ class FIFO:
                 if q < 0:
                     self.inventory.append(Entry(q, p))
 
-
-def calculate_weighted_average(inventory):
-    """Средневзвешенное значение по инвентарю FIFO (deque из Entry)."""
-    weighted_sum = sum(entry.quantity * entry.price for entry in inventory)
-    total_weight = sum(entry.quantity for entry in inventory)
-    return weighted_sum / total_weight if total_weight != 0 else 0
-
-
-def calculate_open_data_open_price_open_iv(sec_code, net_pos, trades_df=None):
-    """Дата открытия, средневзвешенная цена и IV позиции по FIFO сделок.
-    Позиции переживают перезапуск: сначала активные сделки, затем полная история."""
-    try:
-        if trades_df is None:
-            trades_df = get_trades_df()
-        instrument_trades_df = trades_df[trades_df['ticker'] == sec_code].copy()
-
-        if instrument_trades_df.empty:
-            all_df = get_trades_all_df()
-            instrument_trades_df = all_df[all_df['ticker'] == sec_code].copy()
-        if instrument_trades_df.empty:
-            if sec_code not in _no_trades_warned:
-                _no_trades_warned.add(sec_code)
-                logger.warning(f"Предупреждение: Нет данных для инструмента {sec_code}")
-            return None, None, None
-
-        instrument_trades_df['datetime'] = pd.to_datetime(
-            instrument_trades_df['datetime'], format='%d.%m.%Y %H:%M:%S')
-        instrument_trades_df = instrument_trades_df.sort_values('datetime', ascending=False)
-        instrument_trades_df.loc[instrument_trades_df['operation'] == 'Продажа', 'volume'] *= -1
-
-        required_volume = net_pos
-        sign = 1 if required_volume > 0 else -1
-        selected_trades = []
-        for _, trade in instrument_trades_df.iterrows():
-            volume = trade['volume']
-            if sign * (required_volume - volume) >= 0:
-                selected_trades.append(trade)
-                required_volume -= volume
-            else:
-                partial_trade = trade.copy()
-                partial_trade['volume'] = required_volume
-                selected_trades.append(partial_trade)
-                required_volume = 0
-                break
-
-        if not selected_trades:
-            sum_volume_short = instrument_trades_df.loc[
-                instrument_trades_df['operation'] == 'Продажа', 'volume'].sum()
-            count_short = (instrument_trades_df['operation'] == 'Продажа').sum()
-            sum_volume_long = instrument_trades_df.loc[
-                instrument_trades_df['operation'] == 'Купля', 'volume'].sum()
-            count_long = (instrument_trades_df['operation'] == 'Купля').sum()
-            logger.warning(f"Предупреждение: Недостаточно сделок для инструмента {sec_code}")
-            logger.warning(f"Позиция: {net_pos}")
-            logger.warning(f"Сделок лонг: {count_long} Объем: {sum_volume_long}")
-            logger.warning(f"Сделок шорт: {count_short} Объем: {sum_volume_short}")
-            return None, None, None
-
-        selected_df = pd.DataFrame(selected_trades)
-        OpenDateTime = selected_df.iloc[-1]['datetime'].strftime('%d.%m.%Y %H:%M:%S')
-
-        selected_trades = [t for t in selected_trades if (t['volume'] > 0) == (net_pos > 0)]
-
-        fifo_entries = [Entry(t['volume'], t['price']) for t in selected_trades]
-        fifo_entries_vol = [Entry(t['volume'], t['volatility']) for t in selected_trades]
-
-        OpenPrice = calculate_weighted_average(FIFO(fifo_entries).inventory)
-        OpenIV = calculate_weighted_average(FIFO(fifo_entries_vol).inventory)
-        return OpenDateTime, OpenPrice, OpenIV
-
-    except Exception as e:
-        logger.error(f"Ошибка при вычислении данных открытия для {sec_code}: {e}")
-        return None, None, None
 
 def _normalize_trades_df(df):
     df = df.copy()
@@ -875,8 +987,25 @@ def place_order(side_dir, symbol, quantity, limit_price):
 def get_cancel_order(account_id_, order_id):
     st = fp_provider.call_function(fp_provider.orders_stub.CancelOrder,
                                    CancelOrderRequest(account_id=account_id_, order_id=order_id))
+    if st is None:
+        # Биржа отклонила отмену (например, заявка уже исполнена/снята) —
+        # это не ошибка учёта, просто нечего отменять.
+        logger.info(f'Отмена заявки {order_id} отклонена биржей (вероятно, уже неактивна)')
+        return None
     logger.info(f'Отмена заявки {order_id}, статус {st.status}')
     return st.status
+
+
+def order_alive(order_id):
+    """True, если заявку ещё имеет смысл отменять (активна или данных о ней нет)."""
+    o = order_dict_order(order_id)
+    if o is None:
+        return True   # данных нет — пробуем отменить (безопаснее)
+    return (o['remaining_quantity'] > 0
+            and o['status'] in (OrderStatus.ORDER_STATUS_NEW,
+                                OrderStatus.ORDER_STATUS_PARTIALLY_FILLED,
+                                OrderStatus.ORDER_STATUS_PENDING_NEW,
+                                OrderStatus.ORDER_STATUS_WAIT))
 
 
 def active_order(symbol, side_dir):
@@ -931,50 +1060,75 @@ def build_legs():
 # ----------------------------------------------------------------------------
 # Блок 6. Движок: обе заявки → встречная от исполненной IV
 # ----------------------------------------------------------------------------
-def initial_offset(own, other, own_side):
-    """Оффсет в п.п. IV для фазы обеих заявок. При отрицательном профите котируем
-    агрессивнее рынка (продажа ниже, покупка выше). При флаге Theor оффсет
-    ограничивается теоретической разницей IV: для положительного профита —
-    не меньше неё, для отрицательного — не больше неё."""
+def effective_profit(diff_theor, diff_spread=None, mode=None, profit=None,
+                     theor=None, spread=None):
+    """Профит для расчёта таргет-цен, п.п. IV. Галки Th и Sp независимы:
+    Th добавляет в выборку Diff.theor, Sp — Diff.spread (при «заражении»
+    середины — последнее валидное значение; недоступное в выборку не
+    попадает). Правило выбора: Open — наименьшее из выборки (Профит, Th, Sp),
+    Close — наибольшее; Waiting — выбранный Профит. Аргументы mode/profit/
+    theor/spread по умолчанию берутся из глобального состояния движка;
+    предрасчёт передаёт их явно — из набора выбранного режима."""
+    if mode is None:
+        mode = applied_mode
+    if profit is None:
+        profit = expected_profit
+    if theor is None:
+        theor = theor_flag
+    if spread is None:
+        spread = spread_flag
+    values = [profit]
+    if theor and diff_theor is not None:
+        values.append(diff_theor)
+    if spread:
+        d = diff_spread if diff_spread is not None else diff_spread_last_valid
+        if d is not None:
+            values.append(d)
+    if mode == 'Close':
+        return max(values)
+    if mode == 'Open':
+        return min(values)
+    return profit
+
+
+
+def initial_offset(own, other, own_side, legs=None, mode=None, profit=None,
+                   theor=None, spread=None):
+    """Оффсет в п.п. IV для фазы обеих заявок. Применяется правило выбора
+    (см. effective_profit): независимые галки — Th добавляет в выборку
+    Diff.theor, Sp — Diff.spread (при заражении — последнее валидное);
+    Open — наименьшее из выборки, Close — наибольшее. Аргументы mode/profit/
+    theor/spread по умолчанию берутся из глобального состояния движка
+    (applied_mode / expected_profit / theor_flag / spread_flag) — так движок
+    вызывает функцию без явных аргументов; предрасчёт передаёт их явно —
+    из набора выбранного режима."""
+    if mode is None:
+        mode = applied_mode
+    if profit is None:
+        profit = expected_profit
+    if theor is None:
+        theor = theor_flag
+    if spread is None:
+        spread = spread_flag
     s = sign_of(opt_type_of(own))
-    if theor_flag:
-        theo = s * (new_quotes[options_data[own]['ticker']]['implied_volatility']
-                    - new_quotes[options_data[other]['ticker']]['implied_volatility'])
-        if expected_profit >= 0:
-            return s * max(expected_profit, theo)
-        return s * min(expected_profit, theo)
-    return s * expected_profit
+    if theor or spread:
+        m_own, m_other = leg_market(own), leg_market(other)
+        if m_own is None or m_other is None:
+            return s * profit
+        diff_theor = diff_iv(m_own[4], m_other[4], own, other)
+        diff_spread = update_diff_spread(m_own, m_other, legs, store=False)[0]
+        return s * effective_profit(diff_theor, diff_spread, mode, profit, theor, spread)
+    return s * profit
 
-
-def counter_target_iv(lead_dataname, lead_fill_price, lag_dataname):
-    try:
-        fill_iv = leg_iv(lead_dataname, lead_fill_price)
-        s = sign_of(opt_type_of(lag_dataname))
-        off = s * expected_profit
-
-        if theor_flag:
-            m = leg_market(lag_dataname)
-            if m is None:
-                raise ValueError("Нет рыночных данных для расчета")
-
-            max_off = abs(m[4] - fill_iv)
-            if max_off == 0:
-                raise ValueError("Нулевое значение теоретической разницы")
-
-            if abs(off) > max_off:
-                off = math.copysign(max_off, off)
-
-        return fill_iv + off
-
-    except Exception as e:
-        logger.error(f"Ошибка расчета целевой IV: {e}")
-        return None
 
 
 class QuoterEngine:
     def __init__(self, legs):
         self.legs = legs
-        self.counter = 0
+        # Счётчик продолжается с прошлого запуска («Старт» после «Стоп»),
+        # чтобы суммарно исполнить не больше lot_count циклов. Обнуляется
+        # только при смене инструмента ноги (см. on_instrument_changed).
+        self.counter = trade_counter
 
     def say(self, text): msg_queue.put(('msg', str(text)))
     def set_led(self, color): msg_queue.put(('led', color))
@@ -1001,9 +1155,48 @@ class QuoterEngine:
                 return True
         return False
 
+    def refresh_signal_values(self):
+        """Обновить Diff.theor и Diff.spread вне торговых фаз (Waiting, пауза
+        между циклами). Обязательно для сигнала Auto: в Waiting
+        compute_targets не вызывается, а предрасчёт GUI обновляет значения
+        только при остановленном движке — без этого обновления сигнал застыл
+        бы на момент ухода в Waiting и условие никогда не сработало бы.
+        Заявок в Waiting нет (cleanup сделан), «заражение» невозможно —
+        серединам разрешаем пополнять last_valid."""
+        m_sell, m_buy = leg_market(dataname_sell), leg_market(dataname_buy)
+        if m_sell is None or m_buy is None:
+            return
+        global diff_theor_current
+        diff_theor_current = diff_iv(m_sell[4], m_buy[4], dataname_sell, dataname_buy)
+        update_diff_spread(m_sell, m_buy, self.legs)   # store=True — свежий last_valid
+
+    def wait_signal(self):
+        """Ожидание выхода из промежуточной зоны Auto (Waiting): пока Diff.theor
+        и Diff.spread между Profit open и Profit close, заявки не выставляются.
+        На каждой итерации обновляет Diff.theor/Diff.spread
+        (refresh_signal_values). Вызывается из run() на старте и из торговых
+        циклов при уходе в Waiting."""
+        self.refresh_signal_values()
+        if not auto_waiting():
+            return
+        set_trading_mode_label('Waiting')
+        self.set_led('yellow')    # Waiting: движок работает, заявки не выставляются
+        self.say('Auto: Waiting — Diff.theor и Diff.spread между Profit open '
+                 'и Profit close, ожидание')
+        while running and auto_waiting():
+            self.refresh_signal_values()
+            sleep(1)
+        if running:
+            # Ждём, пока GUI (check_auto_signal -> set_mode) применит режим:
+            # пересоберёт ноги и обнулит счётчик, иначе движок завершится,
+            # не возобновив торговлю (GUI опрашивает сигнал раз в 2 сек)
+            while running and active_mode(None) == 'Auto' and applied_mode is None:
+                sleep(0.1)
+            self.say(f'Auto: сработало условие — режим {effective_mode(None)}')
+
     def cleanup(self):
         for leg in self.legs.values():
-            if leg['order_id'] is not None:
+            if leg['order_id'] is not None and order_alive(leg['order_id']):
                 try:
                     get_cancel_order(account_id, leg['order_id'])
                     self.say(f'Заявка {leg["symbol"]} снята: {leg["order_id"]}')
@@ -1042,13 +1235,30 @@ class QuoterEngine:
         ask_sell, bid_sell, ask_iv_sell, bid_iv_sell, theor_iv_sell = m_sell
         ask_buy, bid_buy, ask_iv_buy, bid_iv_buy, theor_iv_buy = m_buy
         # Продажа котируется от ask покупаемой ноги, покупка — от bid продаваемой
-        off_sell = initial_offset(dataname_sell, dataname_buy, 'sell')
-        off_buy = initial_offset(dataname_buy, dataname_sell, 'buy')
+        off_sell = initial_offset(dataname_sell, dataname_buy, 'sell', self.legs)
+        off_buy = initial_offset(dataname_buy, dataname_sell, 'buy', self.legs)
+        # sec.target — встречная сторона стакана другой ноги: предложение
+        # существует, поэтому встречная сделка гарантированно исполнится.
+        sec_target_sell = ask_buy          # sec.target продающей ноги — ask BUY ноги
+        sec_target_buy = bid_sell          # sec.target покупающей ноги — bid SELL ноги
         tiv_sell = ask_iv_buy + off_sell
         tiv_buy = bid_iv_sell + off_buy
         sell_leg, buy_leg = self.legs['sell'], self.legs['buy']
         Ss, Ks, Ts, _ = get_option_data_for_calc_price(dataname_sell)
         Sb, Kb, Tb, _ = get_option_data_for_calc_price(dataname_buy)
+        # Разница теоретических IV: из IV «дальней» ноги вычитается IV «ближней»
+        # (больше страйк; при равных страйках — старше серия)
+        diff_theor = diff_iv(theor_iv_sell, theor_iv_buy, dataname_sell, dataname_buy)
+        global diff_theor_current
+        diff_theor_current = diff_theor   # для авто-переключения Open/Close в Auto
+        # Diff.spread: разница IV середин спреда ask/bid (замораживается при
+        # «заражении» — своя заявка на best ask/bid)
+        diff_spread, frozen = update_diff_spread(m_sell, m_buy, self.legs)
+        # Diff.select: реально применяемый профит; независимые галки:
+        # Th добавляет в выборку Diff.theor, Sp — Diff.spread (при заражении —
+        # последнее валидное); в Open берётся наименьшее из включённых
+        # величин (Профит, Th, Sp), в Close — наибольшее; без галок — Профит
+        diff_select = round(effective_profit(diff_theor, diff_spread), 2)
         tp_sell = round_step(option_price(Ss, tiv_sell / 100, Ks, Ts, r, sell_leg['opt_type']),
                              sell_leg['step'], sell_leg['decimals'])
         tp_buy = round_step(option_price(Sb, tiv_buy / 100, Kb, Tb, r, buy_leg['opt_type']),
@@ -1056,7 +1266,11 @@ class QuoterEngine:
         return {'sell_ask': ask_sell, 'sell_bid': bid_sell, 'buy_ask': ask_buy, 'buy_bid': bid_buy,
                 'target_price_sell': tp_sell, 'target_iv_sell': tiv_sell,
                 'target_price_buy': tp_buy, 'target_iv_buy': tiv_buy,
-                'diff': round(theor_iv_sell - theor_iv_buy, 2)}
+                'sec_target_sell': sec_target_sell, 'sec_target_buy': sec_target_buy,
+                'diff': round(diff_theor, 2),
+                'diff_spread': round(diff_spread, 2) if diff_spread is not None else None,
+                'diff_spread_frozen': frozen,
+                'diff_select': diff_select}
 
     def maintain_leg(self, leg_name, tg, qty):
         """Реквот ноги фазы 1. Решение принимаем по собственному учёту
@@ -1123,7 +1337,7 @@ class QuoterEngine:
 
     def cancel_leg(self, leg_name):
         leg = self.legs[leg_name]
-        if leg['order_id'] is not None:
+        if leg['order_id'] is not None and order_alive(leg['order_id']):
             try:
                 get_cancel_order(account_id, leg['order_id'])
                 self.say(f'Заявка {leg_name.upper()} снята: {leg["order_id"]}')
@@ -1141,7 +1355,12 @@ class QuoterEngine:
         if not self.wait_session():
             self.finish()
             return
-        while running and self.counter < lot_count:
+        # Auto/Waiting: Diff.theor и Diff.spread в промежуточной зоне — ждём
+        # сработки условия Open/Close (проверка раз в секунду, значения
+        # обновляются на каждой итерации), индикация «Режим: Waiting»
+        self.wait_signal()
+        set_trading_mode_label(effective_mode(None) or 'Waiting')
+        while running and not auto_waiting() and self.counter < lot_count:
             try:
                 done = self.run_pair()
             except Exception as e:
@@ -1157,6 +1376,27 @@ class QuoterEngine:
             msg_queue.put(('counter', self.counter))
             self.say(f'Пара N{self.counter} из {lot_count} исполнена')
             sleep(timeout)
+            self.wait_signal()   # Auto: сигнальная зона может смениться между парами
+        # Auto: режим мог смениться (счётчик сброшен в ноль) — продолжаем
+        # с новым режимом, пока работает и не исчерпано число циклов
+        while running and auto_mode_active() and not auto_waiting() and self.counter < lot_count:
+            self.say(f'Auto: продолжение в режиме {applied_mode}')
+            try:
+                done = self.run_pair()
+            except Exception as e:
+                logger.error(f'Ошибка в цикле пары: {e}')
+                logger.error(traceback.format_exc())
+                self.say(f'Ошибка в цикле пары: {e}')
+                self.cleanup()
+                break
+            if not running or not done:
+                break
+            self.counter += 1
+            trade_counter = self.counter
+            msg_queue.put(('counter', self.counter))
+            self.say(f'Пара N{self.counter} из {lot_count} исполнена')
+            sleep(timeout)
+            self.wait_signal()   # Auto: сигнальная зона может смениться между парами
         self.finish()
 
     def finish(self):
@@ -1179,6 +1419,10 @@ class QuoterEngine:
         self.say(f'--- Цикл: sell {dataname_sell} / buy {dataname_buy}, {qty} лотов ---')
         last_key = None
         while running:
+            if auto_waiting():           # Auto: промежуточная зона — снять заявки и ждать
+                self.cleanup()
+                self.wait_signal()
+                return False
             if not self.session_active():
                 self.say('Вне торговой сессии — заявки сняты, ждём')
                 self.cleanup()
@@ -1193,9 +1437,9 @@ class QuoterEngine:
                 self.emit_panel(tg)
                 key = (tg['target_price_sell'], tg['target_price_buy'])
                 if key != last_key:
-                    self.say(f"Target SELL {tg['target_price_sell']} ({tg['target_iv_sell']:.2f}%) | "
-                             f"BUY {tg['target_price_buy']} ({tg['target_iv_buy']:.2f}%) | "
-                             f"Diff.theor {tg['diff']}")
+                    self.say(f"Target SELL {tg['target_price_sell']} ({tg['target_iv_sell']:.2f}%) "
+                    f"BUY {tg['target_price_buy']} ({tg['target_iv_buy']:.2f}%) "
+                    f"Profit {tg['diff_select']}")
                     last_key = key
                 self.maintain_leg('sell', tg, qty)
                 self.maintain_leg('buy', tg, qty)
@@ -1208,17 +1452,24 @@ class QuoterEngine:
                 if fsq >= qty and fbq >= qty:
                     return True  # обе исполнились — пара готова
                 if fsq > 0 or fbq > 0:
-                    self.say('Первичная нога исполнена — мгновенная встречная заявка')
+                    lead = 'sell' if fsq >= fbq else 'buy'
+                    self.say('Первичная нога исполнена — встречная заявка по sec.target')
                     return self.run_balance(qty)
                 sleep(poll_step)
         return False
 
     def run_balance(self, qty):
-        """Фаза 2: встречная заявка на разницу исполненных лотов. Якорь — фактическая
-        IV первичной ноги. Цена клампится к встречной стороне стакана (покупка —
-        не ниже ask, продажа — не выше bid), чтобы исполниться немедленно."""
+        """Фаза 2: встречная заявка на разницу исполненных лотов по sec.target —
+        встречной стороне стакана другой ноги (покупка по ask, продажа по bid).
+        Предложение существует в стакане, поэтому сделка исполняется мгновенно,
+        а прибыль пары зафиксирована target'ом первичной ноги (рассчитан от IV
+        sec.target с учётом профита). Заявка переквотится вслед за стаканом."""
         poll_step = 0.1
         while running:
+            if auto_waiting():           # Auto: промежуточная зона — снять заявки и ждать
+                self.cleanup()
+                self.wait_signal()
+                return False
             if not self.session_active():
                 self.cleanup()
                 sleep(timeout)
@@ -1232,6 +1483,14 @@ class QuoterEngine:
             lag = 'buy' if lead == 'sell' else 'sell'
             lead_q, lag_q = (fsq, fbq) if lead == 'sell' else (fbq, fsq)
             lag_leg = self.legs[lag]
+            m = leg_market(lag_leg['dataname'])
+            if m is None:
+                sleep(poll_step)
+                continue
+            # sec.target — встречная сторона стакана встречной ноги: покупаем
+            # по ask, продаём по bid. Предложение есть — исполнение мгновенное.
+            limit_price = m[0] if lag == 'buy' else m[1]
+
             # need — с учётом ещё не исполненного остатка уже стоящей встречной
             # заявки: иначе переквот перевыставлял бы полный объём заново
             # (исполненная часть дублировалась) и позиции росли сверх плана.
@@ -1241,52 +1500,45 @@ class QuoterEngine:
                 if o is not None and o.get('remaining_quantity'):
                     pending = int(o['remaining_quantity'])
             need = max(lead_q - lag_q - pending, 0)
-            if need <= 0:
-                sleep(poll_step)
-                continue
-            lead_price = (fs if lead == 'sell' else fb)[1]
-            try:
-                target_iv = counter_target_iv(self.legs[lead]['dataname'], lead_price,
-                                              lag_leg['dataname'])
-                S, K, T, opt_type = get_option_data_for_calc_price(lag_leg['dataname'])
-                target_price = round_step(option_price(S, target_iv / 100, K, T, r, opt_type),
-                                          lag_leg['step'], lag_leg['decimals'])
-            except Exception as e:
-                logger.warning(f'Таргет встречной ноги пропущен: {e}')
-                sleep(poll_step)
-                continue
-            limit_price = target_price - lag_leg['step'] * indent if lag == 'sell' \
-                else target_price + lag_leg['step'] * indent
-            m = leg_market(lag_leg['dataname'])
-            if m is None:
-                sleep(poll_step)
-                continue
-            # Мгновенное исполнение: цель по построению — встречная сторона стакана,
-            # но рынок мог уйти за время опроса. Покупаем не ниже ask, продаём не выше bid.
-            if lag == 'buy' and limit_price < m[0]:
-                self.say(f"Встречная BUY: цель {limit_price} ниже ask {m[0]} — исполнение по ask")
-                limit_price = m[0]
-            elif lag == 'sell' and limit_price > m[1]:
-                self.say(f"Встречная SELL: цель {limit_price} выше bid {m[1]} — исполнение по bid")
-                limit_price = m[1]
 
+            # Переквот по цене, даже когда need == 0: пассивная заявка фазы 1
+            # должна стать агрессивной (sec.target), иначе вторичная сделка
+            # может не исполниться вовсе.
             if lag_leg['order_id'] is not None:
-                if lag_leg['price_old'] == limit_price and lag_leg['qty_placed'] == need:
+                if lag_leg['price_old'] == limit_price:
                     sleep(poll_step)
-                    continue  # ничего не менялось
-                self.cancel_leg(lag)  # переквот встречной заявки
+                    continue  # цена совпадает с sec.target — ждём исполнения
+                self.cancel_leg(lag)  # переквот встречной заявки на sec.target
             else:
                 active = active_order(lag_leg['symbol'], lag_leg['side'])
                 if active is not None and str(active['client_order_id']).startswith(filename):
-                    lag_leg['order_id'] = active['order_id']
-                    lag_leg['order_ids'].append(lag_leg['order_id'])
-                    lag_leg['price_old'] = float(active['limit_price'])
-                    lag_leg['qty_placed'] = int(float(active['remaining_quantity']))
-                    self.say(f"Найдена активная заявка {lag.upper()} {lag_leg['order_id']}")
+                    leg_price = float(active['limit_price'])
+                    leg_rem = int(float(active['remaining_quantity']))
+                    if leg_price == limit_price:
+                        # своя заявка уже по sec.target — принимаем на учёт
+                        lag_leg['order_id'] = active['order_id']
+                        lag_leg['order_ids'].append(lag_leg['order_id'])
+                        lag_leg['price_old'] = leg_price
+                        lag_leg['qty_placed'] = leg_rem
+                        self.say(f"Найдена активная заявка {lag.upper()} {lag_leg['order_id']}")
+                        continue
+                    # цена устарела — снимаем и перевыставляем по sec.target
+                    if order_alive(active['order_id']):
+                        try:
+                            get_cancel_order(account_id, active['order_id'])
+                            self.say(f'Заявка {lag.upper()} снята: {active["order_id"]}')
+                        except Exception as e:
+                            logger.error(f'Ошибка отмены заявки: {e}')
+                    continue
+                if need <= 0:
+                    sleep(poll_step)
                     continue
 
             if not running:
                 break
+            if need <= 0:
+                sleep(poll_step)
+                continue
             new_id = place_order(lag_leg['side'], lag_leg['symbol'], need, limit_price)
             if new_id is not None:
                 lag_leg['order_id'] = new_id
@@ -1295,18 +1547,24 @@ class QuoterEngine:
                 lag_leg['qty_placed'] = need
                 self.set_led('lightgreen')
                 self.say(f"Встречная заявка {lag.upper()} {lag_leg['symbol']}: "
-                         f"{limit_price} x{need} (якорь IV {target_iv:.2f}%)")
+                         f"{limit_price} x{need} (sec.target)")
             sleep(poll_step)
         return False
 
     def emit_panel(self, tg):
         pos_sell, pos_buy = positions_quantity(dataname_sell), positions_quantity(dataname_buy)
         open_sell, open_buy = open_iv_safe(dataname_sell, pos_sell), open_iv_safe(dataname_buy, pos_buy)
-        diff_pos = open_sell - open_buy if self.legs['sell']['opt_type'] == CALL else open_buy - open_sell
+        # Разница IV открытых позиций: из IV «дальней» ноги вычитается IV «ближней»
+        # (больше страйк; при равных страйках — старше серия)
+        diff_pos = diff_iv(open_sell, open_buy, dataname_sell, dataname_buy)
         msg_queue.put(('panel', {
-            'sell': f"Target SELL: {tg['target_price_sell']} ({tg['target_iv_sell']:.2f}%) pos:{pos_sell}",
-            'buy': f"Target BUY: {tg['target_price_buy']} ({tg['target_iv_buy']:.2f}%) pos:{pos_buy}",
-            'diff_pos': diff_pos, 'diff_theor': tg['diff']}))
+            'sell': f"SELL: {tg['target_price_sell']} ({tg['target_iv_sell']:.2f}%) "
+                    f"-> sec.target {tg['sec_target_sell']}",
+            'buy': f"BUY: {tg['target_price_buy']} ({tg['target_iv_buy']:.2f}%) "
+                   f"-> sec.target {tg['sec_target_buy']}",
+            'diff_pos': diff_pos, 'diff_theor': tg['diff'],
+            'diff_spread': tg['diff_spread'], 'diff_spread_frozen': tg['diff_spread_frozen'],
+            'diff_select': tg['diff_select']}))
 
 
 # ----------------------------------------------------------------------------
@@ -1351,9 +1609,39 @@ def get_option_type_buy(app):
     app.combobox_buy.set(values[0])
 
 
+def update_option_pos_labels(app):
+    """Обновить подписи рядом с 'Опцион продажи/покупки': тикер и позиция.
+    Пример: 'RI90000BW6B, pos: -8'."""
+    for dataname, label in ((dataname_sell, app.option_sell_pos_label),
+                            (dataname_buy, app.option_buy_pos_label)):
+        try:
+            ticker = dataname.split('.')[1] if dataname else ''
+            pos = positions_quantity(dataname) if dataname else 0
+            label.config(text=f' {ticker}, pos: {pos}' if ticker else '')
+        except (IndexError, TypeError, ValueError):
+            label.config(text='')
+
+
+def on_instrument_changed(app):
+    """Сброс счётчика исполненных пар при смене любого из инструментов ноги.
+    В режиме Close число циклов пересчитывается заново — по наименьшему
+    абсолютному количеству опционов в одной из ног портфеля."""
+    global trade_counter, lot_count
+    trade_counter = 0
+    msg_queue.put(('counter', 0))
+    if effective_mode(app) == 'Close':
+        lot_count = default_lot_count_close()
+        app.spinbox_lot_count_var.set(str(lot_count))
+        app.add_message(f'Счётчик пар сброшен, число циклов: {lot_count}')
+    else:
+        app.add_message('Счётчик пар сброшен')
+
+
 def selected_sell(app):
     global dataname_sell, dataname_guid_sell_old
     ticker = app.combobox_sell.get()
+    if 'SPBOPT.' + ticker == dataname_sell:
+        return
     dataname_sell = 'SPBOPT.' + ticker
     if dataname_guid_sell_old and dataname_guid_sell_old in subscriptions_dict:
         unsubscribe_instrument(dataname_guid_sell_old)
@@ -1361,12 +1649,16 @@ def selected_sell(app):
         get_option_data_alor(dataname_sell)
         dataname_guid_sell_old = dataname_sell
         app.add_message(f'Нога SELL: {ticker}')
+    on_instrument_changed(app)
+    update_option_pos_labels(app)
     preview_targets(app, verbose=True)
 
 
 def selected_buy(app):
     global dataname_buy, dataname_guid_buy_old
     ticker = app.combobox_buy.get()
+    if 'SPBOPT.' + ticker == dataname_buy:
+        return
     dataname_buy = 'SPBOPT.' + ticker
     if dataname_guid_buy_old and dataname_guid_buy_old in subscriptions_dict:
         unsubscribe_instrument(dataname_guid_buy_old)
@@ -1374,7 +1666,28 @@ def selected_buy(app):
         get_option_data_alor(dataname_buy)
         dataname_guid_buy_old = dataname_buy
         app.add_message(f'Нога BUY: {ticker}')
+    on_instrument_changed(app)
+    update_option_pos_labels(app)
     preview_targets(app, verbose=True)
+
+
+def toggle_flags(app, theor_var, spread_var, is_open):
+    global theor_flag_open, theor_flag_close, spread_flag_open, spread_flag_close
+    global theor_flag, spread_flag
+    theor, spread = bool(theor_var.get()), bool(spread_var.get())
+    if is_open:
+        theor_flag_open, spread_flag_open = theor, spread
+    else:
+        theor_flag_close, spread_flag_close = theor, spread
+    if radio_mode in ('Open', 'Close'):
+        active_is_open = (radio_mode == 'Open')
+    elif applied_mode is not None:  # Auto: активен применённый сигнал
+        active_is_open = (applied_mode == 'Open')
+    else:
+        active_is_open = None       # Auto-Waiting: активные флаги не трогаем
+    if active_is_open is not None and active_is_open == is_open:
+        theor_flag, spread_flag = theor, spread
+    app.add_message(f'Флаги {"Open" if is_open else "Close"}: Th {theor} | Sp {spread}')
 
 def preview_targets(app, verbose=False):
     try:
@@ -1395,8 +1708,42 @@ def _preview_targets_impl(app, verbose=False):
     ask_sell, bid_sell, ask_iv_sell, bid_iv_sell, theor_iv_sell = m_sell
     ask_buy, bid_buy, ask_iv_buy, bid_iv_buy, theor_iv_buy = m_buy
 
-    off_sell = initial_offset(dataname_sell, dataname_buy, 'sell')
-    off_buy = initial_offset(dataname_buy, dataname_sell, 'buy')
+    # Разница теоретических IV: из IV «дальней» ноги вычитается IV «ближней»
+    # (больше страйк; при равных страйках — старше серия). Считается до
+    # оффсетов: в Auto от неё зависит применяемый режим предрасчёта.
+    diff_theor = diff_iv(theor_iv_sell, theor_iv_buy, dataname_sell, dataname_buy)
+    global diff_theor_current
+    diff_theor_current = diff_theor   # для авто-переключения Open/Close в Auto
+
+    # Режим, профит и флаги предрасчёта — как у движка в текущий момент:
+    # по выбранной радиокнопке; в Auto — по применённому сигналу, а до
+    # первой сработки — по текущему сигналу из Diff.theor; None — Waiting.
+    if radio_mode in ('Open', 'Close'):
+        sel_mode = radio_mode
+    elif applied_mode is not None:
+        sel_mode = applied_mode
+    elif diff_theor is not None:
+        if diff_theor <= expected_profit_open:
+            sel_mode = 'Open'
+        elif diff_theor >= expected_profit_close:
+            sel_mode = 'Close'
+        else:
+            sel_mode = None
+    else:
+        sel_mode = None
+    if sel_mode == 'Close':
+        sel_profit = expected_profit_close
+        sel_th, sel_sp = theor_flag_close, spread_flag_close
+    elif sel_mode == 'Open':
+        sel_profit = expected_profit_open
+        sel_th, sel_sp = theor_flag_open, spread_flag_open
+    else:
+        sel_profit, sel_th, sel_sp = expected_profit, theor_flag, spread_flag
+
+    off_sell = initial_offset(dataname_sell, dataname_buy, 'sell', None,
+                              sel_mode, sel_profit, sel_th, sel_sp)
+    off_buy = initial_offset(dataname_buy, dataname_sell, 'buy', None,
+                             sel_mode, sel_profit, sel_th, sel_sp)
     tiv_sell = ask_iv_buy + off_sell
     tiv_buy = bid_iv_sell + off_buy
 
@@ -1411,48 +1758,300 @@ def _preview_targets_impl(app, verbose=False):
     tp_sell -= sell_leg['step'] * indent    # как в maintain_leg — предрасчёт = реальным заявкам
     tp_buy += buy_leg['step'] * indent
 
+    # Diff.spread: разница IV середин спреда ask/bid (предрасчёт без заявок —
+    # «заражение» невозможно, в last_valid не пишем)
+    diff_spread, frozen = update_diff_spread(m_sell, m_buy, None, store=False)
+
+    # Diff.select: реально применяемый профит; независимые галки:
+    # Th добавляет в выборку Diff.theor, Sp — Diff.spread (при заражении —
+    # последнее валидное); в Open берётся наименьшее из включённых
+    # величин (Профит, Th, Sp), в Close — наибольшее; без галок — Профит
+    diff_select = round(effective_profit(diff_theor, diff_spread, sel_mode,
+                                         sel_profit, sel_th, sel_sp), 2)
+
     pos_sell, pos_buy = positions_quantity(dataname_sell), positions_quantity(dataname_buy)
     open_sell, open_buy = open_iv_safe(dataname_sell, pos_sell), open_iv_safe(dataname_buy, pos_buy)
-    diff_pos = open_sell - open_buy if sell_leg['opt_type'] == CALL else open_buy - open_sell
+    # Разница IV открытых позиций: из IV «дальней» ноги вычитается IV «ближней»
+    # (больше страйк; при равных страйках — старше серия)
+    diff_pos = diff_iv(open_sell, open_buy, dataname_sell, dataname_buy)
 
     msg_queue.put(('panel', {
-        'sell': f"Target SELL: {tp_sell} ({tiv_sell:.2f}%) pos:{pos_sell}",
-        'buy': f"Target BUY: {tp_buy} ({tiv_buy:.2f}%) pos:{pos_buy}",
+        'sell': f"SELL: {tp_sell} ({tiv_sell:.2f}%) -> sec.target {ask_buy}",
+        'buy': f"BUY: {tp_buy} ({tiv_buy:.2f}%) -> sec.target {bid_sell}",
         'diff_pos': diff_pos,
-        'diff_theor': round(theor_iv_sell - theor_iv_buy, 2)}))
+        'diff_theor': round(diff_theor, 2),
+        'diff_spread': round(diff_spread, 2) if diff_spread is not None else None,
+        'diff_spread_frozen': frozen,
+        'diff_select': diff_select}))
 
     if verbose:
         s = sign_of(sell_leg['opt_type'])
         diff_market = round(s * (bid_iv_sell - ask_iv_buy), 2)
         app.add_message('')
-        app.add_message(f'Профит (IV): {expected_profit:g} | Theor: {theor_flag} | Indent: {indent}')
-        app.add_message(f'SELL {dataname_sell}: ask {ask_sell:g} ({ask_iv_sell:.2f}%) '
-                        f'bid {bid_sell:g} ({bid_iv_sell:.2f}%) -> target {tp_sell} ({tiv_sell:.2f}%)')
-        app.add_message(f'BUY  {dataname_buy}: ask {ask_buy:g} ({ask_iv_buy:.2f}%) '
-                        f'bid {bid_buy:g} ({bid_iv_buy:.2f}%) -> target {tp_buy} ({tiv_buy:.2f}%)')
-        app.add_message(f'Diff.theor {round(theor_iv_sell - theor_iv_buy, 2)} | '
-                        f'Diff.market {diff_market} | Difference pos {round(diff_pos, 2)}')
+        app.add_message(f'Профит: {sel_profit:g} | Режим: {sel_mode or "Waiting"} | '
+                        f'Theor: {sel_th} | Spread: {sel_sp} | Indent: {indent}')
+        app.add_message(f'SELL {dataname_sell.split(".")[1]}: ask {ask_sell:g} ({ask_iv_sell:.2f}%) '
+                        f'bid {bid_sell:g} ({bid_iv_sell:.2f}%))')
+        app.add_message(f'target {tp_sell} ({tiv_sell:.2f}%) -> sec.target {ask_buy}')
+        app.add_message(f'BUY  {dataname_buy.split(".")[1]}: ask {ask_buy:g} ({ask_iv_buy:.2f}%) '
+                        f'bid {bid_buy:g} ({bid_iv_buy:.2f}%))')
+        app.add_message(f'target {tp_buy} ({tiv_buy:.2f}%) -> sec.target {bid_sell}')
+        app.add_message(f'Diff.select {diff_select:g} | '
+                        f'Diff.theor {round(diff_theor, 2)} | '
+                        f'Diff.spread {round(diff_spread, 2) if diff_spread is not None else "—"}'
+                        + (' (заморожен)' if frozen else ''))
+        app.add_message(f'Diff.market {diff_market} | Difference pos {round(diff_pos, 2)}')
 
 
-def selected_profit(app):
-    global expected_profit
+def active_mode(app):
+    """Режим, выбранный радиокнопкой: 'Open', 'Close' или 'Auto'.
+    app=None — читать из глобальной копии radio_mode (движок без GUI)."""
+    return app.mode_var.get() if app is not None else radio_mode
+
+
+def effective_mode(app):
+    """Действующий режим 'Open'/'Close'. В Auto определяется значением
+    Diff.theor и Diff.spread против Profit open / Profit close: если хотя
+    бы одна из доступных величин <= Profit open -> 'Open', если хотя бы
+    одна >= Profit close -> 'Close', промежуточные значения — None
+    (ожидание сработки условия)."""
+    mode = active_mode(app)
+    if mode == 'Auto':
+        signal = auto_signal_mode()
+        if signal is None:
+            return None
+        return 'Open' if not signal else 'Close'
+    return mode
+
+
+def auto_spread_value():
+    """Diff.spread для сигнала Auto: текущее значение, а при «заражении»
+    или отсутствии — последнее валидное (как в effective_profit)."""
+    return diff_spread_current if diff_spread_current is not None else diff_spread_last_valid
+
+
+def auto_signal_mode():
+    """Режим для Auto по текущим Diff.theor и Diff.spread против Profit
+    open / Profit close из Spinbox: если хотя бы одна из доступных величин
+    <= Profit open -> False (Open); иначе если хотя бы одна >= Profit close
+    -> True (Close); промежуточная зона -> None (Waiting).
+    Недоступная величина (None или «заражённая» без истории) исключается —
+    работает другая; если недоступны обе, движок ждёт. Конфликт (одна
+    величина в зоне Open, другая в зоне Close) разрешается в пользу Open:
+    порядок условий в постановке задачи — сначала Open, затем Close."""
+    values = [v for v in (diff_theor_current, auto_spread_value()) if v is not None]
+    if not values:
+        return None
+    if any(v <= expected_profit_open for v in values):
+        return False          # Open
+    if any(v >= expected_profit_close for v in values):
+        return True           # Close
+    return None               # ожидание
+
+
+def auto_waiting():
+    """True — режим Auto и Diff.theor и Diff.spread в промежуточной зоне
+    (движок ждёт)."""
+    return active_mode(None) == 'Auto' and auto_signal_mode() is None
+
+
+def auto_mode_active():
+    """True — включён режим Auto с применённым режимом Open/Close
+    (не Waiting): движок может продолжать циклы после смены режима."""
+    return active_mode(None) == 'Auto' and applied_mode in ('Open', 'Close')
+
+
+def selected_profit(app, var=None, rewrite=True):
+    """Применить значение из поля Профит (Open или Close): записывает в
+    expected_profit_open / expected_profit_close; если редактируется поле
+    действующего режима — и в активный expected_profit. var — StringVar
+    конкретного поля; без var берётся поле действующего режима. rewrite=True —
+    нормализовать текст в поле и сообщить в лог (Return, FocusOut, стрелки
+    спинбокса). При посимвольном вводе (KeyRelease) rewrite=False: поле НЕ
+    перезаписывается, иначе введённая десятичная точка затиралась бы.
+    Запятая принимается как разделитель (русская раскладка)."""
+    global expected_profit, expected_profit_open, expected_profit_close
+    open_var = app.spinbox_profit_open_var
+    if var is None:
+        var = open_var if effective_mode(app) == 'Open' else app.spinbox_profit_close_var
+    is_open = (var is open_var)
+    mode = effective_mode(app)
+    text = var.get().strip().replace(',', '.')
     try:
-        value = float(app.spinbox_profit.get())
+        value = float(text)
         if -20.0 <= value <= 20.0:
-            expected_profit = round(value, 1)
-            app.spinbox_profit_var.set(f'{expected_profit:g}')
-            app.add_message(f'Профит (IV): {expected_profit}')
-            preview_targets(app, verbose=True)
-        else:
+            value = round(value, 1)
+            if is_open:
+                expected_profit_open = value
+            else:
+                expected_profit_close = value
+            if mode == ('Open' if is_open else 'Close'):
+                expected_profit = value
+            if rewrite:
+                var.set(f'{value:g}')
+                app.add_message(f'Профит {"Open" if is_open else "Close"} (IV): {value}')
+                preview_targets(app, verbose=True)
+        elif rewrite:
             app.add_message('Ошибка: значение вне диапазона -20.0 … 20.0')
     except ValueError:
-        app.add_message('Ошибка: введите корректное числовое значение')
+        if rewrite:
+            app.add_message('Ошибка: введите корректное числовое значение')
 
 
-def toggle_theor(app):
-    global theor_flag
-    theor_flag = app.theor_var.get()
-    app.add_message(f'Флаг Theor: {theor_flag}')
+def toggle_flags(app, theor_var, spread_var, is_open):
+    """Галки Th и Sp независимы: каждая включается и выключается отдельно,
+    в любом сочетании. Применяет флаги того набора (Open/Close), которому
+    принадлежат галки; если набор принадлежит действующему режиму —
+    обновляет и активные theor_flag / spread_flag."""
+    mode = effective_mode(app)
+    theor = bool(theor_var.get())
+    spread = bool(spread_var.get())
+    if is_open:
+        global theor_flag_open, spread_flag_open
+        theor_flag_open, spread_flag_open = theor, spread
+    else:
+        global theor_flag_close, spread_flag_close
+        theor_flag_close, spread_flag_close = theor, spread
+    if mode == ('Open' if is_open else 'Close'):
+        global theor_flag, spread_flag
+        theor_flag, spread_flag = theor, spread
+    app.add_message(f'Флаги {"Open" if is_open else "Close"}: '
+                    f'Th (Diff.theor) {theor} | Sp (Diff.spread) {spread}')
+
+
+def toggle_theor(app, var):
+    """Синхронизация активных флагов Th/Sp с галками GUI перед стартом движка.
+    Восстанавливает theor_flag/spread_flag по набору (Open/Close), которому
+    принадлежит переданная галка: без неё start_quoter падал с NameError
+    (функция была удалена вместе со старой логикой, вызовы остались)."""
+    is_open = (var is app.theor_var_open)
+    if is_open:
+        global theor_flag_open, spread_flag_open, theor_flag, spread_flag
+        theor_flag_open = bool(app.theor_var_open.get())
+        spread_flag_open = bool(app.spread_var_open.get())
+        mode_open = (effective_mode(app) == 'Open')
+        if mode_open:
+            theor_flag, spread_flag = theor_flag_open, spread_flag_open
+    else:
+        global theor_flag_close, spread_flag_close
+        theor_flag_close = bool(app.theor_var_close.get())
+        spread_flag_close = bool(app.spread_var_close.get())
+        if effective_mode(app) == 'Close':
+            theor_flag, spread_flag = theor_flag_close, spread_flag_close
+    app.add_message(f'Флаги {"Open" if is_open else "Close"}: '
+                    f'Th {theor_flag_open if is_open else theor_flag_close} | '
+                    f'Sp {spread_flag_open if is_open else spread_flag_close}')
+
+
+def swap_legs(app):
+    """Переставить опционы продажи и покупки местами со всеми подписками,
+    данными и надписями панели управления."""
+    global dataname_sell, dataname_buy, dataname_guid_sell_old, dataname_guid_buy_old
+    dataname_sell, dataname_buy = dataname_buy, dataname_sell
+    dataname_guid_sell_old, dataname_guid_buy_old = dataname_guid_buy_old, dataname_guid_sell_old
+    ticker_sell, ticker_buy = dataname_sell.split('.')[1], dataname_buy.split('.')[1]
+    # Комбобоксы: значения списков Call/Put у sell и buy различаются только
+    # при разном типе опционов — заполняем каждый своим списком по его типу
+    app.combobox_sell['values'] = list(sell_tickers_put if app.option_type_sell.get() == 'P'
+                                       else sell_tickers_call)
+    app.combobox_sell.set(ticker_sell)
+    app.combobox_buy['values'] = list(sell_tickers_put if app.option_type_buy.get() == 'P'
+                                      else sell_tickers_call)
+    app.combobox_buy.set(ticker_buy)
+    app.add_message(f'Ноги переставлены: SELL {ticker_sell} <-> BUY {ticker_buy}')
+    on_instrument_changed(app)
+    update_option_pos_labels(app)
+    preview_targets(app, verbose=True)
+
+
+def default_lot_count_close():
+    """Число циклов для режима Close по умолчанию: число полных пар опционов
+    в портфеле — минимум из абсолютных позиций двух ног (напр. -8 и 39 -> 8).
+    При отсутствии позиций возвращает 1."""
+    pos_sell, pos_buy = positions_quantity(dataname_sell), positions_quantity(dataname_buy)
+    pairs = min(abs(pos_sell), abs(pos_buy))
+    return max(pairs, 1)
+
+
+def set_trading_mode_label(mode_text):
+    """Индикация действующего режима торговли в строке счётчика пар."""
+    msg_queue.put(('mode', mode_text))
+
+
+def set_mode(app, mode):
+    """Применить режим: активирует набор Профит/Theor; при переходе
+    Open <-> Close переставляет опционы продажи/покупки местами, пересчитывает
+    число циклов (Close — по минимуму абсолютных позиций ног) и обнуляет
+    счётчик пар. mode=None — промежуточная зона Auto (Waiting): ничего не
+    котируем и ждём сработки условия Open/Close. Повторный выбор того же
+    режима ничего не меняет."""
+    global expected_profit, theor_flag, spread_flag, lot_count, legs_swapped, applied_mode
+    global trade_counter
+    if mode == applied_mode:
+        return
+    if mode is None:
+        applied_mode = None
+        set_trading_mode_label('Waiting')
+        if engine is not None:
+            engine.cleanup()    # выходим из торговли — снимаем активные заявки
+        app.add_message('Auto: Waiting — Diff.theor и Diff.spread между '
+                        'Profit open и Profit close, движок ждёт')
+        return
+    mode_open = (mode == 'Open')
+    expected_profit = expected_profit_open if mode_open else expected_profit_close
+    theor_flag = theor_flag_open if mode_open else theor_flag_close
+    spread_flag = spread_flag_open if mode_open else spread_flag_close
+    # Close закрывает позиции портфеля: число циклов по умолчанию — число
+    # полных пар (минимум абсолютных позиций ног). Open начинает новые пары.
+    lot_count = 1 if mode_open else default_lot_count_close()
+    app.spinbox_lot_count_var.set(str(lot_count))
+    if mode == 'Close' and not legs_swapped:
+        swap_legs(app)          # Close: продаём то, что куплено (бывший BUY)
+        legs_swapped = True
+    elif mode == 'Open' and legs_swapped:
+        swap_legs(app)          # Open: возврат к исходному выбору
+        legs_swapped = False
+    applied_mode = mode
+    # Смена режима — новая торговая задача: счётчик пар в ноль
+    trade_counter = 0
+    if engine is not None:
+        engine.counter = 0
+    msg_queue.put(('counter', 0))
+    set_trading_mode_label(mode)
+    # Активный движок переключаем на ноги нового режима:
+    # снимаем заявки старого направления и пересобираем ноги
+    if engine is not None:
+        engine.cleanup()
+        engine.legs = build_legs()
+    app.add_message(f'Режим: {mode} | Профит: {expected_profit:g} | '
+                    f'Theor: {theor_flag} | Spread: {spread_flag}')
+
+
+def on_mode_change(app):
+    """Переключение радиокнопки режима Open/Close/Auto: запоминает выбор
+    для движка и применяет действующий режим (в Auto — по Diff.theor,
+    включая Waiting в промежуточной зоне)."""
+    global radio_mode
+    radio_mode = app.mode_var.get()
+    set_mode(app, effective_mode(app))
+
+
+def check_auto_signal(app):
+    """Режим Auto (опрос раз в 2 сек из GUI): следит за Diff.theor и
+    Diff.spread и переключает Open/Close автоматически; в промежуточной
+    зоне — Waiting. В ручных режимах применяет выбранный режим, если он
+    ещё не применён (set_mode с уже применённым режимом — no-op).
+    Раньше здесь applied_mode сбрасывался в None каждые 2 секунды — из-за
+    этого effective_profit получал mode=None и возвращал сырой Профит,
+    правило max/min (Close/Open) в движке не работало, хотя предрасчёт
+    (по radio_mode) показывал корректный Diff.select."""
+    global radio_mode
+    mode = active_mode(app)
+    if mode != 'Auto':
+        set_mode(app, mode)
+        return
+    radio_mode = 'Auto'
+    set_mode(app, effective_mode(app))
 
 
 def selected_lot_count(app):
@@ -1500,7 +2099,7 @@ class App:
         # Правая панель: журнал сообщений
         frame_right = tk.Frame(self.root)
         frame_right.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5, pady=5)
-        self.message_text = tk.Text(frame_right, width=64)
+        self.message_text = tk.Text(frame_right, width=76)
         self.message_text.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
         scroll = tk.Scrollbar(frame_right, command=self.message_text.yview)
         scroll.pack(side=tk.RIGHT, fill=tk.Y)
@@ -1510,27 +2109,36 @@ class App:
         frame_left = tk.Frame(self.root)
         frame_left.pack(side=tk.LEFT, fill=tk.Y, padx=5, pady=5)
 
-        # Статус, светодиод, счётчик пар
+        # Статус и светодиод — в одну линию
         frame_status = tk.Frame(frame_left)
         frame_status.pack(fill=tk.X)
         self.status_label = tk.Label(frame_status, text='Status: Stopped', width=18, anchor='w')
         self.status_label.pack(side=tk.LEFT)
         self.led_label = tk.Label(frame_status, text='  ', bg='lightgray', width=3, relief=tk.GROOVE)
         self.led_label.pack(side=tk.LEFT, padx=5)
-        self.counter_label = tk.Label(frame_status, text='Пар исполнено: 0')
-        self.counter_label.pack(side=tk.LEFT, padx=5)
+
+        # Счётчик пар и действующий режим торговли — одной строкой ниже
+        frame_counter = tk.Frame(frame_left)
+        frame_counter.pack(fill=tk.X)
+        self.counter_label = tk.Label(frame_counter, text='Пар исполнено: 0', anchor='w')
+        self.counter_label.pack(side=tk.LEFT)
+        self.mode_label = tk.Label(frame_counter, text='Режим: —', anchor='w')
+        self.mode_label.pack(side=tk.LEFT, padx=(10, 0))
 
         # Панель таргетов и разниц
-        self.target_label_sell = tk.Label(frame_left, text='Target SELL: -', anchor='w', width=45)
+        self.target_label_sell = tk.Label(frame_left, text='SELL: ', anchor='w', width=45)
         self.target_label_sell.pack(fill=tk.X)
-        self.target_label_buy = tk.Label(frame_left, text='Target BUY: -', anchor='w', width=45)
+        self.target_label_buy = tk.Label(frame_left, text='BUY: ', anchor='w', width=45)
         self.target_label_buy.pack(fill=tk.X)
-        self.difference_pos_label = tk.Label(frame_left, text='Difference position, % : -',
+        self.difference_pos_label = tk.Label(frame_left, text='Diff.pos: ',
                                              anchor='w', width=45)
         self.difference_pos_label.pack(fill=tk.X)
-        self.difference_theor_label = tk.Label(frame_left, text='Difference theor, % : -',
+        self.difference_theor_label = tk.Label(frame_left, text='Diff.theor: ',
                                                anchor='w', width=45)
         self.difference_theor_label.pack(fill=tk.X)
+        self.difference_spread_label = tk.Label(frame_left, text='Diff.spread: ',
+                                                anchor='w', width=45)
+        self.difference_spread_label.pack(fill=tk.X)
 
         # Базовый актив
         tk.Label(frame_left, text='Базовый актив:').pack(anchor='w')
@@ -1547,7 +2155,11 @@ class App:
                                   lambda event: on_expiration_date_change(event, self))
 
         # Опцион продажи
-        tk.Label(frame_left, text='Опцион продажи:').pack(anchor='w')
+        frame_opt_sell_title = tk.Frame(frame_left)
+        frame_opt_sell_title.pack(fill=tk.X)
+        tk.Label(frame_opt_sell_title, text='Продажа:').pack(side=tk.LEFT)
+        self.option_sell_pos_label = tk.Label(frame_opt_sell_title, text='', anchor='w')
+        self.option_sell_pos_label.pack(side=tk.LEFT)
         frame_opt_sell = tk.Frame(frame_left)
         frame_opt_sell.pack(fill=tk.X)
         self.option_type_sell = tk.StringVar(value='C')
@@ -1560,7 +2172,11 @@ class App:
         self.combobox_sell.bind('<<ComboboxSelected>>', lambda event: selected_sell(self))
 
         # Опцион покупки
-        tk.Label(frame_left, text='Опцион покупки:').pack(anchor='w')
+        frame_opt_buy_title = tk.Frame(frame_left)
+        frame_opt_buy_title.pack(fill=tk.X)
+        tk.Label(frame_opt_buy_title, text='Покупка:').pack(side=tk.LEFT)
+        self.option_buy_pos_label = tk.Label(frame_opt_buy_title, text='', anchor='w')
+        self.option_buy_pos_label.pack(side=tk.LEFT)
         frame_opt_buy = tk.Frame(frame_left)
         frame_opt_buy.pack(fill=tk.X)
         self.option_type_buy = tk.StringVar(value='P')
@@ -1572,21 +2188,48 @@ class App:
         self.combobox_buy.pack(fill=tk.X)
         self.combobox_buy.bind('<<ComboboxSelected>>', lambda event: selected_buy(self))
 
-        # Профит и флаг Theor
-        tk.Label(frame_left, text='Профит, п.п. IV:').pack(anchor='w')
-        self.spinbox_profit_var = tk.StringVar(value=str(expected_profit))
-        self.spinbox_profit = tk.Spinbox(frame_left, from_=-20.0, to=20.0, increment=0.1,
-                                         textvariable=self.spinbox_profit_var, width=8,
-                                         command=lambda: selected_profit(self))
-        self.spinbox_profit.pack(fill=tk.X)
-        self.spinbox_profit.bind('<Return>', lambda e: selected_profit(self))
-        self.spinbox_profit.bind('<FocusOut>', lambda e: selected_profit(self))
-        self.spinbox_profit.bind('<KeyRelease>', lambda e: selected_profit(self))  # после ввода
+        # Профит и флаг Theor: два набора — для режима Open и для режима Close
+        frame_profit_open = tk.Frame(frame_left)
+        frame_profit_open.pack(fill=tk.X)
+        tk.Label(frame_profit_open, text='Profit open:').pack(side=tk.LEFT)
+        self.spinbox_profit_open_var = tk.StringVar(value=str(expected_profit_open))
+        self.spinbox_profit_open = tk.Spinbox(frame_profit_open, from_=-20.0, to=20.0, increment=0.1,
+                                              textvariable=self.spinbox_profit_open_var, width=5,
+                                              command=lambda: selected_profit(self, self.spinbox_profit_open_var))
+        self.spinbox_profit_open.pack(side=tk.LEFT, padx=5)
+        self.spinbox_profit_open.bind('<Return>', lambda e: selected_profit(self, self.spinbox_profit_open_var))
+        self.spinbox_profit_open.bind('<FocusOut>', lambda e: selected_profit(self, self.spinbox_profit_open_var))
+        self.spinbox_profit_open.bind('<KeyRelease>',
+                                      lambda e: selected_profit(self, self.spinbox_profit_open_var, rewrite=False))  # при вводе поле не трогаем
+        self.theor_var_open = tk.BooleanVar(value=theor_flag_open)
+        self.spread_var_open = tk.BooleanVar(value=spread_flag_open)
+        tk.Checkbutton(frame_profit_open, text='Th', variable=self.theor_var_open,
+                       command=lambda: toggle_flags(self, self.theor_var_open,
+                                                self.spread_var_open, True)).pack(side=tk.LEFT, padx=5)
+        tk.Checkbutton(frame_profit_open, text='Sp', variable=self.spread_var_open,
+                       command=lambda: toggle_flags(self, self.theor_var_open,
+                                                self.spread_var_open, True)).pack(side=tk.LEFT, padx=2)
 
-
-        self.theor_var = tk.BooleanVar(value=False)
-        tk.Checkbutton(frame_left, text='Theor', variable=self.theor_var,
-                       command=lambda: toggle_theor(self)).pack(anchor='w')
+        frame_profit_close = tk.Frame(frame_left)
+        frame_profit_close.pack(fill=tk.X)
+        tk.Label(frame_profit_close, text='Profit close:').pack(side=tk.LEFT)
+        self.spinbox_profit_close_var = tk.StringVar(value=str(expected_profit_close))
+        self.spinbox_profit_close = tk.Spinbox(frame_profit_close, from_=-20.0, to=20.0, increment=0.1,
+                                               textvariable=self.spinbox_profit_close_var, width=5,
+                                               command=lambda: selected_profit(self, self.spinbox_profit_close_var))
+        self.spinbox_profit_close.pack(side=tk.LEFT, padx=5)
+        self.spinbox_profit_close.bind('<Return>', lambda e: selected_profit(self, self.spinbox_profit_close_var))
+        self.spinbox_profit_close.bind('<FocusOut>', lambda e: selected_profit(self, self.spinbox_profit_close_var))
+        self.spinbox_profit_close.bind('<KeyRelease>',
+                                       lambda e: selected_profit(self, self.spinbox_profit_close_var, rewrite=False))  # при вводе поле не трогаем
+        self.theor_var_close = tk.BooleanVar(value=theor_flag_close)
+        self.spread_var_close = tk.BooleanVar(value=spread_flag_close)
+        tk.Checkbutton(frame_profit_close, text='Th', variable=self.theor_var_close,
+                       command=lambda: toggle_flags(self, self.theor_var_close,
+                                                 self.spread_var_close, False)).pack(side=tk.LEFT, padx=5)
+        tk.Checkbutton(frame_profit_close, text='Sp', variable=self.spread_var_close,
+                       command=lambda: toggle_flags(self, self.theor_var_close,
+                                                 self.spread_var_close, False)).pack(side=tk.LEFT, padx=2)
 
         # Число циклов
         self.spinbox_lot_count_var = tk.StringVar(value=str(lot_count))
@@ -1631,9 +2274,21 @@ class App:
         # Кнопки
         frame_buttons = tk.Frame(frame_left)
         frame_buttons.pack(fill=tk.X, pady=10)
-        tk.Button(frame_buttons, text='Старт', width=10, command=self.start_quoter).pack(side=tk.LEFT, padx=2)
-        tk.Button(frame_buttons, text='Стоп', width=10, command=self.stop_quoter).pack(side=tk.LEFT, padx=2)
-        tk.Button(frame_buttons, text='Выход', width=10, command=self.exit).pack(side=tk.LEFT, padx=2)
+        tk.Button(frame_buttons, text='Старт', width=10, command=self.start_quoter).pack(side=tk.LEFT, padx=2, expand=True)
+        tk.Button(frame_buttons, text='Стоп', width=10, command=self.stop_quoter).pack(side=tk.LEFT, padx=2, expand=True)
+
+        frame_exit = tk.Frame(frame_left)
+        frame_exit.pack(fill=tk.X)
+        tk.Button(frame_exit, text='Выход', width=10, command=self.exit).pack()
+
+        # Режим работы: Open/Close — переключает активный набор Профит/Theor
+        self.mode_var = tk.StringVar(value='Open')
+        frame_mode = tk.Frame(frame_left)
+        frame_mode.pack(fill=tk.X)
+        for text in ('Open', 'Close', 'Auto'):
+            tk.Radiobutton(frame_mode, text=text, value=text,
+                           variable=self.mode_var,
+                           command=lambda: on_mode_change(self)).pack(side=tk.LEFT, expand=True)
 
         self.quoter_thread = None
         self.root.after(100, self._poll_messages)
@@ -1641,6 +2296,8 @@ class App:
         self._schedule_preview()
 
     def _schedule_preview(self):
+        check_auto_signal(self)  # режим Auto: переключение по сигналу
+        # (Diff.theor / Diff.spread против Profit open/close)
         if not running and dataname_sell and dataname_buy:
             preview_targets(self, verbose=False)
         self.root.after(2000, self._schedule_preview)
@@ -1650,6 +2307,7 @@ class App:
 
     def _refresh_csv(self):
         refresh_trades()
+        update_option_pos_labels(self)  # позиция меняется по мере исполнения сделок
         self.root.after(15_000, self._refresh_csv)  # раз в 15 секунд
 
     def _poll_messages(self):
@@ -1667,13 +2325,19 @@ class App:
                 self.status_label.config(text=f'Status: {value}')
             elif kind == 'counter':
                 self.counter_label.config(text=f'Пар исполнено: {value}')
+            elif kind == 'mode':
+                self.mode_label.config(text=f'Режим: {value}')
             elif kind == 'panel':
                 self.target_label_sell.config(text=value['sell'])
                 self.target_label_buy.config(text=value['buy'])
                 self.difference_pos_label.config(
                     text=f'Difference position, % : {value["diff_pos"]:.2f}')
                 self.difference_theor_label.config(
-                    text=f'Difference theor, % : {value["diff_theor"]:.2f}')
+                    text=f'Diff.theor, % : {value["diff_theor"]:.2f}')
+                ds = value.get('diff_spread')
+                self.difference_spread_label.config(
+                    text='Diff.spread, % : ' + (f'{ds:.2f}' if ds is not None else '—')
+                    + (' (заморожен)' if value.get('diff_spread_frozen') else ''))
         self.root.after(100, self._poll_messages)
 
     def start_quoter(self):
@@ -1684,8 +2348,10 @@ class App:
                 or dataname_sell not in options_data or dataname_buy not in options_data:
             self.add_message('Выберите оба опциона пары')
             return
-        selected_profit(self)
-        toggle_theor(self)
+        selected_profit(self, self.spinbox_profit_open_var, rewrite=False)
+        selected_profit(self, self.spinbox_profit_close_var, rewrite=False)
+        toggle_theor(self, self.theor_var_open)
+        toggle_theor(self, self.theor_var_close)
         selected_timeout(self)
         selected_indent(self)
         selected_basket_size(self)
@@ -1727,7 +2393,7 @@ class App:
 # ----------------------------------------------------------------------------
 logger = logging.getLogger(filename)
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.INFO,  # Уровень логируемых событий NOTSET/DEBUG/INFO/WARNING/ERROR/CRITICAL
     format='%(asctime)s %(levelname)s %(message)s',
     handlers=[logging.StreamHandler(),
               logging.FileHandler(f'{filename}.log', encoding='utf-8')])
