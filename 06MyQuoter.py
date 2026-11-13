@@ -21,6 +21,15 @@
    на каждой итерации — их можно менять на ходу из GUI.
 """
 
+# OpenBLAS/OpenMP: по одному потоку на процесс. Иначе numpy резервирует
+# буфер под все логические ядра (~32 МБ на ядро), и при запуске нескольких
+# экземпляров котировщика очередной падает с
+# "OpenBLAS error: Memory allocation still failed after 10 retries".
+# Устанавливать до импорта numpy/pandas/scipy.
+import os
+os.environ.setdefault('OPENBLAS_NUM_THREADS', '1')
+os.environ.setdefault('OMP_NUM_THREADS', '1')
+
 import logging
 # logging.basicConfig(level=logging.WARNING)  # уровень логгирования
 import traceback
@@ -32,7 +41,7 @@ from threading import Thread, Lock
 import re
 from datetime import datetime
 from queue import Empty, Queue
-from time import sleep
+from time import sleep, monotonic
 from zoneinfo import ZoneInfo
 
 import numpy as np
@@ -137,6 +146,10 @@ TRADES_CSV = os.path.join(DATA_DIR_FINAM, "Finam_Stream_Trades_ALL.csv")
 TRADES_COLUMNS = ['datetime', 'trade_id', 'order_id', 'option_base', 'ticker',
                   'option_type', 'strike', 'expdate', 'operation', 'volume',
                   'price', 'value', 'volatility']
+
+# Период обновления кэша активных сделок (мс). Раньше CSV перечитывался
+# в обработчике каждой сделки — лишний расход памяти и диска.
+TRADES_REFRESH_MS = 15_000
 
 _trades_lock = Lock()
 _trades_df_cache = pd.DataFrame(columns=TRADES_COLUMNS)  # активные сделки: CSV + свежие из потока
@@ -827,7 +840,8 @@ def _register_trade(trade, size, price):
         }
         with _trades_lock:
             _stream_trades.append(row)
-        refresh_trades()  # CSV уже мог обновиться другой программой — подхватим
+        # Кэш CSV не перечитываем на каждую сделку: файл подхватит
+        # плановое обновление по таймеру (TRADES_REFRESH_MS).
     except Exception as e:
         logger.error(f'Ошибка регистрации сделки в истории: {e}')
 
@@ -1783,6 +1797,47 @@ def selected_indent(app):
     app.add_message(f'Indent (шагов цены): {indent}')
 
 
+# --- цвета строк «Продажа» / «Покупка» в панели ---
+SELL_COLOR = '#8B0000'  # тёмно-красный
+BUY_COLOR = '#006400'   # тёмно-зелёный
+
+# --- звуковой сигнал сработки условия Auto ---
+# winsound есть только в Windows; импорт не должен ронять скрипт на других ОС
+try:
+    import winsound
+except ImportError:
+    winsound = None
+
+AUTO_SIGNAL_PREFIX = 'Auto: сработало условие'  # сообщение, по которому играем звук
+AUTO_SIGNAL_WAV = ''            # свой .wav (путь от папки скрипта); '' — системный звук Windows
+AUTO_SIGNAL_MIN_INTERVAL = 2.0  # не чаще одного сигнала в N секунд
+_last_auto_signal_time = 0.0
+
+
+def play_auto_signal():
+    """Проиграть сигнал сработки условия Auto (не блокирует GUI).
+
+    AUTO_SIGNAL_WAV задан — играем файл, иначе системный звук Windows.
+    Повторы чаще AUTO_SIGNAL_MIN_INTERVAL гасятся: сообщение о сработке
+    может прийти несколько раз подряд при дребезге сигнала."""
+    global _last_auto_signal_time
+    if winsound is None:
+        return
+    now = monotonic()
+    if now - _last_auto_signal_time < AUTO_SIGNAL_MIN_INTERVAL:
+        return
+    _last_auto_signal_time = now
+    if AUTO_SIGNAL_WAV:
+        path = AUTO_SIGNAL_WAV if os.path.isabs(AUTO_SIGNAL_WAV) \
+            else os.path.join(BASE_DIR, AUTO_SIGNAL_WAV)
+        try:
+            winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC)
+            return
+        except RuntimeError as e:
+            logger.warning(f'Не удалось проиграть {path}: {e}')
+    winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+
+
 class App:
     """GUI котировщика. Все обращения из торгового потока идут через msg_queue,
     рабочий цикл движка живёт в отдельном потоке."""
@@ -1850,8 +1905,9 @@ class App:
         # Опцион продажи
         frame_opt_sell_title = tk.Frame(frame_left)
         frame_opt_sell_title.pack(fill=tk.X)
-        tk.Label(frame_opt_sell_title, text='Продажа:').pack(side=tk.LEFT)
-        self.option_sell_pos_label = tk.Label(frame_opt_sell_title, text='', anchor='w')
+        tk.Label(frame_opt_sell_title, text='Продажа:', fg=SELL_COLOR).pack(side=tk.LEFT)
+        self.option_sell_pos_label = tk.Label(frame_opt_sell_title, text='', anchor='w',
+                                              fg=SELL_COLOR)
         self.option_sell_pos_label.pack(side=tk.LEFT)
         frame_opt_sell = tk.Frame(frame_left)
         frame_opt_sell.pack(fill=tk.X)
@@ -1867,8 +1923,9 @@ class App:
         # Опцион покупки
         frame_opt_buy_title = tk.Frame(frame_left)
         frame_opt_buy_title.pack(fill=tk.X)
-        tk.Label(frame_opt_buy_title, text='Покупка:').pack(side=tk.LEFT)
-        self.option_buy_pos_label = tk.Label(frame_opt_buy_title, text='', anchor='w')
+        tk.Label(frame_opt_buy_title, text='Покупка:', fg=BUY_COLOR).pack(side=tk.LEFT)
+        self.option_buy_pos_label = tk.Label(frame_opt_buy_title, text='', anchor='w',
+                                             fg=BUY_COLOR)
         self.option_buy_pos_label.pack(side=tk.LEFT)
         frame_opt_buy = tk.Frame(frame_left)
         frame_opt_buy.pack(fill=tk.X)
@@ -1988,9 +2045,14 @@ class App:
         msg_queue.put(('msg', str(text)))
 
     def _refresh_csv(self):
-        refresh_trades()
-        update_option_pos_labels(self)  # позиция меняется по мере исполнения сделок
-        self.root.after(15_000, self._refresh_csv)  # раз в 15 секунд
+        try:
+            refresh_trades()
+            update_option_pos_labels(self)  # позиция меняется по мере исполнения сделок
+        except Exception as e:
+            logger.error(f'Ошибка обновления кэша сделок: {e}')
+        finally:
+            # Таймер перезаводим всегда, иначе цепочка обновлений оборвётся
+            self.root.after(TRADES_REFRESH_MS, self._refresh_csv)
 
     def _poll_messages(self):
         while True:
@@ -2001,6 +2063,8 @@ class App:
             if kind == 'msg':
                 self.message_text.insert('end', value + '\n')
                 self.message_text.see('end')
+                if str(value).startswith(AUTO_SIGNAL_PREFIX):
+                    play_auto_signal()
             elif kind == 'led':
                 self.led_label.config(bg=value)
             elif kind == 'status':
