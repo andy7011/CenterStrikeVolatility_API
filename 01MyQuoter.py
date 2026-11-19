@@ -30,9 +30,11 @@
 6. Режим Auto: сигнал режима вычисляется из Diff.theor И Diff.spread
    против Profit open / Profit close из Spinbox: если хотя бы одна из
    доступных величин <= Profit open — применяется Open; если хотя бы одна
-   >= Profit close — Close (с перестановкой ног, числом циклов и сбросом
-   счётчика «Пар исполнено»); промежуточные значения — Waiting: жёлтый
-   светодиод, заявки не выставляются, движок ждёт сработки условия.
+   >= Profit close — Close (с перестановкой ног и сбросом счётчика
+   «Пар исполнено»; число циклов, выбранное оператором, сохраняется);
+   промежуточные значения — Waiting: жёлтый светодиод, заявки не
+   выставляются, движок ждёт сработки условия и из Waiting возвращается
+   в торговлю, не завершаясь.
 """
 
 # OpenBLAS/OpenMP: по одному потоку на процесс. Иначе numpy резервирует
@@ -104,6 +106,7 @@ base_asset_ticker = ''
 expected_profit_open = -3.0   # профит режима Open, п.п. волатильности
 expected_profit_close = -1.0  # профит режима Close, п.п. волатильности
 expected_profit = expected_profit_open  # активный профит (по радиокнопке Open/Close)
+select_profit = 1.0     # Sel.profit: значение из Spinbox рядом с базовым активом
 lot_count = 1           # число циклов пар
 basket_size = 1         # лотов в каждой заявке
 timeout = 1             # пауза цикла, сек
@@ -1136,6 +1139,30 @@ def initial_offset(own, other, own_side, legs=None, mode=None, profit=None,
 
 
 
+def tighten_auto_profit(profit, mode=None):
+    """Поджатие таргет-цен (только Auto): после успешной пары Profit open
+    опускается до фактического Profit сделки, если текущий Profit open выше,
+    а Profit close поднимается до него, если текущий Profit close ниже.
+    Так котировщик выставляет заявки по лучшим ценам. mode — режим, в котором
+    котировалась пара (снимок на момент расчёта таргетов). Возвращает
+    ('Open'|'Close', новое значение) или None, если изменений нет."""
+    global expected_profit, expected_profit_open, expected_profit_close
+    if mode is None:
+        mode = applied_mode
+    if profit is None or active_mode(None) != 'Auto' or mode is None:
+        return None
+    profit = max(-20.0, min(20.0, round(profit, 2)))
+    if mode == 'Open' and expected_profit_open > profit:
+        expected_profit_open = profit
+        expected_profit = profit          # активный Profit режима Open
+        return 'Open', profit
+    if mode == 'Close' and expected_profit_close < profit:
+        expected_profit_close = profit
+        expected_profit = profit          # активный Profit режима Close
+        return 'Close', profit
+    return None
+
+
 class QuoterEngine:
     def __init__(self, legs):
         self.legs = legs
@@ -1143,6 +1170,9 @@ class QuoterEngine:
         # чтобы суммарно исполнить не больше lot_count циклов. Обнуляется
         # только при смене инструмента ноги (см. on_instrument_changed).
         self.counter = trade_counter
+        # Profit последней успешной пары — для поджатия таргет-цен в Auto
+        self.last_pair_profit = None
+        self.last_pair_mode = None
 
     def say(self, text): msg_queue.put(('msg', str(text)))
     def set_led(self, color): msg_queue.put(('led', color))
@@ -1188,8 +1218,8 @@ class QuoterEngine:
         """Ожидание выхода из промежуточной зоны Auto (Waiting): пока Diff.theor
         и Diff.spread между Profit open и Profit close, заявки не выставляются.
         На каждой итерации обновляет Diff.theor/Diff.spread
-        (refresh_signal_values). Вызывается из run() на старте и из торговых
-        циклов при уходе в Waiting."""
+        (refresh_signal_values). Вызывается из run() на старте, при уходе
+        в Waiting из торговых циклов и при ожидании новой торговой задачи."""
         self.refresh_signal_values()
         if not auto_waiting():
             return
@@ -1200,25 +1230,54 @@ class QuoterEngine:
         while running and auto_waiting():
             self.refresh_signal_values()
             sleep(1)
-        if running:
-            # Ждём, пока GUI (check_auto_signal -> set_mode) применит режим:
-            # пересоберёт ноги и обнулит счётчик, иначе движок завершится,
-            # не возобновив торговлю (GUI опрашивает сигнал раз в 2 сек)
-            while running and active_mode(None) == 'Auto' and applied_mode is None:
-                sleep(0.1)
-            self.say(f'Auto: сработало условие — режим {effective_mode(None)}')
+        if not running or auto_waiting():
+            return
+        # Ждём, пока GUI (check_auto_signal -> set_mode) применит режим:
+        # пересоберёт ноги и обнулит счётчик, иначе движок начнёт торговлю
+        # ногами и счётчиком прошлого режима (GUI опрашивает сигнал раз в 2 сек).
+        # Если сигнал успел вернуться в Waiting — выходим: run() снова вызовет
+        # wait_signal, и движок продолжит ждать, а не начнёт пару вслепую.
+        while running and active_mode(None) == 'Auto' and applied_mode is None \
+                and not auto_waiting():
+            sleep(0.1)
+        if running and active_mode(None) == 'Auto' and not auto_waiting() \
+                and applied_mode is not None:
+            self.say(f'Auto: сработало условие — режим {applied_mode}')
+
+    def idle_auto(self):
+        """Auto: число циклов текущей торговой задачи исполнено. Движок
+        остаётся жив (finish() не вызывается): при смене сигнала GUI применит
+        новый режим и обнулит счётчик пар — циклы продолжатся в нём.
+        Пока ждём, обновляем Diff.theor/Diff.spread, чтобы переход в Waiting
+        распознавался сразу, а не по застывшим значениям."""
+        self.set_led('yellow')
+        self.say(f'Auto: исполнено {self.counter} из {lot_count} пар — '
+                 f'ожидание смены сигнала')
+        while running and self.counter >= lot_count:
+            if auto_waiting():
+                self.wait_signal()   # счётчик обнулит set_mode при сработке условия
+                continue
+            if active_mode(None) != 'Auto':
+                return
+            self.refresh_signal_values()
+            sleep(1)
 
     def cleanup(self):
+        cancelled = False
         for leg in self.legs.values():
             if leg['order_id'] is not None and order_alive(leg['order_id']):
                 try:
                     get_cancel_order(account_id, leg['order_id'])
+                    cancelled = True
                     self.say(f'Заявка {leg["symbol"]} снята: {leg["order_id"]}')
                 except Exception as e:
                     logger.error(f'Ошибка отмены заявки: {e}')
             leg['order_id'] = None
             leg['price_old'] = None
             leg['qty_placed'] = 0
+        if cancelled:
+            # Активных заявок не осталось — жёлтый до следующей постановки
+            self.set_led('yellow')
 
     def leg_filled(self, leg):
         """Суммарное исполнение по всем заявкам ноги: (лоты, средневзвешенная цена)."""
@@ -1351,12 +1410,18 @@ class QuoterEngine:
 
     def cancel_leg(self, leg_name):
         leg = self.legs[leg_name]
+        cancelled = False
         if leg['order_id'] is not None and order_alive(leg['order_id']):
             try:
                 get_cancel_order(account_id, leg['order_id'])
+                cancelled = True
                 self.say(f'Заявка {leg_name.upper()} снята: {leg["order_id"]}')
             except Exception as e:
                 logger.error(f'Ошибка отмены заявки: {e}')
+        if cancelled:
+            # Заявки больше нет — котировщик снова ждёт (жёлтый). Если
+            # следом выставляется новая заявка, _requote вернёт зелёный.
+            self.set_led('yellow')
         leg['order_id'] = None
         leg['price_old'] = None
         leg['qty_placed'] = 0
@@ -1369,49 +1434,64 @@ class QuoterEngine:
         if not self.wait_session():
             self.finish()
             return
-        # Auto/Waiting: Diff.theor и Diff.spread в промежуточной зоне — ждём
-        # сработки условия Open/Close (проверка раз в секунду, значения
-        # обновляются на каждой итерации), индикация «Режим: Waiting»
-        self.wait_signal()
         set_trading_mode_label(effective_mode(None) or 'Waiting')
-        while running and not auto_waiting() and self.counter < lot_count:
-            try:
-                done = self.run_pair()
-            except Exception as e:
-                logger.error(f'Ошибка в цикле пары: {e}')
-                logger.error(traceback.format_exc())
-                self.say(f'Ошибка в цикле пары: {e}')
-                self.cleanup()
-                break
-            if not running or not done:
-                break
-            self.counter += 1
-            trade_counter = self.counter
-            msg_queue.put(('counter', self.counter))
-            self.say(f'Пара N{self.counter} из {lot_count} исполнена')
-            sleep(timeout)
-            self.wait_signal()   # Auto: сигнальная зона может смениться между парами
-        # Auto: режим мог смениться (счётчик сброшен в ноль) — продолжаем
-        # с новым режимом, пока работает и не исчерпано число циклов
-        while running and auto_mode_active() and not auto_waiting() and self.counter < lot_count:
-            self.say(f'Auto: продолжение в режиме {applied_mode}')
-            try:
-                done = self.run_pair()
-            except Exception as e:
-                logger.error(f'Ошибка в цикле пары: {e}')
-                logger.error(traceback.format_exc())
-                self.say(f'Ошибка в цикле пары: {e}')
-                self.cleanup()
-                break
-            if not running or not done:
-                break
-            self.counter += 1
-            trade_counter = self.counter
-            msg_queue.put(('counter', self.counter))
-            self.say(f'Пара N{self.counter} из {lot_count} исполнена')
-            sleep(timeout)
-            self.wait_signal()   # Auto: сигнальная зона может смениться между парами
-        self.finish()
+        try:
+            # Внешний цикл: движок НЕ завершается при уходе сигнала в Waiting
+            # (промежуточная зона Auto) и при исчерпании числа циклов в Auto —
+            # он ждёт новую торговую задачу. Раньше run() был линейным (два
+            # while подряд), поэтому первый же возврат run_pair() без
+            # исполненной пары (Waiting) или проверка self.counter < lot_count
+            # со старым счётчиком уводили в finish(): заявки не выставлялись,
+            # светодиод серый, хотя режим уже применён.
+            while running:
+                if auto_waiting():
+                    self.wait_signal()
+                    continue
+                if active_mode(None) == 'Auto' and applied_mode is None:
+                    # Сигнал сработал, но GUI ещё не применил режим (опрос раз
+                    # в 2 сек): торговать ногами прошлого режима нельзя.
+                    # Значения освежаем, чтобы сработка/возврат в Waiting
+                    # не потерялись, если GUI задержится.
+                    self.refresh_signal_values()
+                    sleep(0.2)
+                    continue
+                if self.counter >= lot_count:
+                    if active_mode(None) != 'Auto':
+                        break
+                    self.idle_auto()   # Auto: ждём смены сигнала/числа циклов
+                    continue
+                try:
+                    done = self.run_pair()
+                except Exception as e:
+                    logger.error(f'Ошибка в цикле пары: {e}')
+                    logger.error(traceback.format_exc())
+                    self.say(f'Ошибка в цикле пары: {e}')
+                    self.cleanup()
+                    break
+                if not running:
+                    break
+                if not done:
+                    continue      # пара не исполнена (Waiting/смена режима) — ждём сигнал
+                self.counter += 1
+                trade_counter = self.counter
+                msg_queue.put(('counter', self.counter))
+                self.say(f'Пара N{self.counter} из {lot_count} исполнена')
+                # Поджатие таргет-цен (только Auto): следующая пара должна
+                # котироваться по Profit последней успешной сделки
+                tightened = tighten_auto_profit(self.last_pair_profit,
+                                                self.last_pair_mode)
+                if tightened is not None:
+                    profit_mode, profit_value = tightened
+                    msg_queue.put(('profit', (profit_mode, profit_value)))
+                    self.say(f'Поджатие таргет-цен: Profit {profit_mode} = '
+                             f'{profit_value:.2f}')
+                sleep(timeout)
+        except Exception as e:
+            logger.error(f'Ошибка в цикле движка: {e}')
+            logger.error(traceback.format_exc())
+            self.say(f'Ошибка в цикле движка: {e}')
+        finally:
+            self.finish()
 
     def finish(self):
         self.cleanup()
@@ -1424,6 +1504,8 @@ class QuoterEngine:
         немедленно, пока встречное предложение ещё стоит в книге."""
         qty = basket_size
         poll_step = 0.1  # шаг опроса исполнений, сек
+        self.last_pair_profit = None   # Profit новой пары определит compute_targets
+        self.last_pair_mode = None     # режим, в котором котируется новая пара
         for leg in self.legs.values():
             leg['order_id'] = None
             leg['order_ids'] = []
@@ -1449,6 +1531,9 @@ class QuoterEngine:
                 tg = None
             if tg is not None:
                 self.emit_panel(tg)
+                # Profit, по которому рассчитаны и выставлены текущие таргеты
+                self.last_pair_profit = tg['diff_select']
+                self.last_pair_mode = applied_mode
                 key = (tg['target_price_sell'], tg['target_price_buy'])
                 if key != last_key:
                     self.say(f"Target SELL {tg['target_price_sell']} ({tg['target_iv_sell']:.2f}%) "
@@ -1540,6 +1625,7 @@ class QuoterEngine:
                     if order_alive(active['order_id']):
                         try:
                             get_cancel_order(account_id, active['order_id'])
+                            self.set_led('yellow')   # заявки нет — ждём
                             self.say(f'Заявка {lag.upper()} снята: {active["order_id"]}')
                         except Exception as e:
                             logger.error(f'Ошибка отмены заявки: {e}')
@@ -1577,6 +1663,7 @@ class QuoterEngine:
             'buy': f"BUY: {tg['target_price_buy']} ({tg['target_iv_buy']:.2f}%) "
                    f"-> sec.target {tg['sec_target_buy']}",
             'diff_pos': diff_pos, 'diff_theor': tg['diff'],
+            'pos_real': bool(pos_sell and pos_buy and open_sell and open_buy),
             'diff_spread': tg['diff_spread'], 'diff_spread_frozen': tg['diff_spread_frozen'],
             'diff_select': tg['diff_select']}))
 
@@ -1638,12 +1725,15 @@ def update_option_pos_labels(app):
 
 def on_instrument_changed(app):
     """Сброс счётчика исполненных пар при смене любого из инструментов ноги.
-    В режиме Close число циклов пересчитывается заново — по наименьшему
-    абсолютному количеству опционов в одной из ног портфеля."""
+    При РУЧНОМ режиме Close число циклов пересчитывается заново — по
+    наименьшему абсолютному количеству опционов в одной из ног портфеля.
+    В Auto число циклов не трогаем: ноги там переставляются самим сигналом
+    (set_mode -> swap_legs), и выбранное оператором значение должно
+    сохраниться."""
     global trade_counter, lot_count
     trade_counter = 0
     msg_queue.put(('counter', 0))
-    if effective_mode(app) == 'Close':
+    if active_mode(app) == 'Close':
         lot_count = default_lot_count_close()
         app.spinbox_lot_count_var.set(str(lot_count))
         app.add_message(f'Счётчик пар сброшен, число циклов: {lot_count}')
@@ -1793,6 +1883,7 @@ def _preview_targets_impl(app, verbose=False):
         'sell': f"SELL: {tp_sell} ({tiv_sell:.2f}%) -> sec.target {ask_buy}",
         'buy': f"BUY: {tp_buy} ({tiv_buy:.2f}%) -> sec.target {bid_sell}",
         'diff_pos': diff_pos,
+        'pos_real': bool(pos_sell and pos_buy and open_sell and open_buy),
         'diff_theor': round(diff_theor, 2),
         'diff_spread': round(diff_spread, 2) if diff_spread is not None else None,
         'diff_spread_frozen': frozen,
@@ -1838,6 +1929,65 @@ def effective_mode(app):
     return mode
 
 
+def difference_position_real():
+    """Difference position по реальным открытым позициям обеих ног.
+    Возвращает (значение, True) только когда по обеим ногам есть ненулевые
+    позиции и рассчитаны IV их открытия; иначе (None, False) — реального
+    значения нет и предустановку переворота делать нельзя."""
+    if not dataname_sell or not dataname_buy:
+        return None, False
+    pos_sell = positions_quantity(dataname_sell)
+    pos_buy = positions_quantity(dataname_buy)
+    if not pos_sell or not pos_buy:
+        return None, False
+    open_sell = open_iv_safe(dataname_sell, pos_sell)
+    open_buy = open_iv_safe(dataname_buy, pos_buy)
+    if not open_sell or not open_buy:
+        return None, False
+    return diff_iv(open_sell, open_buy, dataname_sell, dataname_buy), True
+
+
+def apply_reversal_preset(app, diff_pos=None, real_pos=False):
+    """Предустановка переворота по реальной Difference position.
+
+    В режиме Open заранее задаём Profit close = Difference position +
+    select_profit, в режиме Close — Profit open = Difference position -
+    select_profit. Значение пересчитывается при каждом обновлении Difference
+    position (после новых сделок) и заменяет Profit противоположного режима,
+    который будет использован для таргет-цен при перевороте ног.
+    diff_pos/real_pos могут быть переданы уже рассчитанными (панель движка),
+    иначе Difference position вычисляется по текущим позициям."""
+    global expected_profit_open, expected_profit_close
+    if diff_pos is None:
+        diff_pos, real_pos = difference_position_real()
+    if not real_pos or diff_pos is None:
+        return
+    mode = applied_mode if applied_mode is not None else effective_mode(app)
+    if mode == 'Open':
+        value = round(diff_pos + select_profit, 2)
+    elif mode == 'Close':
+        value = round(diff_pos - select_profit, 2)
+    else:
+        return
+    value = max(-20.0, min(20.0, value))
+    if mode == 'Open':
+        if abs(expected_profit_close - value) < 0.005:
+            return
+        expected_profit_close = value
+        app.spinbox_profit_close_var.set(f'{value:.2f}')
+        app.add_message(f'Предустановка переворота (Close): Profit close = '
+                        f'Difference position {diff_pos:.2f} + Sel.profit '
+                        f'{select_profit:.1f} = {value:.2f}')
+    else:
+        if abs(expected_profit_open - value) < 0.005:
+            return
+        expected_profit_open = value
+        app.spinbox_profit_open_var.set(f'{value:.2f}')
+        app.add_message(f'Предустановка переворота (Open): Profit open = '
+                        f'Difference position {diff_pos:.2f} - Sel.profit '
+                        f'{select_profit:.1f} = {value:.2f}')
+
+
 def auto_spread_value():
     """Diff.spread для сигнала Auto: текущее значение, а при «заражении»
     или отсутствии — последнее валидное (как в effective_profit)."""
@@ -1869,12 +2019,6 @@ def auto_waiting():
     return active_mode(None) == 'Auto' and auto_signal_mode() is None
 
 
-def auto_mode_active():
-    """True — включён режим Auto с применённым режимом Open/Close
-    (не Waiting): движок может продолжать циклы после смены режима."""
-    return active_mode(None) == 'Auto' and applied_mode in ('Open', 'Close')
-
-
 def selected_profit(app, var=None, rewrite=True):
     """Применить значение из поля Профит (Open или Close): записывает в
     expected_profit_open / expected_profit_close; если редактируется поле
@@ -1894,7 +2038,7 @@ def selected_profit(app, var=None, rewrite=True):
     try:
         value = float(text)
         if -20.0 <= value <= 20.0:
-            value = round(value, 1)
+            value = round(value, 2)
             if is_open:
                 expected_profit_open = value
             else:
@@ -1902,8 +2046,8 @@ def selected_profit(app, var=None, rewrite=True):
             if mode == ('Open' if is_open else 'Close'):
                 expected_profit = value
             if rewrite:
-                var.set(f'{value:g}')
-                app.add_message(f'Профит {"Open" if is_open else "Close"} (IV): {value}')
+                var.set(f'{value:.2f}')
+                app.add_message(f'Профит {"Open" if is_open else "Close"} (IV): {value:.2f}')
                 preview_targets(app, verbose=True)
         elif rewrite:
             app.add_message('Ошибка: значение вне диапазона -20.0 … 20.0')
@@ -1957,6 +2101,26 @@ def toggle_theor(app, var):
                     f'Sp {spread_flag_open if is_open else spread_flag_close}')
 
 
+def option_type_by_dataname(dataname):
+    """Тип опциона ('C'/'P') для ноги по данным опциона или по спискам доски.
+    Нужен при перестановке ног: радиокнопки Call/Put должны показывать тип
+    нового инструмента, а не тип, выбранный для прежней ноги.
+    Возвращает None, если тип определить не удалось."""
+    if not dataname:
+        return None
+    info = options_data.get(dataname)
+    if info:
+        side = info.get('optionSide')
+        if side in ('Call', 'Put'):
+            return CALL if side == 'Call' else PUT
+    ticker = dataname.split('.')[-1]
+    if ticker in sell_tickers_call:
+        return CALL
+    if ticker in sell_tickers_put:
+        return PUT
+    return None
+
+
 def swap_legs(app):
     """Переставить опционы продажи и покупки местами со всеми подписками,
     данными и надписями панели управления."""
@@ -1964,12 +2128,24 @@ def swap_legs(app):
     dataname_sell, dataname_buy = dataname_buy, dataname_sell
     dataname_guid_sell_old, dataname_guid_buy_old = dataname_guid_buy_old, dataname_guid_sell_old
     ticker_sell, ticker_buy = dataname_sell.split('.')[1], dataname_buy.split('.')[1]
+    # Тип опциона берём у самого инструмента, а не у прежнего положения
+    # радиокнопки: после перестановки Call/Put должен показывать тип новой
+    # ноги, иначе радиокнопка и выбранный инструмент расходятся. Если данных
+    # по ноге ещё нет, новый инструмент унаследовал тип противоположной ноги.
+    type_sell = option_type_by_dataname(dataname_sell)
+    type_buy = option_type_by_dataname(dataname_buy)
+    if type_sell is None:
+        type_sell = app.option_type_buy.get()
+    if type_buy is None:
+        type_buy = app.option_type_sell.get()
+    app.option_type_sell.set(type_sell)
+    app.option_type_buy.set(type_buy)
     # Комбобоксы: значения списков Call/Put у sell и buy различаются только
     # при разном типе опционов — заполняем каждый своим списком по его типу
-    app.combobox_sell['values'] = list(sell_tickers_put if app.option_type_sell.get() == 'P'
+    app.combobox_sell['values'] = list(sell_tickers_put if type_sell == 'P'
                                        else sell_tickers_call)
     app.combobox_sell.set(ticker_sell)
-    app.combobox_buy['values'] = list(sell_tickers_put if app.option_type_buy.get() == 'P'
+    app.combobox_buy['values'] = list(sell_tickers_put if type_buy == 'P'
                                       else sell_tickers_call)
     app.combobox_buy.set(ticker_buy)
     app.add_message(f'Ноги переставлены: SELL {ticker_sell} <-> BUY {ticker_buy}')
@@ -1994,11 +2170,22 @@ def set_trading_mode_label(mode_text):
 
 def set_mode(app, mode):
     """Применить режим: активирует набор Профит/Theor; при переходе
-    Open <-> Close переставляет опционы продажи/покупки местами, пересчитывает
-    число циклов (Close — по минимуму абсолютных позиций ног) и обнуляет
+    Open <-> Close переставляет опционы продажи/покупки местами и обнуляет
     счётчик пар. mode=None — промежуточная зона Auto (Waiting): ничего не
     котируем и ждём сработки условия Open/Close. Повторный выбор того же
-    режима ничего не меняет."""
+    режима ничего не меняет.
+
+    Число циклов пересчитывается только при РУЧНОМ переключении режима
+    (Close — по минимуму абсолютных позиций ног, Open — 1). В Auto режим
+    применяется сигналом, и число циклов, выбранное оператором, сохраняется:
+    иначе каждый переход Waiting -> Open сбрасывал бы его в 1.
+
+    Порядок операций важен: applied_mode — это флаг готовности для движка
+    (см. QuoterEngine.wait_signal), поэтому он публикуется последним, после
+    сброса счётчика и пересборки ног. Если выставить его раньше, движок
+    успевает проверить self.counter < lot_count со старым счётчиком (или
+    начать пару со старыми ногами) и молча завершается: светодиод серый,
+    сделок нет."""
     global expected_profit, theor_flag, spread_flag, lot_count, legs_swapped, applied_mode
     global trade_counter
     if mode == applied_mode:
@@ -2011,34 +2198,43 @@ def set_mode(app, mode):
         app.add_message('Auto: Waiting — Diff.theor и Diff.spread между '
                         'Profit open и Profit close, движок ждёт')
         return
+    # В Auto число циклов не сбрасываем: возврат в Open из Close/Waiting
+    # должен сохранять последнее состояние, выбранное оператором/сигналом.
+    auto_applied = (active_mode(app) == 'Auto')
     mode_open = (mode == 'Open')
     expected_profit = expected_profit_open if mode_open else expected_profit_close
     theor_flag = theor_flag_open if mode_open else theor_flag_close
     spread_flag = spread_flag_open if mode_open else spread_flag_close
     # Close закрывает позиции портфеля: число циклов по умолчанию — число
     # полных пар (минимум абсолютных позиций ног). Open начинает новые пары.
-    lot_count = 1 if mode_open else default_lot_count_close()
-    app.spinbox_lot_count_var.set(str(lot_count))
+    # В Auto НЕ трогаем число циклов: в частности, возврат в Open из Close или
+    # Waiting сохраняет последнее состояние, а не сбрасывает его в 1.
+    if not auto_applied:
+        lot_count = 1 if mode_open else default_lot_count_close()
+        app.spinbox_lot_count_var.set(str(lot_count))
     if mode == 'Close' and not legs_swapped:
         swap_legs(app)          # Close: продаём то, что куплено (бывший BUY)
         legs_swapped = True
     elif mode == 'Open' and legs_swapped:
         swap_legs(app)          # Open: возврат к исходному выбору
         legs_swapped = False
-    applied_mode = mode
     # Смена режима — новая торговая задача: счётчик пар в ноль
     trade_counter = 0
+    msg_queue.put(('counter', 0))
     if engine is not None:
         engine.counter = 0
-    msg_queue.put(('counter', 0))
-    set_trading_mode_label(mode)
-    # Активный движок переключаем на ноги нового режима:
-    # снимаем заявки старого направления и пересобираем ноги
-    if engine is not None:
+        # Активный движок переключаем на ноги нового режима:
+        # снимаем заявки старого направления и пересобираем ноги
         engine.cleanup()
         engine.legs = build_legs()
+    # Публикуем режим последним: до этой строки движок ждёт в wait_signal
+    applied_mode = mode
+    set_trading_mode_label(mode)
     app.add_message(f'Режим: {mode} | Профит: {expected_profit:g} | '
                     f'Theor: {theor_flag} | Spread: {spread_flag}')
+    # Переворот уже произошёл — сразу пересчитываем Profit противоположного
+    # режима по реальной Difference position
+    apply_reversal_preset(app)
 
 
 def on_mode_change(app):
@@ -2066,6 +2262,22 @@ def check_auto_signal(app):
         return
     radio_mode = 'Auto'
     set_mode(app, effective_mode(app))
+
+
+def selected_select_profit(app):
+    """Применить значение Sel.profit из поля рядом с базовым активом."""
+    global select_profit
+    text = app.spinbox_select_profit_var.get().strip().replace(',', '.')
+    try:
+        value = float(text)
+    except ValueError:
+        return
+    if -20.0 <= value <= 20.0:
+        select_profit = round(value, 1)
+        app.spinbox_select_profit_var.set(f'{select_profit:.1f}')
+        app.add_message(f'Sel.profit: {select_profit:.1f}')
+        # Sel.profit участвует в предустановке переворота — обновляем сразу
+        apply_reversal_preset(app)
 
 
 def selected_lot_count(app):
@@ -2105,7 +2317,7 @@ def selected_indent(app):
 SELL_COLOR = '#8B0000'  # тёмно-красный
 BUY_COLOR = '#006400'   # тёмно-зелёный
 
-# --- звуковой сигнал сработки условия Auto ---
+# --- звуковые сигналы: смена режима в Auto и исполнение пары опционов ---
 # winsound есть только в Windows; импорт не должен ронять скрипт на других ОС
 try:
     import winsound
@@ -2113,15 +2325,33 @@ except ImportError:
     winsound = None
 
 AUTO_SIGNAL_PREFIX = 'Auto: сработало условие'  # сообщение, по которому играем звук
-AUTO_SIGNAL_WAV = ''            # свой .wav (путь от папки скрипта); '' — системный звук Windows
+AUTO_SIGNAL_WAV = os.path.join('assets', 'Windows Proximity Notification.wav')  # смена режима в Auto
+PAIR_SIGNAL_PREFIX = 'Пара N'   # сообщение движка об успешном исполнении пары опционов
+PAIR_SIGNAL_WAV = os.path.join('assets', 'Speech On.wav')  # сигнал «Пар исполнено»
 AUTO_SIGNAL_MIN_INTERVAL = 2.0  # не чаще одного сигнала в N секунд
 _last_auto_signal_time = 0.0
 
 
-def play_auto_signal():
-    """Проиграть сигнал сработки условия Auto (не блокирует GUI).
+def play_sound_file(wav):
+    """Проиграть .wav из папки скрипта (абсолютный путь — как есть), не блокируя GUI.
 
-    AUTO_SIGNAL_WAV задан — играем файл, иначе системный звук Windows.
+    Если файл не найден или не читается — системный звук Windows, чтобы сигнал
+    не пропадал."""
+    if winsound is None:
+        return
+    path = wav if os.path.isabs(wav) else os.path.join(BASE_DIR, wav)
+    try:
+        winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC)
+        return
+    except RuntimeError as e:
+        logger.warning(f'Не удалось проиграть {path}: {e}')
+    winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+
+
+def play_auto_signal():
+    """Проиграть сигнал смены режима торговли в Auto (движок сам переключился
+    на Open/Close: Diff.theor/Diff.spread вышли из промежуточной зоны).
+
     Повторы чаще AUTO_SIGNAL_MIN_INTERVAL гасятся: сообщение о сработке
     может прийти несколько раз подряд при дребезге сигнала."""
     global _last_auto_signal_time
@@ -2131,15 +2361,12 @@ def play_auto_signal():
     if now - _last_auto_signal_time < AUTO_SIGNAL_MIN_INTERVAL:
         return
     _last_auto_signal_time = now
-    if AUTO_SIGNAL_WAV:
-        path = AUTO_SIGNAL_WAV if os.path.isabs(AUTO_SIGNAL_WAV) \
-            else os.path.join(BASE_DIR, AUTO_SIGNAL_WAV)
-        try:
-            winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC)
-            return
-        except RuntimeError as e:
-            logger.warning(f'Не удалось проиграть {path}: {e}')
-    winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+    play_sound_file(AUTO_SIGNAL_WAV)
+
+
+def play_pair_signal():
+    """Проиграть сигнал успешного исполнения пары опционов (счётчик «Пар исполнено»)."""
+    play_sound_file(PAIR_SIGNAL_WAV)
 
 
 class App:
@@ -2149,20 +2376,26 @@ class App:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title(f'{filename} — опционный котировщик')
-        self.root.geometry('840x600')
+        self.root.geometry('800x605')
+
+        # Панели разделены подвижной границей: ширину каждой задаёт оператор,
+        # перетаскивая разделитель мышью
+        self.paned = tk.PanedWindow(self.root, orient=tk.HORIZONTAL,
+                                    sashwidth=6, sashrelief=tk.RAISED, bd=0)
+        self.paned.pack(fill=tk.BOTH, expand=True)
+
+        # Левая панель: управление
+        frame_left = tk.Frame(self.paned)
+        self.paned.add(frame_left, minsize=220, width=220, padx=5, pady=5)
 
         # Правая панель: журнал сообщений
-        frame_right = tk.Frame(self.root)
-        frame_right.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5, pady=5)
+        frame_right = tk.Frame(self.paned)
+        self.paned.add(frame_right, minsize=250, padx=5, pady=5)
         self.message_text = tk.Text(frame_right, width=76)
         self.message_text.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
         scroll = tk.Scrollbar(frame_right, command=self.message_text.yview)
         scroll.pack(side=tk.RIGHT, fill=tk.Y)
         self.message_text.config(yscrollcommand=scroll.set)
-
-        # Левая панель: управление
-        frame_left = tk.Frame(self.root)
-        frame_left.pack(side=tk.LEFT, fill=tk.Y, padx=5, pady=5)
 
         # Статус и светодиод — в одну линию
         frame_status = tk.Frame(frame_left)
@@ -2195,12 +2428,28 @@ class App:
                                                 anchor='w', width=45)
         self.difference_spread_label.pack(fill=tk.X)
 
-        # Базовый актив
-        tk.Label(frame_left, text='Базовый актив:').pack(anchor='w')
-        self.combobox_base_asset = ttk.Combobox(frame_left, values=list(MAP.keys()), width=12)
-        self.combobox_base_asset.pack(fill=tk.X)
+        # Базовый актив и Sel.profit — в одной строке
+        frame_base_asset_title = tk.Frame(frame_left)
+        frame_base_asset_title.pack(fill=tk.X)
+        tk.Label(frame_base_asset_title, text='Базовый актив:').pack(side=tk.LEFT)
+        tk.Label(frame_base_asset_title, text='Sel.profit').pack(side=tk.RIGHT)
+
+        frame_base_asset = tk.Frame(frame_left)
+        frame_base_asset.pack(fill=tk.X)
+        self.combobox_base_asset = ttk.Combobox(frame_base_asset, values=list(MAP.keys()), width=7)
+        self.combobox_base_asset.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self.combobox_base_asset.bind('<<ComboboxSelected>>',
                                       lambda event: on_base_asset_change(event, self))
+        self.spinbox_select_profit_var = tk.StringVar(value=f'{select_profit:.1f}')
+        self.spinbox_select_profit = tk.Spinbox(frame_base_asset, from_=-20.0, to=20.0,
+                                                increment=0.1, format='%.1f', width=5,
+                                                textvariable=self.spinbox_select_profit_var,
+                                                command=lambda: selected_select_profit(self))
+        self.spinbox_select_profit.pack(side=tk.RIGHT, padx=(5, 0))
+        self.spinbox_select_profit.bind('<Return>',
+                                        lambda event: selected_select_profit(self))
+        self.spinbox_select_profit.bind('<FocusOut>',
+                                        lambda event: selected_select_profit(self))
 
         # Дата экспирации
         tk.Label(frame_left, text='Дата экспирации:').pack(anchor='w')
@@ -2249,8 +2498,9 @@ class App:
         frame_profit_open = tk.Frame(frame_left)
         frame_profit_open.pack(fill=tk.X)
         tk.Label(frame_profit_open, text='Profit open:').pack(side=tk.LEFT)
-        self.spinbox_profit_open_var = tk.StringVar(value=str(expected_profit_open))
-        self.spinbox_profit_open = tk.Spinbox(frame_profit_open, from_=-20.0, to=20.0, increment=0.1,
+        self.spinbox_profit_open_var = tk.StringVar(value=f'{expected_profit_open:.2f}')
+        self.spinbox_profit_open = tk.Spinbox(frame_profit_open, from_=-20.0, to=20.0, increment=0.01,
+                                              format='%.2f',
                                               textvariable=self.spinbox_profit_open_var, width=5,
                                               command=lambda: selected_profit(self, self.spinbox_profit_open_var))
         self.spinbox_profit_open.pack(side=tk.LEFT, padx=5)
@@ -2270,8 +2520,9 @@ class App:
         frame_profit_close = tk.Frame(frame_left)
         frame_profit_close.pack(fill=tk.X)
         tk.Label(frame_profit_close, text='Profit close:').pack(side=tk.LEFT)
-        self.spinbox_profit_close_var = tk.StringVar(value=str(expected_profit_close))
-        self.spinbox_profit_close = tk.Spinbox(frame_profit_close, from_=-20.0, to=20.0, increment=0.1,
+        self.spinbox_profit_close_var = tk.StringVar(value=f'{expected_profit_close:.2f}')
+        self.spinbox_profit_close = tk.Spinbox(frame_profit_close, from_=-20.0, to=20.0, increment=0.01,
+                                               format='%.2f',
                                                textvariable=self.spinbox_profit_close_var, width=5,
                                                command=lambda: selected_profit(self, self.spinbox_profit_close_var))
         self.spinbox_profit_close.pack(side=tk.LEFT, padx=5)
@@ -2356,6 +2607,9 @@ class App:
         check_auto_signal(self)  # режим Auto: переключение по сигналу
         # (Diff.theor / Diff.spread против Profit open/close)
         if not running and dataname_sell and dataname_buy:
+            # Предустановка переворота: в ручном режиме и Auto на стоянке
+            # панель движка не обновляется, поэтому пересчитываем здесь
+            apply_reversal_preset(self)
             preview_targets(self, verbose=False)
         self.root.after(2000, self._schedule_preview)
 
@@ -2383,6 +2637,8 @@ class App:
                 self.message_text.see('end')
                 if str(value).startswith(AUTO_SIGNAL_PREFIX):
                     play_auto_signal()
+                elif str(value).startswith(PAIR_SIGNAL_PREFIX):
+                    play_pair_signal()
             elif kind == 'led':
                 self.led_label.config(bg=value)
             elif kind == 'status':
@@ -2391,6 +2647,11 @@ class App:
                 self.counter_label.config(text=f'Пар исполнено: {value}')
             elif kind == 'mode':
                 self.mode_label.config(text=f'Режим: {value}')
+            elif kind == 'profit':
+                # Поджатие таргет-цен в Auto: показать новое значение Profit
+                profit_mode, profit_value = value
+                (self.spinbox_profit_open_var if profit_mode == 'Open'
+                 else self.spinbox_profit_close_var).set(f'{profit_value:.2f}')
             elif kind == 'panel':
                 self.target_label_sell.config(text=value['sell'])
                 self.target_label_buy.config(text=value['buy'])
@@ -2402,6 +2663,10 @@ class App:
                 self.difference_spread_label.config(
                     text='Diff.spread, % : ' + (f'{ds:.2f}' if ds is not None else '—')
                     + (' (заморожен)' if value.get('diff_spread_frozen') else ''))
+                # Предустановка переворота: Profit противоположного режима
+                # пересчитывается по свежей Difference position
+                apply_reversal_preset(self, value.get('diff_pos'),
+                                      value.get('pos_real', False))
         self.root.after(100, self._poll_messages)
 
     def start_quoter(self):
