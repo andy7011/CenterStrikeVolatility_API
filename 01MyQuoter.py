@@ -713,9 +713,16 @@ def leg_mid_iv(m):
     return (m[2] + m[3]) / 2
 
 
-def update_diff_spread(m_sell, m_buy, legs=None, store=True):
-    """Diff.spread — разница IV середин спреда ask/bid обеих ног (п.п. IV),
+def update_diff_spread(m_a, name_a, m_b, name_b, legs=None, store=True):
+    """Diff.spread — разница IV середин спреда ask/bid двух ног (п.п. IV),
     порядок вычитания — тот же, что у diff_iv (дальняя нога минус ближняя).
+    Порядок аргументов произвольный: знак определяется name_a/name_b, а не
+    позицией в вызове. Это принципиально для initial_offset, который
+    считается для КАЖДОЙ ноги отдельно: при прежней сигнатуре (m_sell, m_buy
+    + глобальные dataname_sell/dataname_buy) для ноги BUY середины приходили
+    в обратном порядке и знак Diff.spread инвертировался. В Open это давало
+    min(profit, diff_theor, -|Diff.spread|) — отрицательный «профит» и цель
+    ниже рынка (вплоть до цены 0).
     Середина «заражена», если собственная ЖИВАЯ заявка ноги стоит на best
     ask (sell-нога) или best bid (buy-нога): тогда значение невалидно
     (current = None), используется последнее валидное (заморозка).
@@ -723,7 +730,7 @@ def update_diff_spread(m_sell, m_buy, legs=None, store=True):
     иначе рынок, вернувшийся к цене исполненной заявки, замораживал бы
     показатель, хотя ask/bid в этой цене теперь чужие.
     legs — словарь ног движка (для детекции своей заявки) или None
-    (предрасчёт без активных заявок).
+    (предрасчёт без активных заявок); нога ищется по name_a/name_b.
     store — пополнять ли diff_spread_last_valid. False для внутренних
     вызовов initial_offset и предрасчёта: их середина может быть «заражена»
     (детекция без ног не срабатывает), и без store=False последнее валидное
@@ -733,8 +740,13 @@ def update_diff_spread(m_sell, m_buy, legs=None, store=True):
     «заражении», когда ещё нет последнего валидного."""
     global diff_spread_current, diff_spread_last_valid, diff_spread_frozen
     frozen = False
-    for m, leg in ((m_sell, legs.get('sell') if legs else None),
-                   (m_buy, legs.get('buy') if legs else None)):
+    for m, dataname in ((m_a, name_a), (m_b, name_b)):
+        leg = None
+        if legs is not None:
+            if dataname == dataname_sell:
+                leg = legs.get('sell')
+            elif dataname == dataname_buy:
+                leg = legs.get('buy')
         if leg is not None and leg.get('order_id') is not None \
                 and leg.get('price_old') is not None and order_alive(leg['order_id']):
             # Своя заявка в лучшей цене: sell-нога стоит на ask,
@@ -746,8 +758,7 @@ def update_diff_spread(m_sell, m_buy, legs=None, store=True):
     if frozen:
         diff_spread_current = None
         return diff_spread_last_valid, True
-    diff_spread = diff_iv(leg_mid_iv(m_sell), leg_mid_iv(m_buy),
-                          dataname_sell, dataname_buy)
+    diff_spread = diff_iv(leg_mid_iv(m_a), leg_mid_iv(m_b), name_a, name_b)
     diff_spread_current = diff_spread
     if store:
         diff_spread_last_valid = diff_spread
@@ -1110,7 +1121,7 @@ def effective_profit(diff_theor, diff_spread=None, mode=None, profit=None,
 
 
 def initial_offset(own, other, own_side, legs=None, mode=None, profit=None,
-                   theor=None, spread=None):
+                   theor=None, spread=None, diff_spread=None):
     """Оффсет в п.п. IV для фазы обеих заявок. Применяется правило выбора
     (см. effective_profit): независимые галки — Th добавляет в выборку
     Diff.theor, Sp — Diff.spread (при заражении — последнее валидное);
@@ -1118,7 +1129,12 @@ def initial_offset(own, other, own_side, legs=None, mode=None, profit=None,
     theor/spread по умолчанию берутся из глобального состояния движка
     (applied_mode / expected_profit / theor_flag / spread_flag) — так движок
     вызывает функцию без явных аргументов; предрасчёт передаёт их явно —
-    из набора выбранного режима."""
+    из набора выбранного режима.
+    diff_spread — готовое значение Diff.spread, посчитанное ОДИН раз на пару
+    (compute_targets / предрасчёт) и передаваемое обеим ногам. Пересчёт
+    внутри функции давал для ноги BUY инвертированный знак. Если не передано
+    (прямой вызов), значение считается здесь с явными именами ног —
+    от порядка аргументов знак не зависит."""
     if mode is None:
         mode = applied_mode
     if profit is None:
@@ -1133,7 +1149,9 @@ def initial_offset(own, other, own_side, legs=None, mode=None, profit=None,
         if m_own is None or m_other is None:
             return s * profit
         diff_theor = diff_iv(m_own[4], m_other[4], own, other)
-        diff_spread = update_diff_spread(m_own, m_other, legs, store=False)[0]
+        if spread and diff_spread is None:
+            diff_spread = update_diff_spread(m_own, own, m_other, other,
+                                             legs, store=False)[0]
         return s * effective_profit(diff_theor, diff_spread, mode, profit, theor, spread)
     return s * profit
 
@@ -1212,7 +1230,8 @@ class QuoterEngine:
             return
         global diff_theor_current
         diff_theor_current = diff_iv(m_sell[4], m_buy[4], dataname_sell, dataname_buy)
-        update_diff_spread(m_sell, m_buy, self.legs)   # store=True — свежий last_valid
+        update_diff_spread(m_sell, dataname_sell, m_buy, dataname_buy,
+                           self.legs)   # store=True — свежий last_valid
 
     def wait_signal(self):
         """Ожидание выхода из промежуточной зоны Auto (Waiting): пока Diff.theor
@@ -1307,9 +1326,18 @@ class QuoterEngine:
             return None
         ask_sell, bid_sell, ask_iv_sell, bid_iv_sell, theor_iv_sell = m_sell
         ask_buy, bid_buy, ask_iv_buy, bid_iv_buy, theor_iv_buy = m_buy
+        # Diff.spread считаем ОДИН раз в фиксированном порядке (sell, buy) и
+        # передаём обеим ногам: обе должны использовать одну и ту же величину
+        # и один и тот же effective_profit. Пересчёт внутри initial_offset
+        # давал для ноги BUY инвертированный знак.
+        diff_spread, frozen = update_diff_spread(m_sell, dataname_sell,
+                                                 m_buy, dataname_buy,
+                                                 self.legs)
         # Продажа котируется от ask покупаемой ноги, покупка — от bid продаваемой
-        off_sell = initial_offset(dataname_sell, dataname_buy, 'sell', self.legs)
-        off_buy = initial_offset(dataname_buy, dataname_sell, 'buy', self.legs)
+        off_sell = initial_offset(dataname_sell, dataname_buy, 'sell', self.legs,
+                                  diff_spread=diff_spread)
+        off_buy = initial_offset(dataname_buy, dataname_sell, 'buy', self.legs,
+                                 diff_spread=diff_spread)
         # sec.target — встречная сторона стакана другой ноги: предложение
         # существует, поэтому встречная сделка гарантированно исполнится.
         sec_target_sell = ask_buy          # sec.target продающей ноги — ask BUY ноги
@@ -1324,9 +1352,7 @@ class QuoterEngine:
         diff_theor = diff_iv(theor_iv_sell, theor_iv_buy, dataname_sell, dataname_buy)
         global diff_theor_current
         diff_theor_current = diff_theor   # для авто-переключения Open/Close в Auto
-        # Diff.spread: разница IV середин спреда ask/bid (замораживается при
-        # «заражении» — своя заявка на best ask/bid)
-        diff_spread, frozen = update_diff_spread(m_sell, m_buy, self.legs)
+        # Diff.spread посчитан выше (до смещений) — здесь только Diff.select.
         # Diff.select: реально применяемый профит; независимые галки:
         # Th добавляет в выборку Diff.theor, Sp — Diff.spread (при заражении —
         # последнее валидное); в Open берётся наименьшее из включённых
@@ -1775,24 +1801,6 @@ def selected_buy(app):
     preview_targets(app, verbose=True)
 
 
-def toggle_flags(app, theor_var, spread_var, is_open):
-    global theor_flag_open, theor_flag_close, spread_flag_open, spread_flag_close
-    global theor_flag, spread_flag
-    theor, spread = bool(theor_var.get()), bool(spread_var.get())
-    if is_open:
-        theor_flag_open, spread_flag_open = theor, spread
-    else:
-        theor_flag_close, spread_flag_close = theor, spread
-    if radio_mode in ('Open', 'Close'):
-        active_is_open = (radio_mode == 'Open')
-    elif applied_mode is not None:  # Auto: активен применённый сигнал
-        active_is_open = (applied_mode == 'Open')
-    else:
-        active_is_open = None       # Auto-Waiting: активные флаги не трогаем
-    if active_is_open is not None and active_is_open == is_open:
-        theor_flag, spread_flag = theor, spread
-    app.add_message(f'Флаги {"Open" if is_open else "Close"}: Th {theor} | Sp {spread}')
-
 def preview_targets(app, verbose=False):
     try:
         return _preview_targets_impl(app, verbose)
@@ -1844,10 +1852,19 @@ def _preview_targets_impl(app, verbose=False):
     else:
         sel_profit, sel_th, sel_sp = expected_profit, theor_flag, spread_flag
 
+    # Diff.spread: разница IV середин спреда ask/bid (предрасчёт без заявок —
+    # «заражение» невозможно, в last_valid не пишем). Считается ОДИН раз до
+    # смещений, чтобы обе ноги использовали одно и то же значение.
+    diff_spread, frozen = update_diff_spread(m_sell, dataname_sell,
+                                             m_buy, dataname_buy,
+                                             None, store=False)
+
     off_sell = initial_offset(dataname_sell, dataname_buy, 'sell', None,
-                              sel_mode, sel_profit, sel_th, sel_sp)
+                              sel_mode, sel_profit, sel_th, sel_sp,
+                              diff_spread=diff_spread)
     off_buy = initial_offset(dataname_buy, dataname_sell, 'buy', None,
-                             sel_mode, sel_profit, sel_th, sel_sp)
+                             sel_mode, sel_profit, sel_th, sel_sp,
+                             diff_spread=diff_spread)
     tiv_sell = ask_iv_buy + off_sell
     tiv_buy = bid_iv_sell + off_buy
 
@@ -1862,10 +1879,7 @@ def _preview_targets_impl(app, verbose=False):
     tp_sell -= sell_leg['step'] * indent    # как в maintain_leg — предрасчёт = реальным заявкам
     tp_buy += buy_leg['step'] * indent
 
-    # Diff.spread: разница IV середин спреда ask/bid (предрасчёт без заявок —
-    # «заражение» невозможно, в last_valid не пишем)
-    diff_spread, frozen = update_diff_spread(m_sell, m_buy, None, store=False)
-
+    # Diff.spread посчитан выше (до смещений) — здесь только Diff.select.
     # Diff.select: реально применяемый профит; независимые галки:
     # Th добавляет в выборку Diff.theor, Sp — Diff.spread (при заражении —
     # последнее валидное); в Open берётся наименьшее из включённых
